@@ -1,3 +1,6 @@
+from datetime import datetime
+import base64
+import hashlib
 import requests
 from pyrogram import Client
 
@@ -17,16 +20,63 @@ app = Client("my_account", api_id, api_hash, proxy=proxy)
 session = requests.session()
 
 
+def path2base64(path: str) -> str:
+    """
+    文件转换为base64
+    :param path: 文件路径
+    :return:
+    """
+    with open(path, "rb") as f:
+        byte_data = f.read()
+    base64_str = base64.b64encode(byte_data).decode("ascii")  # 二进制转base64
+    return base64_str
+
+
+def path2md5(path: str) -> str:
+    """
+    文件转换为md5
+    :param path: 文件路径
+    :return:
+    """
+    with open(path, "rb") as f:
+        byte_data = f.read()
+    md5_str = md5(byte_data)
+    return md5_str
+
+
+def md5(text: all) -> str:
+    """
+    md5加密
+    :param text:
+    :return:
+    """
+    m = hashlib.md5()
+    m.update(text)
+    return m.hexdigest()
+
+
 @app.on_message()
 async def raw(client, message):
-    if 'USTDAO' == message.from_user.username:
-        print(message.chat.title, message.from_user.username, message.text, sep='\n')
+    title = message.chat.title if message.chat else ""
+    username = message.from_user.username if message.from_user else ""
+    reply = message.reply_to_message.text if message.reply_to_message else ""
+    text = message.text or ''
+    print(datetime.now(), title, username, reply, text, sep='\n')
+    if message.photo and username in ['Keycoooo', 'USTDAO']:
+        photo = await app.download_media(message=message)
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+            headers={'Content-Type': 'application/json'}, json={
+                "msgtype": "image",
+                "image": {"base64": path2base64(photo), "md5": path2md5(photo)},
+            })
+    if text and username in ['Keycoooo', 'USTDAO']:
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
             headers={'Content-Type': 'application/json'}, json={
                 "msgtype": "text",
                 "text": {
-                    'content': f'{message.chat.title}\n{message.from_user.username}:\n{message.reply_to_message.text}\n{message.text}'}
+                    'content': f'{title}\n{username}:\n{reply}{text}'}
             })
     # r.publish('tg',json.dumps([message.chat.title, message.text]))
 
