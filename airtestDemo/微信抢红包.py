@@ -5,13 +5,15 @@ from airtest.core.api import *
 
 auto_setup(__file__)
 
-
 from poco.drivers.android.uiautomation import AndroidUiautomationPoco
+
 poco = AndroidUiautomationPoco(use_airtest_input=True, screenshot_each_action=False)
+
+
 def get_red_package():
     # 1.获取消息列表元素
     msg_list_elements_pre = poco("com.tencent.mm:id/awv").children()
-    msg_list_elements = []keyevent("back")
+    msg_list_elements = [keyevent("back")]
 
     for item in msg_list_elements_pre:
         msg_list_elements.insert(0, item)
@@ -41,7 +43,7 @@ def get_red_package():
         else:
             print('红包元素不存在')
             continue
-        #msg_element.click()
+        # msg_element.click()
 
         # click_element = poco("com.tencent.mm:id/cv0")
         # if click_element.exists():
@@ -49,7 +51,9 @@ def get_red_package():
         #
         #     # 返回
         #     keyevent('BACK')
+
+
 while True:
-     get_red_package()
-     print('休眠1秒钟，继续刷新页面，开始抢红包。')
-    driver.get("Write your test web address!")
+    get_red_package()
+    print('休眠1秒钟，继续刷新页面，开始抢红包。')
+driver.get("Write your test web address!")
