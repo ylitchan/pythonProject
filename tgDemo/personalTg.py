@@ -1,9 +1,13 @@
+# @Date: 2024/3/6
+# @Author: ylitchan
+# @Source: rdti_crawl_defense
+# @Site:
 from datetime import datetime
 import base64
 import hashlib
 import requests
 from pyrogram import Client
-
+import os
 api_id = 23306769
 api_hash = "c4edead58afb1bf4fe0c1da91e820730"
 phone_number = "+8617880356481"
@@ -11,8 +15,8 @@ api_id = 23306769
 api_hash = "c4edead58afb1bf4fe0c1da91e820730"
 proxy = {
     "scheme": "http",  # "socks4", "socks5" and "http" are supported
-    "hostname": "127.0.0.1",
-    "port": 1081,
+    "hostname": "192.168.6.42",
+    "port": 10502,
     # "username": "username",
     # "password": "password"
 }
@@ -57,27 +61,39 @@ def md5(text: all) -> str:
 
 @app.on_message()
 async def raw(client, message):
-    title = message.chat.title if message.chat else ""
     username = message.from_user.username if message.from_user else ""
-    reply = message.reply_to_message.text if message.reply_to_message else ""
-    text = message.text or ''
-    print(datetime.now(), title, username, reply, text, sep='\n')
-    if message.photo and username in ['Keycoooo', 'USTDAO']:
-        photo = await app.download_media(message=message)
-        session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
-            headers={'Content-Type': 'application/json'}, json={
-                "msgtype": "image",
-                "image": {"base64": path2base64(photo), "md5": path2md5(photo)},
-            })
-    if text and username in ['Keycoooo', 'USTDAO']:
-        session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
-            headers={'Content-Type': 'application/json'}, json={
-                "msgtype": "text",
-                "text": {
-                    'content': f'{title}\n{username}:\n{reply}{text}'}
-            })
+    if username in ['Keycoooo', 'USTDAO']:
+        title = message.chat.title if message.chat else ""
+        reply = message.reply_to_message
+        if reply.photo:
+            photo = await app.download_media(message=reply)
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+                headers={'Content-Type': 'application/json'}, json={
+                    "msgtype": "image",
+                    "image": {"base64": path2base64(photo), "md5": path2md5(photo)},
+                })
+            os.remove(photo)
+        reply=reply.text if reply and reply.text else ''
+        text = message.text or ''
+        print(datetime.now(), title, username, reply, text, sep='\n')
+        if message.photo:
+            photo = await app.download_media(message=message)
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+                headers={'Content-Type': 'application/json'}, json={
+                    "msgtype": "image",
+                    "image": {"base64": path2base64(photo), "md5": path2md5(photo)},
+                })
+            os.remove(photo)
+        if text:
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+                headers={'Content-Type': 'application/json'}, json={
+                    "msgtype": "text",
+                    "text": {
+                        'content': f'{title}\n{username}:\n{reply}{text}'}
+                })
     # r.publish('tg',json.dumps([message.chat.title, message.text]))
 
 
