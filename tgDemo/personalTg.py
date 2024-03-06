@@ -65,7 +65,7 @@ async def raw(client, message):
     if username in ['Keycoooo', 'USTDAO']:
         title = message.chat.title if message.chat else ""
         reply = message.reply_to_message
-        if reply.photo:
+        if reply and reply.photo:
             photo = await app.download_media(message=reply)
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
