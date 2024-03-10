@@ -16,13 +16,17 @@ api_id = 23306769
 api_hash = "c4edead58afb1bf4fe0c1da91e820730"
 proxy = {
     "scheme": "http",  # "socks4", "socks5" and "http" are supported
-    "hostname": "192.168.6.42",
-    "port": 10502,
+    "hostname": "127.0.0.1",
+    "port": 1081,
     # "username": "username",
     # "password": "password"
 }
 app = Client("my_account", api_id, api_hash, proxy=proxy)
-session = requests.session()
+session = requests.Session()
+session.verify = False
+
+
+# session.proxies = proxies = {'https': 'http://192.168.6.42:10502', 'http': 'http://192.168.6.42:10502'}
 
 
 def path2base64(path: str) -> str:
@@ -63,15 +67,16 @@ def md5(text: all) -> str:
 @app.on_message()
 async def raw(client, message):
     username = message.from_user.username if message.from_user else ""
-    if username in ['Keycoooo', 'USTDAO', 'ylitchan']:
-        title = message.chat.title if message.chat else ""
+    title = message.chat.title if message.chat else ""
+    if username in ['Keycoooo', 'USTDAO', 'ylitchan', 'EinsteinLee'] or title in ['一撇 Degen Calls',
+                                                                                  'Daily alpha😊财富密码😊UST DAO投研']:
         print(datetime.now(), f'{title}\n{username}\n\n')
         reply = message.reply_to_message
         if reply and reply.photo:
             photo = await app.download_media(message=reply)
-            session.post(proxies={'https': 'http://192.168.6.42:10502', 'http': 'http://192.168.6.42:10502'},
-                         url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
-                         headers={'Content-Type': 'application/json'}, json={
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+                headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "image",
                     "image": {"base64": path2base64(photo), "md5": path2md5(photo)},
                 })
@@ -79,9 +84,9 @@ async def raw(client, message):
         reply_caption = reply.caption if reply and reply.caption else ''
         reply_text = reply.text if reply and reply.text else ''
         if reply_text or reply_caption:
-            session.post(proxies={'https': 'http://192.168.6.42:10502', 'http': 'http://192.168.6.42:10502'},
-                         url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
-                         headers={'Content-Type': 'application/json'}, json={
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+                headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "text",
                     "text": {
                         'content': f'{title}\n{username}:\n{reply_text}{reply_caption}'}
@@ -89,9 +94,9 @@ async def raw(client, message):
 
         if message.photo:
             photo = await app.download_media(message=message)
-            session.post(proxies={'https': 'http://192.168.6.42:10502', 'http': 'http://192.168.6.42:10502'},
-                         url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
-                         headers={'Content-Type': 'application/json'}, json={
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+                headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "image",
                     "image": {"base64": path2base64(photo), "md5": path2md5(photo)},
                 })
@@ -99,9 +104,9 @@ async def raw(client, message):
         caption = message.caption or ''
         text = message.text or ''
         if text or caption:
-            session.post(proxies={'https': 'http://192.168.6.42:10502', 'http': 'http://192.168.6.42:10502'},
-                         url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
-                         headers={'Content-Type': 'application/json'}, json={
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+                headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "text",
                     "text": {
                         'content': f'{title}\n{username}:\n{text}{caption}'}
