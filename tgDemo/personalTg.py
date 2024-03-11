@@ -90,7 +90,7 @@ async def raw(client, message):
                 headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "text",
                     "text": {
-                        'content': f'{title}\n{username}回复:\n{reply_text}{reply_caption}'}
+                        'content': f'{title}\n{username}😊回复:\n{reply_text}{reply_caption}'}
                 })
 
         if message.photo:
@@ -110,7 +110,7 @@ async def raw(client, message):
                 headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "text",
                     "text": {
-                        'content': f'{title}\n{username}说:\n{text}{caption}'}
+                        'content': f'{title}\n{username}😊说:\n{text}{caption}'}
                 })
     # r.publish('tg',json.dumps([message.chat.title, message.text]))
 
