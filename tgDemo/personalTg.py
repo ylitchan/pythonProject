@@ -29,7 +29,7 @@ session.verify = False
 # session.proxies = proxies = {'https': 'http://192.168.6.42:10502', 'http': 'http://192.168.6.42:10502'}
 
 
-def path2base64(path: str) -> str:
+def path2base64(path: str) -> dict:
     """
     文件转换为base64
     :param path: 文件路径
@@ -38,7 +38,7 @@ def path2base64(path: str) -> str:
     with open(path, "rb") as f:
         byte_data = f.read()
     base64_str = base64.b64encode(byte_data).decode("ascii")  # 二进制转base64
-    return base64_str
+    return {"base64": base64_str, "md5": md5(byte_data)}
 
 
 def path2md5(path: str) -> str:
@@ -70,6 +70,7 @@ async def raw(client, message):
     title = message.chat.title if message.chat else ""
     if username in ['Keycoooo', 'USTDAO', 'ylitchan', 'EinsteinLee'] or title in ['一撇 Degen Calls',
                                                                                   'Daily alpha😊财富密码😊UST DAO投研']:
+        username = message.from_user.first_name or ""
         print(datetime.now(), f'{title}\n{username}\n\n')
         reply = message.reply_to_message
         if reply and reply.photo:
@@ -78,7 +79,7 @@ async def raw(client, message):
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
                 headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "image",
-                    "image": {"base64": path2base64(photo), "md5": path2md5(photo)},
+                    "image": path2base64(photo),
                 })
             os.remove(photo)
         reply_caption = reply.caption if reply and reply.caption else ''
@@ -89,7 +90,7 @@ async def raw(client, message):
                 headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "text",
                     "text": {
-                        'content': f'{title}\n{username}:\n{reply_text}{reply_caption}'}
+                        'content': f'{title}\n{username}回复:\n{reply_text}{reply_caption}'}
                 })
 
         if message.photo:
@@ -98,7 +99,7 @@ async def raw(client, message):
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
                 headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "image",
-                    "image": {"base64": path2base64(photo), "md5": path2md5(photo)},
+                    "image": path2base64(photo),
                 })
             os.remove(photo)
         caption = message.caption or ''
@@ -109,7 +110,7 @@ async def raw(client, message):
                 headers={'Content-Type': 'application/json'}, json={
                     "msgtype": "text",
                     "text": {
-                        'content': f'{title}\n{username}:\n{text}{caption}'}
+                        'content': f'{title}\n{username}说:\n{text}{caption}'}
                 })
     # r.publish('tg',json.dumps([message.chat.title, message.text]))
 
