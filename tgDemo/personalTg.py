@@ -70,7 +70,7 @@ async def raw(client, message):
     title = message.chat.title if message.chat else ""
     if username in ['Keycoooo', 'USTDAO', 'ylitchan', 'EinsteinLee'] or title in ['一撇 Degen Calls',
                                                                                   'Daily alpha😊财富密码😊UST DAO投研']:
-        username = message.from_user.first_name or ""
+        username = message.from_user.first_name if message.from_user else ""
         print(datetime.now(), f'{title}\n{username}\n\n')
         reply = message.reply_to_message
         if reply and reply.photo:
