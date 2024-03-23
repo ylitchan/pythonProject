@@ -55,12 +55,11 @@ symbols = {'OAXUSDT', 'OOKIUSDT', 'ZILUSDT', 'KAVAUSDT', 'CREAMUSDT', 'EGLDUSDT'
 # symbols={'SYSUSDT'}
 client = Spot()
 
-
 # print(client.time())
 #
 # client = Spot(base_url="https://testnet.binance.vision",
-#               api_key='1hXMPebjBGCdviwi0hXiUvgoakhVVK54BNxFk5QJ7quopqjoY8z2iNWcDD9U94Sp',
-#               api_secret='XasQtYcQHOO4S3bADmdzmvI1Oacdlz5a6RjlBa25EqunSOkPTcxdzFJRojTd4MEz')
+#               api_key='1hXMPebjBGCdviw',
+#               api_secret='XasQtYcQHOO4S3bADmdzmvI1Oa')
 def job():
     for symbol in symbols:
         print(symbol)
