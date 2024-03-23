@@ -68,7 +68,7 @@ def md5(text: all) -> str:
 async def raw(client, message):
     username = message.from_user.username if message.from_user else ""
     title = message.chat.title if message.chat else ""
-    if username in ['Keycoooo', 'USTDAO', 'ylitchan', 'EinsteinLee'] or title in ['一撇 Degen Calls',
+    if username in ['Keycoooo', 'USTDAO', 'EinsteinLee'] or title in ['一撇 Degen Calls',
                                                                                   'Daily alpha😊财富密码😊UST DAO投研']:
         username = message.from_user.first_name if message.from_user else ""
         print(datetime.now(), f'{title}\n{username}\n\n')
