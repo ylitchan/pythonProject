@@ -55,6 +55,7 @@ symbols = {'OAXUSDT', 'OOKIUSDT', 'ZILUSDT', 'KAVAUSDT', 'CREAMUSDT', 'EGLDUSDT'
 # symbols={'SYSUSDT'}
 client = Spot()
 
+
 # print(client.time())
 #
 # client = Spot(base_url="https://testnet.binance.vision",
@@ -62,8 +63,7 @@ client = Spot()
 #               api_secret='XasQtYcQHOO4S3bADmdzmvI1Oa')
 def job():
     for symbol in symbols:
-        print(symbol)
-        lines = [[float(i) for i in sub] for sub in client.klines(symbol, "1h", limit=7)]
+        lines = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
         # 最高量所在索引
         line_vol = max(range(len(lines)), key=lambda x: lines[x][5])
         price = lines[line_vol][4]
@@ -97,7 +97,7 @@ def job():
 if __name__ == "__main__":
     # job()
     # 设置任务调度
-    scheduler.add_job(job, 'cron', minute='55')
+    scheduler.add_job(job, 'cron', minute='00')
 
     # 启动调度器
     scheduler.start()
