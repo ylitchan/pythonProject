@@ -64,10 +64,10 @@ client = Spot()
 def job():
     for symbol in symbols:
         lines = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
-        # 最高量所在索引
+        # 最高量所在索引,价格
         line_vol = max(range(len(lines)), key=lambda x: lines[x][5])
         price = lines[line_vol][4]
-        # 最高量之后的索引范围
+        # 最高量之后的索引范围，所爆量
         if 2 < line_vol < 6 and price >= lines[line_vol][1] and price >= lines[line_vol - 1][1]:
             index = range(line_vol + 1, 6)
             vol = lines[line_vol][5]
