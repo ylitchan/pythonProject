@@ -103,7 +103,7 @@ def job():
         alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in sorted(alert, key=lambda x: x[-1], reverse=True)]
         json = {
             "msgtype": "text",
-            "text": {'content': '\n=======\n'.join(alert)}
+            "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
