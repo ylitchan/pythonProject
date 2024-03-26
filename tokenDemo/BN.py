@@ -98,6 +98,7 @@ def job():
             # session.post(
             #     url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             #     json=json)
+            #https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb15fa90-dee0-4463-896d-2acf26619eaf
     if alert:
         # 涨幅降序
         alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in sorted(alert, key=lambda x: x[-1], reverse=True)]
