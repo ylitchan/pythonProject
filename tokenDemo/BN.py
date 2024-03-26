@@ -90,10 +90,10 @@ def job():
             zf = (lines_day[4] / lines_day[1] - 1) * 100
             print(f'{symbol}\n现价:{price}\n涨幅:{zf}')
             if zf >= 0:
-                alert.append((symbol, price, zf))
+                alert.append((symbol, price, zf, line_vol - 6))
     if alert:
-        # 涨幅降序
-        alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in sorted(alert, key=lambda x: x[-1], reverse=True)]
+        # 逼空点距离，涨幅降序
+        alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in sorted(alert, key=lambda x: (x[3], x[2]), reverse=True)]
         json = {
             "msgtype": "text",
             "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert)}
@@ -104,7 +104,7 @@ def job():
 
 
 if __name__ == "__main__":
-    # job()
+    job()
     # 设置任务调度
     scheduler.add_job(job, 'cron', minute='00', second='10')
 
