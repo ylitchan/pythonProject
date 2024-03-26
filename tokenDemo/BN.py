@@ -62,36 +62,52 @@ client = Spot()
 #               api_key='1hXMPebjBGCdviw',
 #               api_secret='XasQtYcQHOO4S3bADmdzmvI1Oa')
 def job():
+    alert = []
     for symbol in symbols:
-        lines = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
+        lines_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
         # 最高量所在索引,价格
-        line_vol = max(range(len(lines)), key=lambda x: lines[x][5])
-        price = lines[line_vol][4]
+        line_vol = max(range(len(lines_hour)), key=lambda x: lines_hour[x][5])
+        price = lines_hour[line_vol][4]
         # 最高量之后的索引范围，所爆量
-        if 2 < line_vol < 6 and price >= lines[line_vol][1] and price >= lines[line_vol - 1][1]:
+        if 2 < line_vol < 6 and price >= lines_hour[line_vol][1] and price >= lines_hour[line_vol - 1][1]:
             index = range(line_vol + 1, 6)
-            vol = lines[line_vol][5]
+            vol = lines_hour[line_vol][5]
             stop = False
         else:
             continue
         # 保证当前K线是首根阳K
         for i in index:
-            if lines[i][4] > lines[i][1]:
+            if lines_hour[i][4] > lines_hour[i][1]:
                 stop = True
                 break
-        price = lines[-1][4]
+        price = lines_hour[-1][4]
         # 爆量之后缩量真阳K
-        if not stop and price > lines[-1][
-            1] and price > lines[-2][4] and vol >= lines[-1][5] * 2 and vol >= \
-                max(lines[:line_vol], key=lambda x: x[5])[5] * 2:
-            print(f'{symbol}\n现价:{price}')
-            json = {
-                "msgtype": "text",
-                "text": {'content': f'{symbol}\n现价:{price}'}
-            }
-            session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-                json=json)
+        if not stop and price > lines_hour[-1][
+            1] and price > lines_hour[-2][4] and vol >= lines_hour[-1][5] * 2 and vol >= \
+                max(lines_hour[:line_vol], key=lambda x: x[5])[5] * 2:
+            # 获取涨幅
+            lines_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
+            zf = (lines_day[4] / lines_day[1] - 1) * 100
+            print(f'{symbol}\n现价:{price}\n涨幅:{zf}')
+            if zf >= 0:
+                alert.append((symbol, price, zf))
+            # json = {
+            #     "msgtype": "text",
+            #     "text": {'content': f'{symbol}\n现价:{price}'}
+            # }
+            # session.post(
+            #     url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            #     json=json)
+    if alert:
+        # 涨幅降序
+        alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in sorted(alert, key=lambda x: x[-1], reverse=True)]
+        json = {
+            "msgtype": "text",
+            "text": {'content': '\n=======\n'.join(alert)}
+        }
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            json=json)
 
 
 if __name__ == "__main__":
