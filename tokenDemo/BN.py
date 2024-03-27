@@ -52,7 +52,14 @@ symbols = {'OAXUSDT', 'OOKIUSDT', 'ZILUSDT', 'KAVAUSDT', 'CREAMUSDT', 'EGLDUSDT'
            'VETUSDT', 'RSRUSDT', 'NMRUSDT', 'SSVUSDT', 'WLDUSDT', 'UFTUSDT', 'RPLUSDT', 'PDAUSDT', 'FARMUSDT',
            'UTKUSDT', 'ENJUSDT', 'KMDUSDT', 'AMPUSDT', 'MTLUSDT', 'SEIUSDT', 'BATUSDT', 'SUNUSDT', 'BTCUSDT', 'GNSUSDT',
            'ZECUSDT', 'NTRNUSDT'}
-# symbols={'SYSUSDT'}
+symbols_tvl = {'AGLDUSDT', 'ALPACAUSDT', 'API3USDT', 'ARKMUSDT', 'AUCTIONUSDT', 'AVAUSDT', 'AXLUSDT', 'BAKEUSDT',
+               'BANDUSDT', 'BIFIUSDT', 'BLZUSDT', 'C98USDT', 'CELRUSDT', 'CHRUSDT', 'CYBERUSDT', 'DIAUSDT', 'DODOUSDT',
+               'FIROUSDT', 'FLUXUSDT', 'FUNUSDT', 'GALUSDT', 'GLMRUSDT', 'GNSUSDT', 'GTCUSDT', 'HARDUSDT', 'HIGHUSDT',
+               'IDUSDT', 'JOEUSDT', 'KDAUSDT', 'LOKAUSDT', 'LPTUSDT', 'LQTYUSDT', 'MAGICUSDT', 'MAVUSDT', 'MBOXUSDT',
+               'METISUSDT', 'MLNUSDT', 'MOBUSDT', 'OGNUSDT', 'ORDIUSDT', 'PENDLEUSDT', 'PERPUSDT', 'POLSUSDT', 'QIUSDT',
+               'RAYUSDT', 'RDNTUSDT', 'RSRUSDT', 'SCRTUSDT', 'SPELLUSDT', 'SSVUSDT', 'STGUSDT', 'STORJUSDT',
+               'SUSHIUSDT', 'SYNUSDT', 'TKOUSDT', 'UMAUSDT', 'VOXELUSDT', 'WAVESUSDT', 'WAXPUSDT', 'XVGUSDT', 'XVSUSDT',
+               'YGGUSDT', 'ZRXUSDT'}
 client = Spot()
 
 
@@ -63,6 +70,7 @@ client = Spot()
 #               api_secret='XasQtYcQHOO4S3bADmdzmvI1Oa')
 def job():
     alert = []
+    alert_tvl = []
     for symbol in symbols:
         lines_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
         # 最高量所在索引,价格
@@ -91,6 +99,8 @@ def job():
             print(f'{symbol}\n现价:{price}\n涨幅:{zf}')
             if zf >= 0:
                 alert.append((symbol, price, zf, line_vol - 6))
+                if symbol in symbols_tvl:
+                    alert_tvl.append((symbol, price, zf, line_vol - 6))
     if alert:
         # 逼空点距离，涨幅降序
         alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in sorted(alert, key=lambda x: (x[3], x[2]), reverse=True)]
@@ -100,6 +110,17 @@ def job():
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            json=json)
+    if alert_tvl:
+        # 逼空点距离，涨幅降序
+        alert_tvl = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
+                     sorted(alert_tvl, key=lambda x: (x[3], x[2]), reverse=True)]
+        json = {
+            "msgtype": "text",
+            "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert_tvl)}
+        }
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb15fa90-dee0-4463-896d-2acf26619eaf',
             json=json)
 
 

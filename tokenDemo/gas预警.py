@@ -28,14 +28,14 @@ def job():
                 "text": {'content': f'Gas\nHigh:{gas} gwei'}
             }
             session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb15fa90-dee0-4463-896d-2acf26619eaf',
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
                 json=json)
 
 
 if __name__ == "__main__":
     # job()
     # 设置任务调度
-    scheduler.add_job(job, 'cron', minute='00', second='00')
+    scheduler.add_job(job, 'cron', minute='30', second='00')
 
     # 启动调度器
     scheduler.start()
