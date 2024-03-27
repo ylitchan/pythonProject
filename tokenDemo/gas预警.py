@@ -33,7 +33,7 @@ def job():
 
 
 if __name__ == "__main__":
-    # job()
+    job()
     # 设置任务调度
     scheduler.add_job(job, 'cron', minute='30', second='00')
 
