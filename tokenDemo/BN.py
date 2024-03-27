@@ -97,7 +97,7 @@ def job():
             lines_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
             zf = (lines_day[4] / lines_day[1] - 1) * 100
             print(f'{symbol}\n现价:{price}\n涨幅:{zf}')
-            if zf >= 0:
+            if zf >= 1:
                 alert.append((symbol, price, zf, line_vol - 6))
             if symbol in symbols_tvl:
                 alert_tvl.append((symbol, price, zf, line_vol - 6))
