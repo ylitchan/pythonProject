@@ -99,8 +99,8 @@ def job():
             print(f'{symbol}\n现价:{price}\n涨幅:{zf}')
             if zf >= 0:
                 alert.append((symbol, price, zf, line_vol - 6))
-                if symbol in symbols_tvl:
-                    alert_tvl.append((symbol, price, zf, line_vol - 6))
+            if symbol in symbols_tvl:
+                alert_tvl.append((symbol, price, zf, line_vol - 6))
     if alert:
         # 逼空点距离，涨幅降序
         alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in sorted(alert, key=lambda x: (x[3], x[2]), reverse=True)]
