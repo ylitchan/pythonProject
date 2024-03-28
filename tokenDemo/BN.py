@@ -71,25 +71,29 @@ def job():
     print(datetime.datetime.now())
     alert = []
     alert_tvl = []
+    alert_boom = []
     for symbol in symbols:
         kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
         # 最高量所在索引,价格
         kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
-        price_vol = kline_hour[kline_vol][4]
-        price = kline_hour[-1][4]
+
         stop = False
         # 最高量之后的索引范围，所爆量
-        if 2 < kline_vol < 6:  # and price >= kline_hour[kline_vol][1] and price >= kline_hour[kline_vol - 1][1]:
+        if 2 < kline_vol < 6:  # and price_close >= kline_hour[kline_vol][1] and price_close >= kline_hour[kline_vol - 1][1]:
+            price_vol_close = kline_hour[kline_vol][4]
+            price_vol_open = kline_hour[kline_vol][1]
+            price_open = kline_hour[-1][1]
+            price_close = kline_hour[-1][4]
             vol = kline_hour[kline_vol][5]
             index_range = range(kline_vol + 1, 6)
-            # 爆量阴K,没有反包
-            if kline_hour[kline_vol][1] > max(price_vol, price):
+            # 爆量阴K,没有反包或跌破爆量K线实体
+            if price_vol_open > max(price_vol_close, price_close) or price_close < min(price_vol_open, price_vol_close):
                 stop = True
         else:
             continue
         # 当前为爆量后缩量真阳K
-        if not stop and price > kline_hour[-1][
-            1] and price > kline_hour[-2][4] and vol >= kline_hour[-1][5] * 2 and vol >= \
+        if not stop and price_close > price_open and price_close > kline_hour[-2][4] and vol >= kline_hour[-1][
+            5] * 2 and vol >= \
                 max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
             # 爆量之后阳K数量
             boom = len(list(filter(lambda x: x >= 0, [kline_hour[i][4] - kline_hour[i][1] for i in index_range])))
@@ -99,9 +103,23 @@ def job():
             zf = (kline_day[4] / kline_day[1] - 1) * 100
             if symbol in symbols_tvl:
                 alert_tvl.append(
-                    (symbol, price, zf, boom - kline_distance, (price - kline_hour[-1][2]) / kline_hour[-1][1]))
-            alert.append(
-                (symbol, price, zf, boom - kline_distance, (price - kline_hour[-1][2]) / kline_hour[-1][1]))
+                    (symbol, price_close, zf, boom - kline_distance, (price_close - kline_hour[-1][2]) / price_open))
+            if price_close > price_vol_close:
+                alert_boom.append(
+                    (symbol, price_close, zf, boom - kline_distance, (price_close - kline_hour[-1][2]) / price_open))
+            else:
+                alert.append(
+                    (symbol, price_close, zf, boom - kline_distance, (price_close - kline_hour[-1][2]) / price_open))
+    if alert_boom:
+        alert_boom = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
+                      sorted(alert_boom, key=lambda x: (x[3], x[4]), reverse=True)]
+        json = {
+            "msgtype": "text",
+            "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert_boom)}
+        }
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+            json=json)
     if alert:
         alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
                  sorted(alert, key=lambda x: (x[3], x[4]), reverse=True)]
