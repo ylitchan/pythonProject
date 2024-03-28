@@ -1,3 +1,4 @@
+import datetime
 import requests
 from binance.spot import Spot
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -69,41 +70,55 @@ client = Spot()
 #               api_key='1hXMPebjBGCdviw',
 #               api_secret='XasQtYcQHOO4S3bADmdzmvI1Oa')
 def job():
+    print(datetime.datetime.now())
     alert = []
     alert_tvl = []
+    alert_boom = []
     for symbol in symbols:
-        lines_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
+        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
         # 最高量所在索引,价格
-        line_vol = max(range(len(lines_hour)), key=lambda x: lines_hour[x][5])
-        price = lines_hour[line_vol][4]
+        kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
+        price_vol = kline_hour[kline_vol][4]
+        price = kline_hour[-1][4]
+        stop = False
         # 最高量之后的索引范围，所爆量
-        if 2 < line_vol < 6 and price >= lines_hour[line_vol][1] and price >= lines_hour[line_vol - 1][1]:
-            index = range(line_vol + 1, 6)
-            vol = lines_hour[line_vol][5]
-            stop = False
+        if 2 < kline_vol < 6:  # and price >= kline_hour[kline_vol][1] and price >= kline_hour[kline_vol - 1][1]:
+            vol = kline_hour[kline_vol][5]
+            index_range = range(kline_vol + 1, 6)
+            # 爆量阴K,没有反包
+            if kline_hour[kline_vol][1] > price_vol > price:
+                stop = True
         else:
             continue
-        # 保证当前K线是首根阳K
-        for i in index:
-            if lines_hour[i][4] > lines_hour[i][1]:
-                stop = True
-                break
-        price = lines_hour[-1][4]
-        # 爆量之后缩量真阳K
-        if not stop and price > lines_hour[-1][
-            1] and price > lines_hour[-2][4] and vol >= lines_hour[-1][5] * 2 and vol >= \
-                max(lines_hour[:line_vol], key=lambda x: x[5])[5] * 2:
+        # 当前为爆量后缩量真阳K
+        if not stop and price > kline_hour[-1][
+            1] and price > kline_hour[-2][4] and vol >= kline_hour[-1][5] * 2 and vol >= \
+                max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
+            # 爆量之后阳K数量
+            boom = len(list(filter(lambda x: x >= 0, [kline_hour[i][4] - kline_hour[i][1] for i in index_range])))
+            kline_distance = 6 - kline_vol
             # 获取涨幅
-            lines_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
-            zf = (lines_day[4] / lines_day[1] - 1) * 100
-            print(f'{symbol}\n现价:{price}\n涨幅:{zf}')
-            if zf >= 3:
-                alert.append((symbol, price, zf, line_vol - 6))
+            kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
+            zf = (kline_day[4] / kline_day[1] - 1) * 100
             if symbol in symbols_tvl:
-                alert_tvl.append((symbol, price, zf, line_vol - 6))
+                alert_tvl.append((symbol, price, zf, boom - kline_distance, -boom))
+            # if boom == len(index_range):
+            #     alert_boom.append((symbol, price, zf, boom - kline_distance, -boom))
+            # else:
+            alert.append((symbol, price, zf, boom - kline_distance, -boom))
+    # if alert_boom:
+    #     alert_boom = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
+    #                   sorted(alert_boom, key=lambda x: (x[3], x[4],x[2]), reverse=True)]
+    #     json = {
+    #         "msgtype": "text",
+    #         "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert_boom)}
+    #     }
+    #     session.post(
+    #         url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+    #         json=json)
     if alert:
-        # 逼空点距离，涨幅降序
-        alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in sorted(alert, key=lambda x: (x[3], x[2]), reverse=True)]
+        alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
+                 sorted(alert, key=lambda x: (x[3], x[4], x[2]), reverse=True)]
         json = {
             "msgtype": "text",
             "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert)}
@@ -112,9 +127,8 @@ def job():
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             json=json)
     if alert_tvl:
-        # 逼空点距离，涨幅降序
         alert_tvl = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
-                     sorted(alert_tvl, key=lambda x: (x[3], x[2]), reverse=True)]
+                     sorted(alert_tvl, key=lambda x: (x[3], x[4], x[2]), reverse=True)]
         json = {
             "msgtype": "text",
             "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert_tvl)}
