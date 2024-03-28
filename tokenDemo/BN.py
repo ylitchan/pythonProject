@@ -62,11 +62,6 @@ symbols_tvl = {'CELRUSDT', 'DIAUSDT', 'TKOUSDT', 'HIGHUSDT', 'API3USDT', 'JOEUSD
 client = Spot()
 
 
-# print(client.time())
-#
-# client = Spot(base_url="https://testnet.binance.vision",
-#               api_key='1hXMPebjBGCdviw',
-#               api_secret='XasQtYcQHOO4S3bADmdzmvI1Oa')
 def job():
     print(datetime.datetime.now())
     alert = []
@@ -77,39 +72,47 @@ def job():
         # 最高量所在索引
         kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
         # 爆量不能是最后一根K线
-        if 2 < kline_vol < 6:  # and price_close >= kline_hour[kline_vol][1] and price_close >= kline_hour[kline_vol - 1][1]:
+        if 2 < kline_vol < 6:
             price_vol_close = kline_hour[kline_vol][4]
             price_vol_open = kline_hour[kline_vol][1]
             price_open = kline_hour[-1][1]
             price_close = kline_hour[-1][4]
             vol = kline_hour[kline_vol][5]
-            index_range = range(kline_vol + 1, 6)
-            # 爆量阴K,没有反包或跌破爆量K线实体
-            if price_vol_open > max(price_vol_close, price_close) or price_close < min(price_vol_open, price_vol_close):
-                continue
+            # index_range = range(kline_vol + 1, 6)
+            # 真阳K
+            a = price_close >= price_open and price_close >= kline_hour[-2][4]
+            # 不跌破爆量K线实体,反包爆量阴K
+            b = price_vol_open <= max(price_vol_close, price_close) and price_close >= min(price_vol_open,
+                                                                                           price_vol_close)
+            # 缩半量,爆倍量
+            c = vol >= kline_hour[-1][5] * 2 and vol >= max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2
+            if a and b and c:
+                # 爆量之后阳K数量
+                boom = len(list(
+                    filter(lambda x: x >= 0, [kline_hour[i][4] - kline_hour[i][1] for i in range(kline_vol + 1, 6)])))
+                kline_distance = 6 - kline_vol
+                # 当日获取涨幅
+                kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
+                zf = (kline_day[4] / kline_day[1] - 1) * 100
+                if symbol in symbols_tvl:
+                    alert_tvl.append(
+                        (
+                            symbol, price_close, zf, boom - kline_distance,
+                            (price_close - kline_hour[-1][2]) / price_open))
+                if price_close > price_vol_close:
+                    alert_boom.append(
+                        (
+                            symbol, price_close, zf, boom - kline_distance,
+                            (price_close - kline_hour[-1][2]) / price_open))
+                else:
+                    alert.append(
+                        (
+                            symbol, price_close, zf, boom - kline_distance,
+                            (price_close - kline_hour[-1][2]) / price_open))
         else:
             continue
-        # 当前为爆量后缩量真阳K
-        if price_close > price_open and price_close > kline_hour[-2][4] and vol >= kline_hour[-1][
-            5] * 2 and vol >= \
-                max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-            # 爆量之后阳K数量
-            boom = len(list(filter(lambda x: x >= 0, [kline_hour[i][4] - kline_hour[i][1] for i in index_range])))
-            kline_distance = 6 - kline_vol
-            # 当日获取涨幅
-            kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
-            zf = (kline_day[4] / kline_day[1] - 1) * 100
-            if symbol in symbols_tvl:
-                alert_tvl.append(
-                    (symbol, price_close, zf, boom - kline_distance, (price_close - kline_hour[-1][2]) / price_open))
-            if price_close > price_vol_close:
-                alert_boom.append(
-                    (symbol, price_close, zf, boom - kline_distance, (price_close - kline_hour[-1][2]) / price_open))
-            else:
-                alert.append(
-                    (symbol, price_close, zf, boom - kline_distance, (price_close - kline_hour[-1][2]) / price_open))
     if alert_boom:
-        alert_boom = [f'{i + 1}.{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for i, a in
+        alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
@@ -119,7 +122,7 @@ def job():
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
             json=json)
     if alert:
-        alert = [f'{i + 1}.{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for i, a in
+        alert = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                  enumerate(sorted(alert, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
@@ -129,7 +132,7 @@ def job():
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             json=json)
     if alert_tvl:
-        alert_tvl = [f'{i + 1}.{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for i, a in
+        alert_tvl = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                      enumerate(sorted(alert_tvl, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
@@ -146,6 +149,3 @@ if __name__ == "__main__":
     scheduler.add_job(job, 'cron', minute='00', second='10')
     # 启动调度器
     scheduler.start()
-# # Get account information
-# client.new_order('ETHUSDT', "BUY", "MARKET", quantity=1)
-# print(client.account())
