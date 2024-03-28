@@ -9,58 +9,56 @@ session.headers = {'Content-Type': 'application/json',
 # 创建BlockingScheduler对象
 scheduler = BlockingScheduler()
 
-symbols = {'OAXUSDT', 'OOKIUSDT', 'ZILUSDT', 'KAVAUSDT', 'CREAMUSDT', 'EGLDUSDT', 'ZRXUSDT', 'ALCXUSDT', 'IQUSDT',
-           'OSMOUSDT', 'CAKEUSDT', 'XVSUSDT', 'ALPHAUSDT', 'IRISUSDT', 'ANKRUSDT', 'LUNAUSDT', 'LITUSDT', 'BONKUSDT',
-           'JUPUSDT', 'CYBERUSDT', 'PIVXUSDT', 'UNFIUSDT', 'WOOUSDT', 'ERNUSDT', 'MLNUSDT', 'SUIUSDT', 'VTHOUSDT',
-           'KDAUSDT', 'BSWUSDT', 'ARDRUSDT', 'WAXPUSDT', 'BETAUSDT', 'DIAUSDT', 'MOBUSDT', 'CHRUSDT', 'ALICEUSDT',
-           'FILUSDT', 'WRXUSDT', 'HIGHUSDT', 'API3USDT', 'POLSUSDT', 'VANRYUSDT', 'JASMYUSDT', 'AAVEUSDT', 'AVAXUSDT',
-           'MBOXUSDT', 'RLCUSDT', 'MATICUSDT', 'UMAUSDT', 'STORJUSDT', 'AVAUSDT', 'RVNUSDT', 'BOMEUSDT', 'MOVRUSDT',
-           'LINKUSDT', 'OPUSDT', 'CHESSUSDT', 'CTXCUSDT', 'YGGUSDT', 'TRXUSDT', 'XAIUSDT', 'KSMUSDT', 'AEVOUSDT',
-           'WINUSDT', 'PNTUSDT', 'ALGOUSDT', 'CKBUSDT', 'QTUMUSDT', 'SLPUSDT', 'INJUSDT', 'WANUSDT', 'FXSUSDT',
-           'MDTUSDT', 'BEAMXUSDT', 'NEOUSDT', 'SYNUSDT', 'MKRUSDT', 'POWRUSDT', 'RDNTUSDT', 'ATMUSDT', 'QIUSDT',
-           '1INCHUSDT', 'XNOUSDT', 'PHAUSDT', 'USDPUSDT', 'RUNEUSDT', 'BALUSDT', 'HARDUSDT', 'VGXUSDT', 'ARPAUSDT',
-           'LRCUSDT', 'GTCUSDT', 'LDOUSDT', 'HBARUSDT', 'TUSDT', 'LINAUSDT', 'USDTBIDR', 'DEGOUSDT', 'VOXELUSDT',
-           'AMBUSDT', 'GLMRUSDT', 'OMUSDT', 'STXUSDT', 'BAKEUSDT', 'RNDRUSDT', 'FLUXUSDT', 'GRTUSDT', 'SOLUSDT',
-           'REQUSDT', 'PEPEUSDT', 'MANAUSDT', 'OCEANUSDT', 'FDUSDTRY', 'COSUSDT', 'ACHUSDT', 'LQTYUSDT', 'SANDUSDT',
-           'USDTPLN', 'RONINUSDT', 'QNTUSDT', 'MEMEUSDT', 'IDUSDT', 'IDEXUSDT', 'PORTOUSDT', 'VITEUSDT', 'WINGUSDT',
-           'SUSHIUSDT', 'ZENUSDT', 'STEEMUSDT', 'ACAUSDT', 'BNBUSDT', 'STRKUSDT', 'CVXUSDT', 'WBETHUSDT', 'REIUSDT',
-           'LOKAUSDT', 'LTCUSDT', 'DEXEUSDT', 'NULSUSDT', 'DYMUSDT', 'EDUUSDT', 'LPTUSDT', 'ONGUSDT', 'FORTHUSDT',
-           'USDTIDRT', 'JSTUSDT', 'KLAYUSDT', 'GASUSDT', 'IOSTUSDT', 'JTOUSDT', 'USTCUSDT', 'BELUSDT', 'GMXUSDT',
-           'ENSUSDT', 'ETHFIUSDT', 'FRONTUSDT', 'FLOWUSDT', 'REEFUSDT', 'HOTUSDT', 'MBLUSDT', 'PIXELUSDT', 'ATOMUSDT',
-           'USDTBRL', 'DENTUSDT', 'AGIXUSDT', 'BNXUSDT', 'EURUSDT', 'AKROUSDT', 'IOTXUSDT', 'WNXMUSDT', 'CVCUSDT',
-           'AIUSDT', 'NKNUSDT', 'ADXUSDT', 'GALAUSDT', 'BNTUSDT', 'BTTCUSDT', 'DOGEUSDT', 'PROMUSDT', 'AGLDUSDT',
-           'NFPUSDT', 'DATAUSDT', 'MINAUSDT', 'UNIUSDT', 'VICUSDT', 'IMXUSDT', 'AXSUSDT', 'JOEUSDT', 'COMPUSDT',
-           'ARBUSDT', 'KNCUSDT', 'GFTUSDT', 'HIVEUSDT', 'DARUSDT', 'AXLUSDT', 'DUSKUSDT', 'ORDIUSDT', 'DREPUSDT',
-           'AEURUSDT', 'METISUSDT', '1000SATSUSDT', 'BIFIUSDT', 'ONTUSDT', 'COTIUSDT', 'SCRTUSDT', 'DASHUSDT',
-           'ATAUSDT', 'TRBUSDT', 'LOOMUSDT', 'SYSUSDT', 'TUSDTRY', 'TROYUSDT', 'FUNUSDT', 'AERGOUSDT', 'ALTUSDT',
-           'BARUSDT', 'BURGERUSDT', 'C98USDT', 'BICOUSDT', 'BADGERUSDT', 'WAVESUSDT', 'OGUSDT', 'XRPUSDT', 'MAGICUSDT',
-           'QUICKUSDT', 'KEYUSDT', 'DCRUSDT', 'COMBOUSDT', 'EPXUSDT', 'ELFUSDT', 'GNOUSDT', 'PAXGUSDT', 'GALUSDT',
-           'KP3RUSDT', 'SNXUSDT', 'ARKMUSDT', 'FLOKIUSDT', 'CHZUSDT', 'FIROUSDT', 'USDTUAH', 'LSKUSDT', 'TKOUSDT',
-           'TRUUSDT', 'DODOUSDT', 'RIFUSDT', 'GHSTUSDT', 'CRVUSDT', 'OXTUSDT', 'PYTHUSDT', 'TLMUSDT', 'STGUSDT',
-           'APEUSDT', 'SNTUSDT', 'ARKUSDT', 'TFUELUSDT', 'WBTCUSDT', 'FORUSDT', 'VIDTUSDT', 'THETAUSDT', 'ASTRUSDT',
-           'FETUSDT', 'ASRUSDT', 'PEOPLEUSDT', 'FISUSDT', 'SKLUSDT', 'FTMUSDT', 'SUPERUSDT', 'DOTUSDT', 'XEMUSDT',
-           'PORTALUSDT', 'MASKUSDT', 'TUSDUSDT', 'RAREUSDT', 'NEXOUSDT', 'USDTTRY', 'FTTUSDT', 'XECUSDT', 'JUVUSDT',
-           'HOOKUSDT', 'PSGUSDT', 'HIFIUSDT', 'DFUSDT', 'SHIBUSDT', 'PERPUSDT', 'RAYUSDT', 'IOTAUSDT', 'APTUSDT',
-           'ARUSDT', 'ASTUSDT', 'SXPUSDT', 'XVGUSDT', 'SFPUSDT', 'WIFUSDT', 'CLVUSDT', 'LAZIOUSDT', 'ETHUSDT',
-           'DOCKUSDT', 'AUDIOUSDT', 'RADUSDT', 'ILVUSDT', 'EOSUSDT', 'ADAUSDT', 'YFIUSDT', 'LTOUSDT', 'USDTDAI',
-           'FLMUSDT', 'ALPACAUSDT', 'PENDLEUSDT', 'FIDAUSDT', 'LEVERUSDT', 'BLZUSDT', 'ICXUSDT', 'MAVUSDT', 'CTKUSDT',
-           'USDCUSDT', 'STPTUSDT', 'STMXUSDT', 'USDTRON', 'POLYXUSDT', 'FIOUSDT', 'FDUSDUSDT', 'HFTUSDT', 'PUNDIXUSDT',
-           'OMGUSDT', 'GLMUSDT', 'SCUSDT', 'PHBUSDT', 'BANDUSDT', 'GMTUSDT', 'CFXUSDT', 'ONEUSDT', 'BLURUSDT',
-           'ORNUSDT', 'CELOUSDT', 'ETCUSDT', 'MDXUSDT', 'PROSUSDT', 'PYRUSDT', 'MANTAUSDT', 'USDTZAR', 'ALPINEUSDT',
-           'ROSEUSDT', 'CITYUSDT', 'CTSIUSDT', 'USDTARS', 'OGNUSDT', 'XLMUSDT', 'SPELLUSDT', 'DGBUSDT', 'TWTUSDT',
-           'VIBUSDT', 'XTZUSDT', 'PONDUSDT', 'DYDXUSDT', 'CVPUSDT', 'CELRUSDT', 'AUCTIONUSDT', 'BCHUSDT', 'SANTOSUSDT',
-           'ACMUSDT', 'NEARUSDT', 'ACEUSDT', 'LUNCUSDT', 'ICPUSDT', 'RENUSDT', 'BONDUSDT', 'TIAUSDT', 'QKCUSDT',
-           'VETUSDT', 'RSRUSDT', 'NMRUSDT', 'SSVUSDT', 'WLDUSDT', 'UFTUSDT', 'RPLUSDT', 'PDAUSDT', 'FARMUSDT',
-           'UTKUSDT', 'ENJUSDT', 'KMDUSDT', 'AMPUSDT', 'MTLUSDT', 'SEIUSDT', 'BATUSDT', 'SUNUSDT', 'BTCUSDT', 'GNSUSDT',
-           'ZECUSDT', 'NTRNUSDT'}
-symbols_tvl = {'AGLDUSDT', 'ALPACAUSDT', 'API3USDT', 'ARKMUSDT', 'AUCTIONUSDT', 'AVAUSDT', 'AXLUSDT', 'BAKEUSDT',
-               'BANDUSDT', 'BIFIUSDT', 'BLZUSDT', 'C98USDT', 'CELRUSDT', 'CHRUSDT', 'CYBERUSDT', 'DIAUSDT', 'DODOUSDT',
-               'FIROUSDT', 'FLUXUSDT', 'FUNUSDT', 'GALUSDT', 'GLMRUSDT', 'GNSUSDT', 'GTCUSDT', 'HARDUSDT', 'HIGHUSDT',
-               'IDUSDT', 'JOEUSDT', 'KDAUSDT', 'LOKAUSDT', 'LPTUSDT', 'LQTYUSDT', 'MAGICUSDT', 'MAVUSDT', 'MBOXUSDT',
-               'METISUSDT', 'MLNUSDT', 'MOBUSDT', 'OGNUSDT', 'ORDIUSDT', 'PENDLEUSDT', 'PERPUSDT', 'POLSUSDT', 'QIUSDT',
-               'RAYUSDT', 'RDNTUSDT', 'RSRUSDT', 'SCRTUSDT', 'SPELLUSDT', 'SSVUSDT', 'STGUSDT', 'STORJUSDT',
-               'SUSHIUSDT', 'SYNUSDT', 'TKOUSDT', 'UMAUSDT', 'VOXELUSDT', 'WAVESUSDT', 'WAXPUSDT', 'XVGUSDT', 'XVSUSDT',
-               'YGGUSDT', 'ZRXUSDT'}
+symbols = ['PORTALUSDT', 'PHBUSDT', 'PNTUSDT', 'ADXUSDT', 'APEUSDT', 'SUPERUSDT', 'NEOUSDT', 'RUNEUSDT', 'XLMUSDT',
+           'IQUSDT', 'UNIUSDT', 'RAREUSDT', 'FLOKIUSDT', 'ETHUSDT', 'UFTUSDT', 'HIGHUSDT', 'POLYXUSDT', 'GLMUSDT',
+           'EPXUSDT', 'DARUSDT', 'DOTUSDT', 'VETUSDT', 'SCUSDT', 'ANKRUSDT', 'TLMUSDT', 'STGUSDT', 'OMGUSDT', 'SXPUSDT',
+           '1INCHUSDT', 'DYMUSDT', 'BEAMXUSDT', 'ERNUSDT', 'DOCKUSDT', 'TUSDT', 'CYBERUSDT', 'CREAMUSDT', 'SANTOSUSDT',
+           'BALUSDT', 'RDNTUSDT', 'AUDIOUSDT', 'NMRUSDT', 'HFTUSDT', 'JUPUSDT', 'WANUSDT', 'VICUSDT', 'BLZUSDT',
+           'FARMUSDT', 'LTCUSDT', 'PROSUSDT', 'ARKUSDT', 'MDTUSDT', 'VIBUSDT', 'FTTUSDT', 'XEMUSDT', 'FLMUSDT',
+           'RLCUSDT', 'GNSUSDT', 'EURUSDT', 'REQUSDT', 'TRBUSDT', 'TFUELUSDT', 'CITYUSDT', 'RIFUSDT', 'REIUSDT',
+           'WIFUSDT', 'PERPUSDT', 'SYNUSDT', 'CRVUSDT', 'WLDUSDT', 'MBOXUSDT', 'STEEMUSDT', 'ATMUSDT', 'POLSUSDT',
+           'SHIBUSDT', 'ORNUSDT', 'LAZIOUSDT', 'MEMEUSDT', 'STMXUSDT', 'ZILUSDT', 'HIVEUSDT', 'VTHOUSDT', 'TIAUSDT',
+           'ACAUSDT', 'AERGOUSDT', 'VGXUSDT', 'SLPUSDT', 'BNXUSDT', 'PAXGUSDT', 'QNTUSDT', 'MBLUSDT', 'CVXUSDT',
+           'COTIUSDT', 'EGLDUSDT', 'RENUSDT', 'CTXCUSDT', 'WBTCUSDT', 'IDEXUSDT', 'OAXUSDT', 'PEOPLEUSDT', 'GMTUSDT',
+           'ENJUSDT', 'AEURUSDT', 'LSKUSDT', 'OCEANUSDT', 'CELOUSDT', 'OGNUSDT', 'HOOKUSDT', 'IDUSDT', 'FORTHUSDT',
+           'FXSUSDT', 'BTCUSDT', 'DOGEUSDT', 'WNXMUSDT', 'LINKUSDT', 'QUICKUSDT', 'WINUSDT', 'ICXUSDT', 'DYDXUSDT',
+           'PROMUSDT', 'CTSIUSDT', 'AIUSDT', 'FLOWUSDT', 'PONDUSDT', 'CELRUSDT', 'GMXUSDT', 'XNOUSDT', 'ONEUSDT',
+           'WINGUSDT', 'SUIUSDT', 'OMUSDT', 'STRKUSDT', 'DGBUSDT', 'ETHFIUSDT', 'MAVUSDT', 'THETAUSDT', 'FLUXUSDT',
+           'RSRUSDT', 'BARUSDT', 'ILVUSDT', 'BLURUSDT', 'BTTCUSDT', 'ELFUSDT', 'SNTUSDT', 'ICPUSDT', 'HIFIUSDT',
+           'ALPHAUSDT', 'ATOMUSDT', 'OSMOUSDT', 'KLAYUSDT', 'NEARUSDT', 'WRXUSDT', '1000SATSUSDT', 'GALAUSDT',
+           'ARBUSDT', 'TROYUSDT', 'KAVAUSDT', 'BNBUSDT', 'BONDUSDT', 'NULSUSDT', 'AXSUSDT', 'RAYUSDT', 'JTOUSDT',
+           'TRXUSDT', 'KNCUSDT', 'PIVXUSDT', 'JSTUSDT', 'SSVUSDT', 'GFTUSDT', 'VIDTUSDT', 'MLNUSDT', 'JASMYUSDT',
+           'BIFIUSDT', 'DCRUSDT', 'MKRUSDT', 'BICOUSDT', 'AMBUSDT', 'UNFIUSDT', 'UMAUSDT', 'ARPAUSDT', 'LDOUSDT',
+           'CFXUSDT', 'FETUSDT', 'ARDRUSDT', 'WAVESUSDT', 'LUNCUSDT', 'LOOMUSDT', 'KDAUSDT', 'STORJUSDT', 'BOMEUSDT',
+           'ATAUSDT', 'FDUSDUSDT', 'SANDUSDT', 'FTMUSDT', 'BETAUSDT', 'PDAUSDT', 'PENDLEUSDT', 'BONKUSDT', 'CHZUSDT',
+           'ASTRUSDT', 'SFPUSDT', 'AEVOUSDT', 'GASUSDT', 'LUNAUSDT', 'RONINUSDT', 'PSGUSDT', 'DFUSDT', 'AGLDUSDT',
+           'FUNUSDT', 'TWTUSDT', 'SOLUSDT', 'ZENUSDT', 'FIROUSDT', 'HARDUSDT', 'USTCUSDT', 'JOEUSDT', 'MTLUSDT',
+           'METISUSDT', 'STPTUSDT', 'KEYUSDT', 'LPTUSDT', 'RADUSDT', 'QKCUSDT', 'WBETHUSDT', 'YGGUSDT', 'BAKEUSDT',
+           'GALUSDT', 'NFPUSDT', 'XAIUSDT', 'AKROUSDT', 'BSWUSDT', 'ALCXUSDT', 'INJUSDT', 'ONGUSDT', 'VITEUSDT',
+           'FIOUSDT', 'PYRUSDT', 'SUNUSDT', 'STXUSDT', 'IOTAUSDT', 'PYTHUSDT', 'COMPUSDT', 'IOSTUSDT', 'SCRTUSDT',
+           'ORDIUSDT', 'TUSDUSDT', 'ALPACAUSDT', 'BATUSDT', 'GRTUSDT', 'AVAXUSDT', 'EOSUSDT', 'FORUSDT', 'AGIXUSDT',
+           'NTRNUSDT', 'BCHUSDT', 'CVCUSDT', 'ETCUSDT', 'HBARUSDT', 'COMBOUSDT', 'CHRUSDT', 'ADAUSDT', 'IOTXUSDT',
+           'DASHUSDT', 'SPELLUSDT', 'DEXEUSDT', 'CKBUSDT', 'ALTUSDT', 'CHESSUSDT', 'LITUSDT', 'RVNUSDT', 'RNDRUSDT',
+           'FISUSDT', 'RPLUSDT', 'CTKUSDT', 'C98USDT', 'KP3RUSDT', 'DODOUSDT', 'ASRUSDT', 'SKLUSDT', 'KMDUSDT',
+           'USDPUSDT', 'VANRYUSDT', 'OXTUSDT', 'CLVUSDT', 'SUSHIUSDT', 'MDXUSDT', 'OOKIUSDT', 'LTOUSDT', 'API3USDT',
+           'ACHUSDT', 'WOOUSDT', 'ENSUSDT', 'DEGOUSDT', 'MANTAUSDT', 'ARKMUSDT', 'TKOUSDT', 'CAKEUSDT', 'BADGERUSDT',
+           'XTZUSDT', 'AXLUSDT', 'SEIUSDT', 'PEPEUSDT', 'YFIUSDT', 'QTUMUSDT', 'LQTYUSDT', 'ARUSDT', 'TRUUSDT',
+           'BNTUSDT', 'GNOUSDT', 'POWRUSDT', 'PUNDIXUSDT', 'JUVUSDT', 'KSMUSDT', 'LEVERUSDT', 'COSUSDT', 'DATAUSDT',
+           'XVSUSDT', 'LRCUSDT', 'EDUUSDT', 'PORTOUSDT', 'FRONTUSDT', 'OPUSDT', 'HOTUSDT', 'OGUSDT', 'MASKUSDT',
+           'DENTUSDT', 'MAGICUSDT', 'CVPUSDT', 'BANDUSDT', 'MATICUSDT', 'GLMRUSDT', 'LOKAUSDT', 'IRISUSDT', 'IMXUSDT',
+           'GHSTUSDT', 'ACMUSDT', 'LINAUSDT', 'AAVEUSDT', 'ALICEUSDT', 'DREPUSDT', 'PIXELUSDT', 'SYSUSDT', 'MOVRUSDT',
+           'AMPUSDT', 'XVGUSDT', 'GTCUSDT', 'ASTUSDT', 'NKNUSDT', 'BURGERUSDT', 'NEXOUSDT', 'VOXELUSDT', 'XECUSDT',
+           'MOBUSDT', 'QIUSDT', 'BELUSDT', 'WAXPUSDT', 'ROSEUSDT', 'ZECUSDT', 'ALGOUSDT', 'USDCUSDT', 'FILUSDT',
+           'AVAUSDT', 'REEFUSDT', 'PHAUSDT', 'MINAUSDT', 'ZRXUSDT', 'ONTUSDT', 'DIAUSDT', 'SNXUSDT', 'UTKUSDT',
+           'FIDAUSDT', 'DUSKUSDT', 'MANAUSDT', 'AUCTIONUSDT', 'APTUSDT', 'ACEUSDT', 'ALPINEUSDT', 'XRPUSDT']
+symbols_tvl = ['CELRUSDT', 'DIAUSDT', 'TKOUSDT', 'HIGHUSDT', 'API3USDT', 'JOEUSDT', 'AXLUSDT', 'SSVUSDT', 'METISUSDT',
+               'CHRUSDT', 'SUSHIUSDT', 'AGLDUSDT', 'VOXELUSDT', 'GTCUSDT', 'FUNUSDT', 'MLNUSDT', 'XVGUSDT', 'ARKMUSDT',
+               'PENDLEUSDT', 'AVAUSDT', 'DODOUSDT', 'MOBUSDT', 'SCRTUSDT', 'MAVUSDT', 'ORDIUSDT', 'STORJUSDT',
+               'FIROUSDT', 'KDAUSDT', 'SYNUSDT', 'AUCTIONUSDT', 'LPTUSDT', 'ZRXUSDT', 'OGNUSDT', 'CYBERUSDT',
+               'GLMRUSDT', 'UMAUSDT', 'POLSUSDT', 'XVSUSDT', 'LOKAUSDT', 'WAVESUSDT', 'MBOXUSDT', 'FLUXUSDT', 'STGUSDT',
+               'HARDUSDT', 'WAXPUSDT', 'ALPACAUSDT', 'GALUSDT', 'C98USDT', 'QIUSDT', 'GNSUSDT', 'PERPUSDT', 'RAYUSDT',
+               'RSRUSDT', 'BLZUSDT', 'BAKEUSDT', 'BIFIUSDT', 'YGGUSDT', 'SPELLUSDT', 'BANDUSDT', 'LQTYUSDT', 'IDUSDT',
+               'RDNTUSDT', 'MAGICUSDT']
 client = Spot()
 
 
@@ -73,7 +71,6 @@ def job():
     print(datetime.datetime.now())
     alert = []
     alert_tvl = []
-    alert_boom = []
     for symbol in symbols:
         kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
         # 最高量所在索引,价格
@@ -86,7 +83,7 @@ def job():
             vol = kline_hour[kline_vol][5]
             index_range = range(kline_vol + 1, 6)
             # 爆量阴K,没有反包
-            if kline_hour[kline_vol][1] > price_vol > price:
+            if kline_hour[kline_vol][1] > max(price_vol, price):
                 stop = True
         else:
             continue
@@ -101,24 +98,13 @@ def job():
             kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
             zf = (kline_day[4] / kline_day[1] - 1) * 100
             if symbol in symbols_tvl:
-                alert_tvl.append((symbol, price, zf, boom - kline_distance, -boom))
-            # if boom == len(index_range):
-            #     alert_boom.append((symbol, price, zf, boom - kline_distance, -boom))
-            # else:
-            alert.append((symbol, price, zf, boom - kline_distance, -boom))
-    # if alert_boom:
-    #     alert_boom = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
-    #                   sorted(alert_boom, key=lambda x: (x[3], x[4],x[2]), reverse=True)]
-    #     json = {
-    #         "msgtype": "text",
-    #         "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert_boom)}
-    #     }
-    #     session.post(
-    #         url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
-    #         json=json)
+                alert_tvl.append(
+                    (symbol, price, zf, boom - kline_distance, (price - kline_hour[-1][2]) / kline_hour[-1][1]))
+            alert.append(
+                (symbol, price, zf, boom - kline_distance, (price - kline_hour[-1][2]) / kline_hour[-1][1]))
     if alert:
         alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
-                 sorted(alert, key=lambda x: (x[3], x[4], x[2]), reverse=True)]
+                 sorted(alert, key=lambda x: (x[3], x[4]), reverse=True)]
         json = {
             "msgtype": "text",
             "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert)}
@@ -128,7 +114,7 @@ def job():
             json=json)
     if alert_tvl:
         alert_tvl = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
-                     sorted(alert_tvl, key=lambda x: (x[3], x[4], x[2]), reverse=True)]
+                     sorted(alert_tvl, key=lambda x: (x[3], x[4]), reverse=True)]
         json = {
             "msgtype": "text",
             "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert_tvl)}
