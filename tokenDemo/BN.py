@@ -74,11 +74,9 @@ def job():
     alert_boom = []
     for symbol in symbols:
         kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
-        # 最高量所在索引,价格
+        # 最高量所在索引
         kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
-
-        stop = False
-        # 最高量之后的索引范围，所爆量
+        # 爆量不能是最后一根K线
         if 2 < kline_vol < 6:  # and price_close >= kline_hour[kline_vol][1] and price_close >= kline_hour[kline_vol - 1][1]:
             price_vol_close = kline_hour[kline_vol][4]
             price_vol_open = kline_hour[kline_vol][1]
@@ -88,17 +86,17 @@ def job():
             index_range = range(kline_vol + 1, 6)
             # 爆量阴K,没有反包或跌破爆量K线实体
             if price_vol_open > max(price_vol_close, price_close) or price_close < min(price_vol_open, price_vol_close):
-                stop = True
+                continue
         else:
             continue
         # 当前为爆量后缩量真阳K
-        if not stop and price_close > price_open and price_close > kline_hour[-2][4] and vol >= kline_hour[-1][
+        if price_close > price_open and price_close > kline_hour[-2][4] and vol >= kline_hour[-1][
             5] * 2 and vol >= \
                 max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
             # 爆量之后阳K数量
             boom = len(list(filter(lambda x: x >= 0, [kline_hour[i][4] - kline_hour[i][1] for i in index_range])))
             kline_distance = 6 - kline_vol
-            # 获取涨幅
+            # 当日获取涨幅
             kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
             zf = (kline_day[4] / kline_day[1] - 1) * 100
             if symbol in symbols_tvl:
@@ -111,31 +109,31 @@ def job():
                 alert.append(
                     (symbol, price_close, zf, boom - kline_distance, (price_close - kline_hour[-1][2]) / price_open))
     if alert_boom:
-        alert_boom = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
-                      sorted(alert_boom, key=lambda x: (x[3], x[4]), reverse=True)]
+        alert_boom = [f'{i + 1}.{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for i, a in
+                      enumerate(sorted(alert_boom, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert_boom)}
+            "text": {'content': '\n-------\n'.join(alert_boom)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
             json=json)
     if alert:
-        alert = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
-                 sorted(alert, key=lambda x: (x[3], x[4]), reverse=True)]
+        alert = [f'{i + 1}.{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for i, a in
+                 enumerate(sorted(alert, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert)}
+            "text": {'content': '\n-------\n'.join(alert)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             json=json)
     if alert_tvl:
-        alert_tvl = [f'{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for a in
-                     sorted(alert_tvl, key=lambda x: (x[3], x[4]), reverse=True)]
+        alert_tvl = [f'{i + 1}.{a[0]}\n现价:{a[1]}\n涨幅:{a[2]}' for i, a in
+                     enumerate(sorted(alert_tvl, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': '\n💰💰💰💰💰💰💰\n'.join(alert_tvl)}
+            "text": {'content': '\n-------\n'.join(alert_tvl)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb15fa90-dee0-4463-896d-2acf26619eaf',
@@ -146,7 +144,6 @@ if __name__ == "__main__":
     job()
     # 设置任务调度
     scheduler.add_job(job, 'cron', minute='00', second='10')
-
     # 启动调度器
     scheduler.start()
 # # Get account information
