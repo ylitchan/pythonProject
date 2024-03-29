@@ -88,7 +88,7 @@ def job():
             if price_close >= max(kline_hour[:-1], key=lambda x: x[2])[2] and vol >= kline_hour[-1][5] * 2 and vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
                 # 爆量之后阳K数量
-                boom = sum(1 for sublist in kline_hour[kline_vol:-1] if sublist[4] > sublist[1])
+                boom = sum(1 for sublist in kline_hour[kline_vol:-1] if sublist[4] >= sublist[1])
                 kline_distance = 6 - kline_vol
                 # # 当日获取涨幅
                 # kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]

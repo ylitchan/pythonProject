@@ -73,7 +73,7 @@ def job():
                 boom = vol / max(kline_hour, key=lambda x: x[5])[5]
                 if boom >= 1:
                     alert_boom.append(
-                        (symbol, price_close, zf, sum(1 for sublist in kline_hour if sublist[4] > sublist[1]), boom))
+                        (symbol, price_close, zf, sum(1 for sublist in kline_hour if sublist[4] >= sublist[1]), boom))
             else:
                 continue
         if alert_boom:
