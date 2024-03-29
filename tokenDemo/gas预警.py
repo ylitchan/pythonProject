@@ -22,7 +22,7 @@ def job():
     gas = html_tree.xpath('//meta[@name="Description"]/@content')
     if gas:
         gas = int(re.search(r'\d+', gas[0].split('|')[-1]).group())
-        if gas <= 14:
+        if gas <= 20:
             json = {
                 "msgtype": "text",
                 "text": {'content': f'Gas\nHigh:{gas} gwei'}

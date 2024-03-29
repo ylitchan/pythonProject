@@ -67,8 +67,16 @@ def job():
     alert = []
     alert_tvl = []
     alert_boom = []
+    p = 0
+    n = 0
     for symbol in symbols:
-        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
+        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=25)[:-1]]
+        price_close = kline_hour[-1][4]
+        zf = (price_close / kline_hour[0][1] - 1) * 100
+        if zf > 0:
+            p += 1
+        else:
+            n += 1
         # 最高量所在索引
         kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
         # 爆量不能是最后一根K线
@@ -76,7 +84,6 @@ def job():
             price_vol_close = kline_hour[kline_vol][4]
             price_vol_open = kline_hour[kline_vol][1]
             price_open = kline_hour[-1][1]
-            price_close = kline_hour[-1][4]
             vol = kline_hour[kline_vol][5]
             # index_range = range(kline_vol + 1, 6)
             # 真阳K
@@ -91,9 +98,9 @@ def job():
                 boom = len(list(
                     filter(lambda x: x >= 0, [kline_hour[i][4] - kline_hour[i][1] for i in range(kline_vol + 1, 6)])))
                 kline_distance = 6 - kline_vol
-                # 当日获取涨幅
-                kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
-                zf = (kline_day[4] / kline_day[1] - 1) * 100
+                # # 当日获取涨幅
+                # kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
+                # zf = (kline_day[4] / kline_day[1] - 1) * 100
                 if symbol in symbols_tvl:
                     alert_tvl.append(
                         (
@@ -112,7 +119,7 @@ def job():
         else:
             continue
     if alert_boom:
-        alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_boom = [f'0.涨跌比:{p}:{n}\n{i + 1}.{j[0]}\n现价:{j[1]}\n24h涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
@@ -122,7 +129,7 @@ def job():
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
             json=json)
     if alert:
-        alert = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert = [f'0.涨跌比:{p}:{n}\n{i + 1}.{j[0]}\n现价:{j[1]}\n24h涨幅:{j[2]}' for i, j in
                  enumerate(sorted(alert, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
@@ -132,7 +139,7 @@ def job():
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             json=json)
     if alert_tvl:
-        alert_tvl = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_tvl = [f'0.涨跌比:{p}:{n}\n{i + 1}.{j[0]}\n现价:{j[1]}\n24h涨幅:{j[2]}' for i, j in
                      enumerate(sorted(alert_tvl, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
