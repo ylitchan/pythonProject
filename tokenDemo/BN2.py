@@ -1,5 +1,6 @@
 import datetime
 import gc
+import time
 import requests
 from binance.spot import Spot
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -52,81 +53,38 @@ symbols = {'PORTALUSDT', 'PHBUSDT', 'PNTUSDT', 'ADXUSDT', 'APEUSDT', 'SUPERUSDT'
            'MOBUSDT', 'QIUSDT', 'BELUSDT', 'WAXPUSDT', 'ROSEUSDT', 'ZECUSDT', 'ALGOUSDT', 'USDCUSDT', 'FILUSDT',
            'AVAUSDT', 'REEFUSDT', 'PHAUSDT', 'MINAUSDT', 'ZRXUSDT', 'ONTUSDT', 'DIAUSDT', 'SNXUSDT', 'UTKUSDT',
            'FIDAUSDT', 'DUSKUSDT', 'MANAUSDT', 'AUCTIONUSDT', 'APTUSDT', 'ACEUSDT', 'ALPINEUSDT', 'XRPUSDT'}
-symbols_tvl = {'CELRUSDT', 'DIAUSDT', 'TKOUSDT', 'HIGHUSDT', 'API3USDT', 'JOEUSDT', 'AXLUSDT', 'SSVUSDT', 'METISUSDT',
-               'CHRUSDT', 'SUSHIUSDT', 'AGLDUSDT', 'VOXELUSDT', 'GTCUSDT', 'FUNUSDT', 'MLNUSDT', 'XVGUSDT', 'ARKMUSDT',
-               'PENDLEUSDT', 'AVAUSDT', 'DODOUSDT', 'MOBUSDT', 'SCRTUSDT', 'MAVUSDT', 'ORDIUSDT', 'STORJUSDT',
-               'FIROUSDT', 'KDAUSDT', 'SYNUSDT', 'AUCTIONUSDT', 'LPTUSDT', 'ZRXUSDT', 'OGNUSDT', 'CYBERUSDT',
-               'GLMRUSDT', 'UMAUSDT', 'POLSUSDT', 'XVSUSDT', 'LOKAUSDT', 'WAVESUSDT', 'MBOXUSDT', 'FLUXUSDT', 'STGUSDT',
-               'HARDUSDT', 'WAXPUSDT', 'ALPACAUSDT', 'GALUSDT', 'C98USDT', 'QIUSDT', 'GNSUSDT', 'PERPUSDT', 'RAYUSDT',
-               'RSRUSDT', 'BLZUSDT', 'BAKEUSDT', 'BIFIUSDT', 'YGGUSDT', 'SPELLUSDT', 'BANDUSDT', 'LQTYUSDT', 'IDUSDT',
-               'RDNTUSDT', 'MAGICUSDT'}
 client = Spot()
 
 
 def job():
-    print(datetime.datetime.now())
-    alert = []
-    alert_tvl = []
-    p = 0
-    n = 0
-    for symbol in symbols:
-        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=25)[:-1]]
-        price_close = kline_hour[-1][4]
-        zf = (price_close / kline_hour[0][1] - 1) * 100
-        kline_hour = kline_hour[-7:]
-        if zf > 0:
-            p += 1
-        else:
-            n += 1
-        # 最高量所在索引
-        kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
-        # 爆量不能是最后一根K线
-        if 2 < kline_vol < 6:
+    for index in range(5):
+        print(datetime.datetime.now(), index)
+        alert_boom = []
+        for symbol in symbols:
+            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=24)]
+            price_close = kline_hour[-1][4]
             price_open = kline_hour[-1][1]
-            vol = kline_hour[kline_vol][5]
-            # 真阳K
-            high = max(kline_hour[:-1], key=lambda x: x[2])[2]
-            # 缩半量,爆倍量
-            if price_close >= high and vol >= kline_hour[-1][5] * 2 and vol >= \
-                    max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-                # 爆量之后阳K数量
-                boom = len(list(
-                    filter(lambda x: x >= 0, [kline_hour[i][4] - kline_hour[i][1] for i in range(kline_vol + 1, 6)])))
-                kline_distance = 6 - kline_vol
-                # # 当日获取涨幅
-                # kline_day = [float(sub) for sub in client.klines(symbol=symbol, interval="1d", limit=1)[-1]]
-                # zf = (kline_day[4] / kline_day[1] - 1) * 100
-                if symbol in symbols_tvl:
-                    alert_tvl.append(
-                        (
-                            symbol, price_close, zf, boom - kline_distance,
-                            (price_close - kline_hour[-1][2]) / price_open))
-                alert.append(
-                    (
-                        symbol, price_close, zf, boom - kline_distance,
-                        (price_close - kline_hour[-1][2]) / price_open))
-        else:
-            continue
-    if alert:
-        alert = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                 enumerate(sorted(alert, key=lambda x: (x[3], x[4]), reverse=True))]
-        json = {
-            "msgtype": "text",
-            "text": {'content': f'0.涨跌比:{p}:{n}\n-------\n' + '\n-------\n'.join(alert)}
-        }
-        session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-            json=json)
-    if alert_tvl:
-        alert_tvl = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                     enumerate(sorted(alert_tvl, key=lambda x: (x[3], x[4]), reverse=True))]
-        json = {
-            "msgtype": "text",
-            "text": {'content': f'0.涨跌比:{p}:{n}\n-------\n' + '\n-------\n'.join(alert_tvl)}
-        }
-        session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb15fa90-dee0-4463-896d-2acf26619eaf',
-            json=json)
+            vol = kline_hour[-1][5]
+            zf = (price_close / kline_hour[0][1] - 1) * 100
+            kline_hour = kline_hour[-4:-1]
+            if price_close >= price_open and price_close >= max(kline_hour, key=lambda x: x[2])[2]:
+                # 量比
+                boom = vol / max(kline_hour, key=lambda x: x[5])[5]
+                if boom >= 1:
+                    alert_boom.append((symbol, price_close, zf, boom))
+            else:
+                continue
+        if alert_boom:
+            alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+                          enumerate(sorted(alert_boom, key=lambda x: x[3], reverse=True))]
+            json = {
+                "msgtype": "text",
+                "text": {'content': '\n-------\n'.join(alert_boom)}
+            }
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
+                json=json)
+        time.sleep(300)
     gc.collect()
 
 

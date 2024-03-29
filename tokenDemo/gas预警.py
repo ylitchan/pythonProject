@@ -1,5 +1,5 @@
+import gc
 import re
-
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from lxml import etree
@@ -30,6 +30,7 @@ def job():
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
                 json=json)
+    gc.collect()
 
 
 if __name__ == "__main__":
