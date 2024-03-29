@@ -84,10 +84,8 @@ def job():
         if 2 < kline_vol < 6:
             price_open = kline_hour[-1][1]
             vol = kline_hour[kline_vol][5]
-            # 真阳K
-            high = max(kline_hour[:-1], key=lambda x: x[2])[2]
             # 缩半量,爆倍量
-            if price_close >= high and vol >= kline_hour[-1][5] * 2 and vol >= \
+            if price_close >= max(kline_hour[:-1], key=lambda x: x[2])[2] and vol >= kline_hour[-1][5] * 2 and vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
                 # 爆量之后阳K数量
                 boom = len(list(
