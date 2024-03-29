@@ -72,12 +72,13 @@ def job():
                 # 量比
                 boom = vol / max(kline_hour, key=lambda x: x[5])[5]
                 if boom >= 1:
-                    alert_boom.append((symbol, price_close, zf, boom))
+                    alert_boom.append(
+                        (symbol, price_close, zf, sum(1 for sublist in kline_hour if sublist[4] > sublist[1]), boom))
             else:
                 continue
         if alert_boom:
             alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                          enumerate(sorted(alert_boom, key=lambda x: x[3], reverse=True))]
+                          enumerate(sorted(alert_boom, key=lambda x: (x[3], x[4]), reverse=True))]
             json = {
                 "msgtype": "text",
                 "text": {'content': '\n-------\n'.join(alert_boom)}
