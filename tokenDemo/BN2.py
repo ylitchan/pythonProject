@@ -57,7 +57,7 @@ client = Spot()
 
 
 def job():
-    for index in range(5):
+    for index in range(8):
         print(datetime.datetime.now(), index)
         alert_boom = []
         for symbol in symbols:
@@ -85,13 +85,13 @@ def job():
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
                 json=json)
-        time.sleep(300)
+        time.sleep(180)
     gc.collect()
 
 
 if __name__ == "__main__":
-    job()
+    # job()
     # 设置任务调度
-    scheduler.add_job(job, 'cron', minute='00', second='3')
+    scheduler.add_job(job, 'cron', minute='03', second='00')
     # 启动调度器
     scheduler.start()
