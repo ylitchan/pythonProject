@@ -85,7 +85,7 @@ def job():
             price_open = kline_hour[-1][1]
             vol = kline_hour[kline_vol][5]
             # 反包之前K线,缩半量,爆倍量
-            if price_close >= max(kline_hour[:-1], key=lambda x: x[4])[4] and vol >= kline_hour[-1][
+            if price_close >= max(kline_hour[:-1], key=lambda x: x[2])[2] and vol >= kline_hour[-1][
                 5] * 2 and vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
                 # 爆量之后阳K数量
@@ -97,11 +97,11 @@ def job():
                 if symbol in symbols_tvl:
                     alert_tvl.append(
                         (
-                            symbol, price_close, zf, boom - kline_distance,
+                            symbol[-4], price_close, zf, boom - kline_distance,
                             (price_close - kline_hour[-1][2]) / price_open))
                 alert.append(
                     (
-                        symbol, price_close, zf, boom - kline_distance,
+                        symbol[:-4], price_close, zf, boom - kline_distance,
                         (price_close - kline_hour[-1][2]) / price_open))
         else:
             continue

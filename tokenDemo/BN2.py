@@ -57,7 +57,7 @@ client = Spot()
 
 
 def job():
-    for index in range(9):
+    for index in range(7):
         print(datetime.datetime.now(), index)
         alert_boom = []
         for symbol in symbols:
@@ -73,7 +73,7 @@ def job():
                 boom = vol / max(kline_hour, key=lambda x: x[5])[5]
                 if boom >= 1:
                     alert_boom.append(
-                        (symbol, price_close, zf, boom))
+                        (symbol[:-4], price_close, zf, boom))
             else:
                 continue
         if alert_boom:
