@@ -57,6 +57,7 @@ client = Spot()
 
 
 def job():
+    alert = set()
     for index in range(7):
         print(datetime.datetime.now(), index)
         alert_boom = []
@@ -71,7 +72,8 @@ def job():
             if price_close >= price_open and price_close >= max(kline_hour, key=lambda x: x[2])[2]:
                 # 量比
                 boom = vol / max(kline_hour, key=lambda x: x[5])[5]
-                if boom >= 1:
+                if boom >= 1 and symbol not in alert:
+                    alert.add(symbol)
                     alert_boom.append(
                         (symbol, price_close, zf, sum(1 for sublist in kline_hour if sublist[4] >= sublist[1]), boom))
             else:
