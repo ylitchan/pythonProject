@@ -67,6 +67,7 @@ def job():
             vol = kline_hour[-1][5]
             zf = (price_close / kline_hour[0][1] - 1) * 100
             kline_hour = kline_hour[-4:-1]
+            # 反包之前K线
             if price_close >= price_open and price_close >= max(kline_hour, key=lambda x: x[2])[2]:
                 # 量比
                 boom = vol / max(kline_hour, key=lambda x: x[5])[5]
