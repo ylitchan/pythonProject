@@ -1,3 +1,4 @@
+import datetime
 import gc
 import re
 import requests
@@ -22,6 +23,7 @@ def job():
     gas = html_tree.xpath('//meta[@name="Description"]/@content')
     if gas:
         gas = int(re.search(r'\d+', gas[0].split('|')[-1]).group())
+        print(datetime.datetime.now(), gas)
         if gas <= 20:
             json = {
                 "msgtype": "text",
