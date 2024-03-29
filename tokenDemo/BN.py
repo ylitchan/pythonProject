@@ -110,7 +110,7 @@ def job():
                  enumerate(sorted(alert, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': f'0.涨跌比:{p}:{n}\n-------\n' + '\n-------\n'.join(alert)}
+            "text": {'content': f'0.涨跌比\n{p}:{n}\n-------\n' + '\n-------\n'.join(alert)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
@@ -120,7 +120,7 @@ def job():
                      enumerate(sorted(alert_tvl, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': f'0.涨跌比:{p}:{n}\n-------\n' + '\n-------\n'.join(alert_tvl)}
+            "text": {'content': f'0.涨跌比\n{p}:{n}\n-------\n' + '\n-------\n'.join(alert_tvl)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb15fa90-dee0-4463-896d-2acf26619eaf',
