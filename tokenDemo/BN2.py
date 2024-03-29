@@ -57,7 +57,7 @@ client = Spot()
 
 
 def job():
-    for index in range(7):
+    for index in range(9):
         print(datetime.datetime.now(), index)
         alert_boom = []
         for symbol in symbols:
@@ -78,7 +78,7 @@ def job():
                 continue
         if alert_boom:
             alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                          enumerate(sorted(alert_boom, key=lambda x: x[3], reverse=True))]
+                          enumerate(sorted(alert_boom, key=lambda x: x[3]))]
             json = {
                 "msgtype": "text",
                 "text": {'content': '\n-------\n'.join(alert_boom)}
@@ -86,13 +86,13 @@ def job():
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
                 json=json)
-        time.sleep(120)
+        time.sleep(60)
     gc.collect()
 
 
 if __name__ == "__main__":
     # job()
     # 设置任务调度
-    scheduler.add_job(job, 'cron', minute='03', second='00')
+    scheduler.add_job(job, 'cron', minute='05', second='00')
     # 启动调度器
     scheduler.start()
