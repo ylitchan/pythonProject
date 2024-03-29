@@ -119,31 +119,31 @@ def job():
         else:
             continue
     if alert_boom:
-        alert_boom = [f'0.涨跌比:{p}:{n}\n-------\n{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': '\n-------\n'.join(alert_boom)}
+            "text": {'content': f'0.涨跌比:{p}:{n}\n-------\n' + '\n-------\n'.join(alert_boom)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
             json=json)
     if alert:
-        alert = [f'0.涨跌比:{p}:{n}\n-------\n{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                  enumerate(sorted(alert, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': '\n-------\n'.join(alert)}
+            "text": {'content': f'0.涨跌比:{p}:{n}\n-------\n' + '\n-------\n'.join(alert)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             json=json)
     if alert_tvl:
-        alert_tvl = [f'0.涨跌比:{p}:{n}\n-------\n{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_tvl = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                      enumerate(sorted(alert_tvl, key=lambda x: (x[3], x[4]), reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': '\n-------\n'.join(alert_tvl)}
+            "text": {'content': f'0.涨跌比:{p}:{n}\n-------\n' + '\n-------\n'.join(alert_tvl)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb15fa90-dee0-4463-896d-2acf26619eaf',
