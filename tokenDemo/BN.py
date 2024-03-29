@@ -64,7 +64,7 @@ client = Spot()
 
 
 def job():
-    print(datetime.datetime.now())
+    print(datetime.datetime.now(), '任务开始')
     alert = []
     alert_tvl = []
     p = 0
@@ -125,6 +125,7 @@ def job():
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=bb15fa90-dee0-4463-896d-2acf26619eaf',
             json=json)
+    print(datetime.datetime.now(), '任务结束')
     gc.collect()
 
 

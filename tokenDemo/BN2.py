@@ -87,6 +87,7 @@ def job():
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
                 json=json)
         time.sleep(60)
+    print(datetime.datetime.now(), '任务结束')
     gc.collect()
 
 
