@@ -57,7 +57,7 @@ client = Spot()
 
 
 def job():
-    for index in range(9):
+    for index in range(7):
         print(datetime.datetime.now(), index)
         alert_boom = []
         for symbol in symbols:
