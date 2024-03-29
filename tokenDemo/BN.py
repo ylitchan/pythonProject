@@ -153,6 +153,6 @@ def job():
 if __name__ == "__main__":
     job()
     # 设置任务调度
-    scheduler.add_job(job, 'cron', minute='00', second='10')
+    scheduler.add_job(job, 'cron', minute='00', second='3')
     # 启动调度器
     scheduler.start()
