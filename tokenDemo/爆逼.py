@@ -60,27 +60,33 @@ def job():
     alert_b = []
     alert_boom = []
     for symbol in symbols:
-        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
-        price_close = kline_hour[-1][4]
-        price_open = kline_hour[-1][1]
-        # 最高量所在索引
-        kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
-        price_close_vol = kline_hour[kline_vol][4]
-        vol = kline_hour[kline_vol][5]
-        if kline_vol > 2 and price_close >= price_open and price_close_vol >= \
-                max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
-                max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-            zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
-            if kline_vol == 6:
-                alert_boom.append(
-                    (symbol[:-4], price_close, zf))
-            elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
-                    kline_hour[-1][5] * 2:
-                alert_b.append((symbol[:-4], price_close, zf))
+        try:
+            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
+            price_close = kline_hour[-1][4]
+            price_open = kline_hour[-1][1]
+            # 最高量所在索引
+            kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
+            price_close_vol = kline_hour[kline_vol][4]
+            vol = kline_hour[kline_vol][5]
+            if kline_vol > 2 and price_close >= price_open and price_close_vol >= \
+                    max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
+                    max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
+                zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
+                if kline_vol == 6:
+                    alert_boom.append(
+                        (symbol[:-4], price_close, zf))
+                elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
+                        kline_hour[-1][5] * 2:
+                    alert_b.append((symbol[:-4], price_close, zf))
+                else:
+                    continue
             else:
                 continue
-        else:
+        except Exception as e:
+            print(str(e))
             continue
+        else:
+            pass
     if alert_boom + alert_b:
         alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: x[-1], reverse=True))]
