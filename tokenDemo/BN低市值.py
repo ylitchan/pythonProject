@@ -59,8 +59,8 @@ def job():
                    enumerate(sorted(alert_b, key=lambda x: x[-1], reverse=True))]
         json = {
             "msgtype": "text",
-            "text": {'content': f'===爆===\n' + '\n-------\n'.join(
-                alert_boom) + f'\n===逼===\n' + '\n-------\n'.join(alert_b)}
+            "text": {'content': '\n-------\n'.join(
+                alert_boom) + '\n-------\n'.join(alert_b)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=2caca472-4893-490d-aa1b-76e69f4e9b3c',
