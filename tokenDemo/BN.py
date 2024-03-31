@@ -52,12 +52,12 @@ symbols = {'PORTALUSDT', 'PHBUSDT', 'PNTUSDT', 'ADXUSDT', 'APEUSDT', 'SUPERUSDT'
            'AVAUSDT', 'REEFUSDT', 'PHAUSDT', 'MINAUSDT', 'ZRXUSDT', 'ONTUSDT', 'DIAUSDT', 'SNXUSDT', 'UTKUSDT',
            'FIDAUSDT', 'DUSKUSDT', 'MANAUSDT', 'AUCTIONUSDT', 'APTUSDT', 'ACEUSDT', 'ALPINEUSDT', 'XRPUSDT'}
 symbols_tvl = {'CELRUSDT', 'DIAUSDT', 'TKOUSDT', 'HIGHUSDT', 'API3USDT', 'JOEUSDT', 'AXLUSDT', 'SSVUSDT', 'METISUSDT',
-               'CHRUSDT', 'SUSHIUSDT', 'AGLDUSDT', 'VOXELUSDT', 'GTCUSDT', 'FUNUSDT', 'MLNUSDT', 'XVGUSDT', 'ARKMUSDT',
-               'PENDLEUSDT', 'AVAUSDT', 'DODOUSDT', 'MOBUSDT', 'SCRTUSDT', 'MAVUSDT', 'ORDIUSDT', 'STORJUSDT',
-               'FIROUSDT', 'KDAUSDT', 'SYNUSDT', 'AUCTIONUSDT', 'LPTUSDT', 'ZRXUSDT', 'OGNUSDT', 'CYBERUSDT',
-               'GLMRUSDT', 'UMAUSDT', 'POLSUSDT', 'XVSUSDT', 'LOKAUSDT', 'WAVESUSDT', 'MBOXUSDT', 'FLUXUSDT', 'STGUSDT',
-               'HARDUSDT', 'WAXPUSDT', 'ALPACAUSDT', 'GALUSDT', 'C98USDT', 'QIUSDT', 'GNSUSDT', 'PERPUSDT', 'RAYUSDT',
-               'RSRUSDT', 'BLZUSDT', 'BAKEUSDT', 'BIFIUSDT', 'YGGUSDT', 'SPELLUSDT', 'BANDUSDT', 'LQTYUSDT', 'IDUSDT',
+               'CHRUSDT', 'SUSHIUSDT', 'VOXELUSDT', 'GTCUSDT', 'FUNUSDT', 'MLNUSDT', 'XVGUSDT', 'ARKMUSDT',
+               'PENDLEUSDT', 'AVAUSDT', 'MOBUSDT', 'SCRTUSDT', 'MAVUSDT', 'ORDIUSDT', 'STORJUSDT',
+               'FIROUSDT', 'KDAUSDT', 'SYNUSDT', 'LPTUSDT', 'ZRXUSDT', 'OGNUSDT', 'CYBERUSDT',
+               'GLMRUSDT', 'UMAUSDT', 'POLSUSDT', 'XVSUSDT', 'LOKAUSDT', 'MBOXUSDT', 'FLUXUSDT', 'STGUSDT',
+               'HARDUSDT', 'WAXPUSDT', 'ALPACAUSDT', 'GALUSDT', 'QIUSDT', 'GNSUSDT', 'PERPUSDT', 'RAYUSDT',
+               'RSRUSDT', 'BLZUSDT', 'BAKEUSDT', 'BIFIUSDT', 'SPELLUSDT', 'BANDUSDT', 'LQTYUSDT', 'IDUSDT',
                'RDNTUSDT', 'MAGICUSDT'}
 symbols_dwf = {'DODOUSDT', 'AUCTIONUSDT', 'WAVESUSDT', 'YGGUSDT', 'AGLDUSDT', 'C98USDT'}
 client = Spot()
@@ -82,10 +82,10 @@ def job():
                 zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
                 if kline_vol == 6:
                     alert_boom.append(
-                        (symbol[:-4], price_close, zf))
+                        (symbol, price_close, zf))
                 elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
                         kline_hour[-1][5] * 2:
-                    alert_b.append((symbol[:-4], price_close, zf))
+                    alert_b.append((symbol, price_close, zf))
                 else:
                     continue
             else:
@@ -97,9 +97,9 @@ def job():
             pass
     alert = alert_boom + alert_b
     if alert:
-        alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: x[-1], reverse=True))]
-        alert_b = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                    enumerate(sorted(alert_b, key=lambda x: x[-1], reverse=True))]
         json = {
             "msgtype": "text",
@@ -110,10 +110,10 @@ def job():
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
             json=json)
         alert_sort = enumerate(sorted(alert, key=lambda x: x[-1], reverse=True))
-        alert_tvl = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                     alert_sort if j in symbols_tvl]
-        alert_dwf = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                     alert_sort if j in symbols_dwf]
+        alert_tvl = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+                     alert_sort if j[0] in symbols_tvl]
+        alert_dwf = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+                     alert_sort if j[0] in symbols_dwf]
         if alert_tvl + alert_dwf:
             json = {
                 "msgtype": "text",

@@ -73,10 +73,10 @@ def job():
                 zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
                 if kline_vol == 6:
                     alert_boom.append(
-                        (symbol[:-4], price_close, zf))
+                        (symbol, price_close, zf))
                 elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
                         kline_hour[-1][5] * 2:
-                    alert_b.append((symbol[:-4], price_close, zf))
+                    alert_b.append((symbol, price_close, zf))
                 else:
                     continue
             else:
@@ -87,9 +87,9 @@ def job():
         else:
             pass
     if alert_boom + alert_b:
-        alert_boom = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: x[-1], reverse=True))]
-        alert_b = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                    enumerate(sorted(alert_b, key=lambda x: x[-1], reverse=True))]
         json = {
             "msgtype": "text",
