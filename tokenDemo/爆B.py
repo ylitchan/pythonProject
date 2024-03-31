@@ -94,7 +94,7 @@ def job():
         json = {
             "msgtype": "text",
             "text": {'content': f'===爆===\n' + '\n-------\n'.join(
-                alert_boom) + f'\n===逼===\n' + '\n-------\n'.join(alert_b)}
+                alert_boom) + f'\n===B===\n' + '\n-------\n'.join(alert_b)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
