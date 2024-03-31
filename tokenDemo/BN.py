@@ -109,10 +109,11 @@ def job():
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
             json=json)
+        alert_sort = enumerate(sorted(alert, key=lambda x: x[-1], reverse=True))
         alert_tvl = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                     enumerate(sorted(alert, key=lambda x: x[-1], reverse=True)) if j in symbols_tvl]
+                     alert_sort if j in symbols_tvl]
         alert_dwf = [f'{i + 1}.{j[0]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                     enumerate(sorted(alert, key=lambda x: x[-1], reverse=True)) if j in symbols_dwf]
+                     alert_sort if j in symbols_dwf]
         if alert_tvl + alert_dwf:
             json = {
                 "msgtype": "text",
