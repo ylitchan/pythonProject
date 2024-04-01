@@ -69,7 +69,8 @@ def job():
             kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
             price_close_vol = kline_hour[kline_vol][4]
             vol = kline_hour[kline_vol][5]
-            if kline_vol > 2 and price_close >= price_open and price_close_vol >= \
+            zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
+            if zf >= 2.99 and kline_vol > 2 and price_close >= price_open and price_close_vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
                 zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
