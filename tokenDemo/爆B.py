@@ -73,7 +73,6 @@ def job():
             if zf >= 2.99 and kline_vol > 2 and price_close >= price_open and price_close_vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-                zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
                 if kline_vol == 6:
                     alert_boom.append(
                         (symbol, price_close, zf, symbol[:-4] in symbols_asset))
