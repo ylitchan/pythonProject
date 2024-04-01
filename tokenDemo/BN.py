@@ -60,11 +60,13 @@ symbols_tvl = {'CELRUSDT', 'DIAUSDT', 'TKOUSDT', 'HIGHUSDT', 'API3USDT', 'JOEUSD
                'RSRUSDT', 'BLZUSDT', 'BAKEUSDT', 'BIFIUSDT', 'SPELLUSDT', 'BANDUSDT', 'LQTYUSDT', 'IDUSDT',
                'RDNTUSDT', 'MAGICUSDT'}
 symbols_dwf = {'DODOUSDT', 'AUCTIONUSDT', 'WAVESUSDT', 'YGGUSDT', 'AGLDUSDT', 'C98USDT'}
-client = Spot()
+client = Spot(api_key='A19rSNSOEbZqeQrKaV1wyoyhuDOFomARNu8omNQaII3Iv1DvYorfN5OeVlTv198A',
+              api_secret='fF6yzKflVZNaDbjYUvh2nyc5aMgzSgst8GnxF3hixE9UKwKnjWVxOfg7gipqTztD')
 
 
 def job():
     print(datetime.datetime.now(), '任务开始')
+    symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
     alert_b = []
     alert_boom = []
     for symbol in symbols:
@@ -82,10 +84,10 @@ def job():
                 zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
                 if kline_vol == 6:
                     alert_boom.append(
-                        (symbol, price_close, zf))
+                        (symbol, price_close, zf, symbol[:-4] in symbols_asset))
                 elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
                         kline_hour[-1][5] * 2:
-                    alert_b.append((symbol, price_close, zf))
+                    alert_b.append((symbol, price_close, zf, symbol[:-4] in symbols_asset))
                 else:
                     continue
             else:
@@ -97,10 +99,10 @@ def job():
             pass
     alert = alert_boom + alert_b
     if alert:
-        alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                      enumerate(sorted(alert_boom, key=lambda x: x[-1], reverse=True))]
-        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                   enumerate(sorted(alert_b, key=lambda x: x[-1], reverse=True))]
+        alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
+                      enumerate(sorted(alert_boom, key=lambda x: x[2], reverse=True))]
+        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
+                   enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))]
         json = {
             "msgtype": "text",
             "text": {'content': f'===爆===\n' + '\n-------\n'.join(
@@ -109,10 +111,10 @@ def job():
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
             json=json)
-        alert_sort = enumerate(sorted(alert, key=lambda x: x[-1], reverse=True))
-        alert_tvl = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_sort = enumerate(sorted(alert, key=lambda x: x[2], reverse=True))
+        alert_tvl = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
                      alert_sort if j[0] in symbols_tvl]
-        alert_dwf = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        alert_dwf = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
                      alert_sort if j[0] in symbols_dwf]
         if alert_tvl + alert_dwf:
             json = {
