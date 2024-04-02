@@ -68,7 +68,6 @@ def job():
     print(datetime.datetime.now(), '任务开始')
     symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
     alert_b = []
-    alert_boom = []
     for symbol in symbols:
         try:
             kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
@@ -79,17 +78,11 @@ def job():
             price_close_vol = kline_hour[kline_vol][4]
             vol = kline_hour[kline_vol][5]
             zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
-            if zf >= 2.99 and kline_vol > 2 and price_close >= price_open and price_close_vol >= \
-                    max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
-                    max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-                if kline_vol == 6:
-                    alert_boom.append(
-                        (symbol, price_close, zf, symbol[:-4] in symbols_asset))
-                elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
-                        kline_hour[-1][5] * 2:
-                    alert_b.append((symbol, price_close, zf, symbol[:-4] in symbols_asset))
-                else:
-                    continue
+            # 爆倍量拉升3个点以上,缩半量上涨
+            if (zf >= 2.99 and 6 > kline_vol > 2 and price_close >= max(price_open, price_close_vol)
+                    and price_close_vol >= max(kline_hour[:kline_vol], key=lambda x: x[2])[2]
+                    and vol >= max(max(kline_hour[:kline_vol], key=lambda x: x[5])[5], kline_hour[-1][5]) * 2):
+                alert_b.append((symbol, price_close, zf, symbol[:-4] in symbols_asset))
             else:
                 continue
         except Exception as e:
@@ -97,25 +90,19 @@ def job():
             continue
         else:
             pass
-    alert = alert_boom + alert_b
-    if alert:
-        alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
-                      enumerate(sorted(alert_boom, key=lambda x: x[2], reverse=True))]
-        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
-                   enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))]
+    if alert_b:
+        alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
+        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in alert_b_sort]
         json = {
             "msgtype": "text",
-            "text": {'content': f'===爆===\n' + '\n-------\n'.join(
-                alert_boom) + f'\n===B===\n' + '\n-------\n'.join(alert_b)}
-        }
+            "text": {'content': f'===爆B===\n' + '\n-------\n'.join(alert_b)}}
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
             json=json)
-        alert_sort = enumerate(sorted(alert, key=lambda x: x[2], reverse=True))
         alert_tvl = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
-                     alert_sort if j[0] in symbols_tvl]
+                     alert_b_sort if j[0] in symbols_tvl]
         alert_dwf = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
-                     alert_sort if j[0] in symbols_dwf]
+                     alert_b_sort if j[0] in symbols_dwf]
         if alert_tvl + alert_dwf:
             json = {
                 "msgtype": "text",
