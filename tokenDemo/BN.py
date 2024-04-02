@@ -82,12 +82,12 @@ def job():
             if zf >= 2.99 and kline_vol > 2 and price_close >= price_open and price_close_vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-                if kline_vol == 6:
+                if kline_vol == 6 and symbol[:-4] in symbols_asset:
                     alert_boom.append(
-                        (symbol, price_close, zf, symbol[:-4] in symbols_asset))
+                        (symbol, price_close, zf))
                 elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
                         kline_hour[-1][5] * 2:
-                    alert_b.append((symbol, price_close, zf, symbol[:-4] in symbols_asset))
+                    alert_b.append((symbol, price_close, zf))
                 else:
                     continue
             else:
@@ -99,9 +99,9 @@ def job():
             pass
     if alert_boom + alert_b:
         alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
-        alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
+        alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: x[2], reverse=True))]
-        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in alert_b_sort]
+        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in alert_b_sort]
         json = {
             "msgtype": "text",
             "text": {'content': f'===爆===\n' + '\n-------\n'.join(
@@ -110,9 +110,9 @@ def job():
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
             json=json)
-        alert_tvl = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
+        alert_tvl = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                      alert_b_sort if j[0] in symbols_tvl]
-        alert_dwf = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in
+        alert_dwf = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                      alert_b_sort if j[0] in symbols_dwf]
         if alert_tvl + alert_dwf:
             json = {
