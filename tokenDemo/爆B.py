@@ -22,7 +22,7 @@ def job():
             "query_area": "",
             "block_list": "",
             "add_info": "{'urp':{'scene':1,'company':1,'business':1},'contentType':'json','searchInfo':true}",
-            "question": "昨日爆量涨停;今日高开;竞价异动说明;涨停原因类别;集合竞价评级",
+            "question": "昨日爆量涨停;今日高开;竞价异动说明;涨停原因类别;连续涨停天数;集合竞价评级",
             "perpage": "50",
             "page": 1,
             "secondary_intent": "stock",
@@ -30,7 +30,7 @@ def job():
             "rsh": "Ths_iwencai_Xuangu_aw7w649fwmdt9xxywken1478hz1jfcgo"
         }).json()
         data = [
-            f"{i + 1}.{g['股票简称']}\n现价:{g[f'最新价']}\n概念:{g[f'涨停原因类别[{now}]']}\n异动:{g[f'竞价异动说明[{now}]']}\n涨幅:{g[f'竞价涨幅[{now}]']}\n评级:{g[f'集合竞价评级[{now}]']}"
+            f"{i + 1}.{g['股票简称']}\n现价:{g[f'最新价']}\n概念:{g[f'涨停原因类别[{now}]']}\n异动:{g[f'竞价异动说明[{now}]']}\n涨幅:{g[f'竞价涨幅[{now}]']}\n连板:{g[f'连续涨停天数[{now}]']}\n评级:{g[f'集合竞价评级[{now}]']}"
             for i, g in enumerate(
                 sorted(parse('$..datas').find(res)[0].value, key=lambda x: x[f'竞价涨幅[{now}]'], reverse=True))]
         json = {
