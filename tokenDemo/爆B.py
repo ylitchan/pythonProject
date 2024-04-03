@@ -49,6 +49,6 @@ def job():
 if __name__ == "__main__":
     job()
     # 设置任务调度
-    scheduler.add_job(job, 'cron', hour='09', minute='26', second='00')
+    scheduler.add_job(job, 'cron', hour='09', minute='25', second='03', day_of_week='mon-fri', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler.start()
