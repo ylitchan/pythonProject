@@ -82,12 +82,13 @@ def job():
             if zf >= 2.99 and kline_vol > 2 and price_close >= price_open and price_close_vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
                     max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-                if kline_vol == 6 and symbol[:-4] in symbols_asset:
+                cc = symbol[:-4] in symbols_asset
+                if kline_vol == 6 and cc:
                     alert_boom.append(
                         (symbol, price_close, zf))
                 elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
                         kline_hour[-1][5] * 2:
-                    alert_b.append((symbol, price_close, zf))
+                    alert_b.append((symbol, price_close, zf, cc))
                 else:
                     continue
             else:
@@ -101,7 +102,7 @@ def job():
         alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
         alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: x[2], reverse=True))]
-        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in alert_b_sort]
+        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in alert_b_sort]
         json = {
             "msgtype": "text",
             "text": {'content': f'===爆===\n' + '\n-------\n'.join(
