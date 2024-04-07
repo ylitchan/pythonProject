@@ -69,7 +69,6 @@ def job():
     symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
     alert_b = []
     alert_b_e = []
-    alert_boom = []
     alert_tvl = []
     alert_dwf = []
     for symbol in symbols:
