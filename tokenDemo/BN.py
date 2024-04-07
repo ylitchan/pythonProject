@@ -77,35 +77,45 @@ def job():
             kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
             price_close = kline_hour[-1][4]
             price_open = kline_hour[-1][1]
-            # 最高量所在索引
-            kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
-            price_close_vol = kline_hour[kline_vol][4]
-            vol = kline_hour[kline_vol][5]
-            zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
-            if zf >= 2.99 and kline_vol > 2 and price_close >= price_open and price_close_vol >= \
-                    max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
-                    max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-                cc = symbol[:-4] in symbols_asset
-                if kline_vol == 6 and cc:
-                    alert_boom.append(
-                        (symbol, price_close, zf))
-                elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
-                        kline_hour[-1][5] * 2:
-                    alert_b.append((symbol, price_close, zf, cc))
+            if price_close >= price_open:
+                # 第一个倍量所在索引
+                # kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
+                kline_vol = next(filter(
+                    lambda x: price_close >= kline_hour[x][4] and kline_hour[x][4] / kline_hour[x - 1][
+                        4] - 1 >= 0.0299 and kline_hour[x][5] >= max(
+                        max(kline_hour[:x], key=lambda y: y[5])[5], kline_hour[-1][5]) * 2 and
+                              kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2], range(3, 7)), None)
+                if kline_vol:
+                    cc = symbol[:-4] in symbols_asset
+                    alert_b.append(
+                        (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100, cc))
                 else:
                     continue
+            # price_close_vol = kline_hour[kline_vol][4]
+            # vol = kline_hour[kline_vol][5]
+            # zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
+            # if zf >= 2.99 and kline_vol > 2 and price_close >= price_open and price_close_vol >= \
+            #         max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
+            #         max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
+            #     cc = symbol[:-4] in symbols_asset
+            #     if kline_vol == 6 and cc:
+            #         alert_boom.append(
+            #             (symbol, price_close, zf))
+            #     elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
+            #             kline_hour[-1][5] * 2:
+            #         alert_b.append((symbol, price_close, zf, cc))
+            #     else:
+            #         continue
             else:
                 continue
         except Exception as e:
             print(str(e))
             continue
-        else:
-            pass
-    if alert_boom + alert_b:
+    if alert_b:
         alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
         alert_b.clear()
-        alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                      enumerate(sorted(alert_boom, key=lambda x: x[2], reverse=True))]
+        # alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
+        #               enumerate(sorted(alert_boom, key=lambda x: x[2], reverse=True))]
         for i, j in alert_b_sort:
             alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}')
             if j[0] in symbols_tvl:
@@ -116,8 +126,7 @@ def job():
                 alert_b_e.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
         json = {
             "msgtype": "text",
-            "text": {'content': f'===爆===\n' + '\n-------\n'.join(
-                alert_boom) + f'\n===B===\n' + '\n-------\n'.join(alert_b)}
+            "text": {'content': f'===爆B===\n' + '\n-------\n'.join(alert_b)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
