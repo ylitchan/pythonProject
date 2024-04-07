@@ -88,21 +88,6 @@ def job():
                         (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100, cc))
                 else:
                     continue
-            # price_close_vol = kline_hour[kline_vol][4]
-            # vol = kline_hour[kline_vol][5]
-            # zf = (price_close_vol / kline_hour[kline_vol - 1][4] - 1) * 100
-            # if zf >= 2.99 and kline_vol > 2 and price_close >= price_open and price_close_vol >= \
-            #         max(kline_hour[:kline_vol], key=lambda x: x[2])[2] and vol >= \
-            #         max(kline_hour[:kline_vol], key=lambda x: x[5])[5] * 2:
-            #     cc = symbol[:-4] in symbols_asset
-            #     if kline_vol == 6 and cc:
-            #         alert_boom.append(
-            #             (symbol, price_close, zf))
-            #     elif kline_vol < 6 and price_close >= price_close_vol and vol >= \
-            #             kline_hour[-1][5] * 2:
-            #         alert_b.append((symbol, price_close, zf, cc))
-            #     else:
-            #         continue
             else:
                 continue
         except Exception as e:
@@ -111,8 +96,6 @@ def job():
     if alert_b:
         alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
         alert_b.clear()
-        # alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-        #               enumerate(sorted(alert_boom, key=lambda x: x[2], reverse=True))]
         for i, j in alert_b_sort:
             alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}')
             if j[0] in symbols_tvl:
