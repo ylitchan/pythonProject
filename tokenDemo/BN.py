@@ -78,7 +78,6 @@ def job():
             price_open = kline_hour[-1][1]
             if price_close >= price_open:
                 # 第一个倍量所在索引
-                # kline_vol = max(range(len(kline_hour)), key=lambda x: kline_hour[x][5])
                 kline_vol = next(filter(
                     lambda x: kline_hour[x][4] / kline_hour[x - 1][4] - 1 >= 0.0299 and price_close >= kline_hour[x][
                         4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
