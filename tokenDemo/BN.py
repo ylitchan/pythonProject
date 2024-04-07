@@ -68,7 +68,10 @@ def job():
     print(datetime.datetime.now(), '任务开始')
     symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
     alert_b = []
+    alert_b_e = []
     alert_boom = []
+    alert_tvl = []
+    alert_dwf = []
     for symbol in symbols:
         try:
             kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
@@ -100,9 +103,17 @@ def job():
             pass
     if alert_boom + alert_b:
         alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
+        alert_b.clear()
         alert_boom = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
                       enumerate(sorted(alert_boom, key=lambda x: x[2], reverse=True))]
-        alert_b = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}' for i, j in alert_b_sort]
+        for i, j in alert_b_sort:
+            alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}')
+            if j[0] in symbols_tvl:
+                alert_tvl.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+            elif j[0] in symbols_dwf:
+                alert_dwf.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+            else:
+                alert_b_e.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
         json = {
             "msgtype": "text",
             "text": {'content': f'===爆===\n' + '\n-------\n'.join(
@@ -111,19 +122,15 @@ def job():
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
             json=json)
-        alert_tvl = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                     alert_b_sort if j[0] in symbols_tvl]
-        alert_dwf = [f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}' for i, j in
-                     alert_b_sort if j[0] in symbols_dwf]
-        if alert_tvl + alert_dwf:
-            json = {
-                "msgtype": "text",
-                "text": {'content': f'===低市值===\n' + '\n-------\n'.join(
-                    alert_tvl) + f'\n===DWF===\n' + '\n-------\n'.join(alert_dwf)}
-            }
-            session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-                json=json)
+        json = {
+            "msgtype": "text",
+            "text": {'content': f'===低市值===\n' + '\n-------\n'.join(
+                alert_tvl) + f'\n===DWF===\n' + '\n-------\n'.join(alert_dwf) + f'\n===其他===\n' + '\n-------\n'.join(
+                alert_b_e)}
+        }
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            json=json)
     print(datetime.datetime.now(), '任务结束')
     gc.collect()
 
