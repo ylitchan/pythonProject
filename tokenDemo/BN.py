@@ -81,7 +81,7 @@ def job():
                 kline_vol = next(filter(
                     lambda x: kline_hour[x][4] / kline_hour[x - 1][4] - 1 >= 0.0299 and price_close >= kline_hour[x][
                         4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5], kline_hour[-1][5]) * 2, range(3, 7)), None)
+                        max(kline_hour[:x], key=lambda y: y[5])[5], kline_hour[-1][5]) * 2, range(3, 6)), None)
                 if kline_vol:
                     cc = symbol[:-4] in symbols_asset
                     alert_b.append(
