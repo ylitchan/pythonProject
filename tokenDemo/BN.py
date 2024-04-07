@@ -68,7 +68,7 @@ def job():
     print(datetime.datetime.now(), '任务开始')
     symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
     alert_b = []
-    alert_b_e = []
+    alert_b_else = []
     alert_tvl = []
     alert_dwf = []
     for symbol in symbols:
@@ -121,7 +121,7 @@ def job():
             elif j[0] in symbols_dwf:
                 alert_dwf.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
             else:
-                alert_b_e.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+                alert_b_else.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
         json = {
             "msgtype": "text",
             "text": {'content': f'===B===\n' + '\n-------\n'.join(alert_b)}
@@ -133,7 +133,7 @@ def job():
             "msgtype": "text",
             "text": {'content': f'===低市值===\n' + '\n-------\n'.join(
                 alert_tvl) + f'\n===DWF===\n' + '\n-------\n'.join(alert_dwf) + f'\n===其他===\n' + '\n-------\n'.join(
-                alert_b_e)}
+                alert_b_else)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
