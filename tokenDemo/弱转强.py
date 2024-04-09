@@ -6,7 +6,8 @@ from jsonpath_ng import parse
 
 session = requests.Session()
 session.headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*',
-                   'Hexin-V': 'Aw2THUWuV_jfXPPUV1dDbwTuHCKC6kG8yx6lkE-SSaQTRiNcFzpRjFtutWrc',
+                   # 'Cookie':'chat_bot_session_id=76360e8d9a145f0627646f70cc6a79ff; other_uid=Ths_iwencai_Xuangu_0oslwjb9tn4eld7nk5n3rre3djy9xbi3; ta_random_userid=8z37r73slj; cid=9bda78828a8699f783b5b259fa9c111e1708655704; cid=9bda78828a8699f783b5b259fa9c111e1708655704; ComputerID=9bda78828a8699f783b5b259fa9c111e1708655704; WafStatus=0; v=A1DOSuA9Asfyid7DA3Q2oKltIZWnGTRjVv2IZ0ohHKt-hf6L8ikE86YNWPGZ',
+                   'Hexin-V': 'A1DOSuA9Asfyid7DA3Q2oKltIZWnGTRjVv2IZ0ohHKt-hf6L8ikE86YNWPGZ',
                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'}
 # 创建BlockingScheduler对象
 scheduler = BlockingScheduler()

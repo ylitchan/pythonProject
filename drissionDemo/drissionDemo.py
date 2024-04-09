@@ -11,7 +11,7 @@ from DrissionPage import ChromiumPage, ChromiumOptions
 from openpyxl import Workbook, load_workbook
 
 # 打开 Excel 文件
-workbook = load_workbook('D:\pythonProject\drissionDemo\https___www.google.com.hk_maps (6).xlsx')
+workbook = load_workbook('D:\pythonProject\drissionDemo\https___www.google.com.hk_maps (8).xlsx')
 
 # 获取第一个工作表
 sheet1 = workbook.active
@@ -35,12 +35,10 @@ for url in column_data:
         page.get(url)
         item["title"] = page.ele('.DUwDvf lfPIob').text
         title2 = page.ele('.bwoZTb ')
-        if title2:
-            item["title2"] = title2.text
-        else:
-            item["title2"] = ''
+        item["title2"] = title2.text if title2 else ''
         item["img"] = page.ele('.RZ66Rb FgCUCc').ele('tag:img').attrs.get('src')
-        item["cate"] = page.ele('.DkEaL ').text
+        cate = page.ele('.DkEaL ')
+        item["cate"] = cate.text if cate else ''
         # if '机场' not in item['cate']:
         #     continue
         for i in page.eles('.AeaXub'):
@@ -62,7 +60,8 @@ for url in column_data:
         # 定义要写入的列表数据
         # data = [[] for i in sorted(item.keys())]
 
-        sheet.append([item[i] for i in sorted(item.keys())])
+        sheet.append([item.get(i, '') for i in
+                      sorted(['title', 'title2', 'img', 'cate', 'yb', 'loc', 'web', 'tele', 'plus_code', 'site'])])
     except:
         print('失败', url)
         continue
@@ -70,4 +69,4 @@ for url in column_data:
 # for row in data:
 #     sheet.append(row)
 # 保存工作簿
-workbook.save('供水.xlsx')
+workbook.save('供油.xlsx')
