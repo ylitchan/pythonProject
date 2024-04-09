@@ -6,7 +6,7 @@ from jsonpath_ng import parse
 
 session = requests.Session()
 session.headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/plain, */*',
-                   'Hexin-V': 'A2-XDK8JVepbblHWaMIBtVIY_oh8FMOFXWnHKYH8CTLl94F2ieRThm04V2iS',
+                   'Hexin-V': 'Aw2THUWuV_jfXPPUV1dDbwTuHCKC6kG8yx6lkE-SSaQTRiNcFzpRjFtutWrc',
                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'}
 # 创建BlockingScheduler对象
 scheduler = BlockingScheduler()
@@ -30,7 +30,7 @@ def job():
             "rsh": "Ths_iwencai_Xuangu_aw7w649fwmdt9xxywken1478hz1jfcgo"
         }).json()
         data = [
-            f"{i + 1}.{g['股票简称']}\n现价:{g[f'最新价']}\n概念:{g[f'涨停原因类别[{now}]']}\n异动:{g[f'竞价异动说明[{now}]']}\n涨幅:{g[f'竞价涨幅[{now}]']}\n连板:{g[f'连续涨停天数[{now}]']}\n评级:{g[f'集合竞价评级[{now}]']}"
+            f"{i + 1}.{g.get('股票简称', '-')}\n现价:{g.get(f'最新价', '-')}\n概念:{g.get(f'涨停原因类别[{now}]', '-')}\n异动:{g.get(f'竞价异动说明[{now}]', '-')}\n涨幅:{g.get(f'竞价涨幅[{now}]', '-')}\n连板:{g.get(f'连续涨停天数[{now}]', '-')}\n评级:{g.get(f'集合竞价评级[{now}]', '-')}"
             for i, g in enumerate(
                 sorted(parse('$..datas').find(res)[0].value, key=lambda x: x[f'竞价涨幅[{now}]'], reverse=True))]
         json = {
