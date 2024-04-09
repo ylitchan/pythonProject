@@ -1,25 +1,25 @@
 # -*- coding: utf-8 -*-
-
 from iFinDPy import *
 from datetime import datetime
 import pandas as pd
 import time as _time
-import json
-from threading import Thread,Lock,Semaphore
+from threading import Thread, Lock, Semaphore
 import requests
 
 sem = Semaphore(5)  # 此变量用于控制最大并发数
-dllock = Lock()  #此变量用来控制实时行情推送中落数据到本地的锁
+dllock = Lock()  # 此变量用来控制实时行情推送中落数据到本地的锁
+
 
 # 登录函数
 def thslogindemo():
     # 输入用户的帐号和密码
-    thsLogin = THS_iFinDLogin("mytz232","7aa8f1")
+    thsLogin = THS_iFinDLogin("mytz232", "7aa8f1")
     print(thsLogin)
     if thsLogin != 0:
         print('登录失败')
     else:
         print('登录成功')
+
 
 def datepool_basicdata_demo():
     # 通过数据池的板块成分函数和基础数据函数，提取沪深300的全部股票在2020-11-16日的日不复权收盘价
@@ -35,6 +35,7 @@ def datepool_basicdata_demo():
             data_df = data_result.data
             print(data_df)
 
+
 def datapool_realtime_demo():
     # 通过数据池的板块成分函数和实时行情函数，提取上证50的全部股票的最新价数据,并将其导出为csv文件
     today_str = datetime.today().strftime('%Y-%m-%d')
@@ -44,7 +45,7 @@ def datapool_realtime_demo():
         print('error:{}'.format(data_sz50.errmsg))
     else:
         seccode_sz50_list = data_sz50.data['THSCODE'].tolist()
-        data_result = THS_RQ(seccode_sz50_list,'latest')
+        data_result = THS_RQ(seccode_sz50_list, 'latest')
         if data_result.errorcode != 0:
             print('error:{}'.format(data_result.errmsg))
         else:
@@ -52,21 +53,23 @@ def datapool_realtime_demo():
             print(data_df)
             data_df.to_csv('realtimedata_{}.csv'.format(today_str))
 
+
 def iwencai_demo():
     # 演示如何通过不消耗流量的自然语言语句调用常用数据
     print('输出资金流向数据')
-    data_wencai_zjlx = THS_WC('昨日爆量涨停;今日高开;竞价异动说明;涨停原因类别;连续涨停天数;集合竞价评级', 'stock')
+    data_wencai_zjlx = THS_WC('昨日爆量涨停;今日高开;竞价异动说明;涨停原因类别;连续涨停天数;竞价评级偏多', 'stock')
     if data_wencai_zjlx.errorcode != 0:
         print('error:{}'.format(data_wencai_zjlx.errmsg))
     else:
         print(data_wencai_zjlx.data)
 
-    print('输出股性评分数据')
-    data_wencai_xny = THS_WC('股性评分', 'stock')
-    if data_wencai_xny.errorcode != 0:
-        print('error:{}'.format(data_wencai_xny.errmsg))
-    else:
-        print(data_wencai_xny.data)
+    # print('输出股性评分数据')
+    # data_wencai_xny = THS_WC('股性评分', 'stock')
+    # if data_wencai_xny.errorcode != 0:
+    #     print('error:{}'.format(data_wencai_xny.errmsg))
+    # else:
+    #     print(data_wencai_xny.data)
+
 
 def dlwork(tick_data):
     # 本函数为实时行情订阅新启线程的任务函数
@@ -81,9 +84,10 @@ def dlwork(tick_data):
                 pass
     dllock.release()
 
-def work(codestr,lock,indilist):
+
+def work(codestr, lock, indilist):
     sem.acquire()
-    stockdata = THS_HF(codestr, ';'.join(indilist),'','2020-08-11 09:15:00', '2020-08-11 15:30:00','format:json')
+    stockdata = THS_HF(codestr, ';'.join(indilist), '', '2020-08-11 09:15:00', '2020-08-11 15:30:00', 'format:json')
     if stockdata.errorcode != 0:
         print('error:{}'.format(stockdata.errmsg))
         sem.release()
@@ -94,6 +98,7 @@ def work(codestr,lock,indilist):
             f.write(str(stockdata.data) + '\n')
         lock.release()
         sem.release()
+
 
 def multiThread_demo():
     # 本函数为通过高频序列函数,演示如何使用多线程加速数据提取的示例,本例中通过将所有A股分100组,最大线程数量sem进行提取
@@ -122,20 +127,22 @@ def multiThread_demo():
     for p in l:
         p.join()
     etime = datetime.now()
-    print(etime-btime)
+    print(etime - btime)
+
 
 pd.options.display.width = 320
 pd.options.display.max_columns = None
 
 
 def reportDownload():
-    df = THS_ReportQuery('300033.SZ','beginrDate:2021-08-01;endrDate:2021-08-31;reportType:901','reportDate:Y,thscode:Y,secName:Y,ctime:Y,reportTitle:Y,pdfURL:Y,seq:Y').data
+    df = THS_ReportQuery('300033.SZ', 'beginrDate:2021-08-01;endrDate:2021-08-31;reportType:901',
+                         'reportDate:Y,thscode:Y,secName:Y,ctime:Y,reportTitle:Y,pdfURL:Y,seq:Y').data
     print(df)
     for i in range(len(df)):
-        pdfName = df.iloc[i,4]+str(df.iloc[i,6])+'.pdf'
-        pdfURL = df.iloc[i,5]
+        pdfName = df.iloc[i, 4] + str(df.iloc[i, 6]) + '.pdf'
+        pdfURL = df.iloc[i, 5]
         r = requests.get(pdfURL)
-        with open(pdfName,'wb+') as f:
+        with open(pdfName, 'wb+') as f:
             f.write(r.content)
 
 
@@ -146,7 +153,7 @@ def main():
     thslogindemo()
     # 通过数据池的板块成分函数和基础数据函数，提取沪深300的全部股票在2020-11-16日的日不复权收盘价
     # datepool_basicdata_demo()
-    #通过数据池的板块成分函数和实时行情函数，提取上证50的全部股票的最新价数据,并将其导出为csv文件
+    # 通过数据池的板块成分函数和实时行情函数，提取上证50的全部股票的最新价数据,并将其导出为csv文件
     # datapool_realtime_demo()
     # 演示如何通过不消耗流量的自然语言语句调用常用数据
     iwencai_demo()
@@ -154,6 +161,7 @@ def main():
     # multiThread_demo()
     # 本函数演示如何使用公告函数提取满足条件的公告，并下载其pdf
     # reportDownload()
+
 
 if __name__ == '__main__':
     main()
