@@ -75,7 +75,7 @@ def rzq():
             "articles": [
                 {
                     "title": "会所嫩模领取",
-                    "description": "今天baoB",
+                    "description": "",
                     "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E9%AB%98%E5%BC%80%3B%E7%AB%9E%E4%BB%B7%E5%BC%82%E5%8A%A8%E8%AF%B4%E6%98%8E%3B%E6%B6%A8%E5%81%9C%E5%8E%9F%E5%9B%A0%E7%B1%BB%E5%88%AB%3B%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84%E7%BA%A7&querytype=stock",
                     "picurl": "https://img11.chkaja.com/files/20240402/cf65830bbf07486c.jpg"
                 }
