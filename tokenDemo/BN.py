@@ -153,7 +153,7 @@ if __name__ == "__main__":
     rzq()
     job()
     # 设置任务调度
-    scheduler_A.add_job(job, 'cron', hour='09', minute='58', second='03', day_of_week='mon-fri',
+    scheduler_A.add_job(rzq, 'cron', hour='09', minute='25', second='03', day_of_week='mon-fri',
                         timezone='Asia/Shanghai')
     scheduler_BN.add_job(job, 'cron', minute='00', second='03', timezone='Asia/Shanghai')
     # 启动调度器
