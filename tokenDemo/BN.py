@@ -3,12 +3,14 @@ import gc
 import requests
 from binance.spot import Spot
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 
 session = requests.Session()
 session.headers = {'Content-Type': 'application/json',
                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'}
 # 创建BlockingScheduler对象
-scheduler = BlockingScheduler()
+scheduler_BN = BlockingScheduler()
+scheduler_A = BackgroundScheduler()
 symbols = {'PORTALUSDT', 'PHBUSDT', 'PNTUSDT', 'ADXUSDT', 'APEUSDT', 'SUPERUSDT', 'NEOUSDT', 'RUNEUSDT', 'XLMUSDT',
            'IQUSDT', 'UNIUSDT', 'RAREUSDT', 'FLOKIUSDT', 'ETHUSDT', 'UFTUSDT', 'HIGHUSDT', 'POLYXUSDT', 'GLMUSDT',
            'EPXUSDT', 'DARUSDT', 'DOTUSDT', 'VETUSDT', 'SCUSDT', 'ANKRUSDT', 'TLMUSDT', 'STGUSDT', 'OMGUSDT', 'SXPUSDT',
@@ -65,8 +67,30 @@ client = Spot(api_key='A19rSNSOEbZqeQrKaV1wyoyhuDOFomARNu8omNQaII3Iv1DvYorfN5OeV
               api_secret='fF6yzKflVZNaDbjYUvh2nyc5aMgzSgst8GnxF3hixE9UKwKnjWVxOfg7gipqTztD')
 
 
+def rzq():
+    print(datetime.datetime.now(), 'A任务开始')
+    json = {
+        "msgtype": "news",
+        "news": {
+            "articles": [
+                {
+                    "title": "会所嫩模领取",
+                    "description": "今天baoB",
+                    "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E9%AB%98%E5%BC%80%3B%E7%AB%9E%E4%BB%B7%E5%BC%82%E5%8A%A8%E8%AF%B4%E6%98%8E%3B%E6%B6%A8%E5%81%9C%E5%8E%9F%E5%9B%A0%E7%B1%BB%E5%88%AB%3B%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84%E7%BA%A7&querytype=stock",
+                    "picurl": "https://img11.chkaja.com/files/20240402/cf65830bbf07486c.jpg"
+                }
+            ]
+        }
+    }
+    session.post(
+        url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
+        json=json)
+    print(datetime.datetime.now(), 'A任务结束')
+    gc.collect()
+
+
 def job():
-    print(datetime.datetime.now(), '任务开始')
+    print(datetime.datetime.now(), 'BN任务开始')
     symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
     alert_b = []
     alert_b_else = []
@@ -121,13 +145,17 @@ def job():
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             json=json)
-    print(datetime.datetime.now(), '任务结束')
+    print(datetime.datetime.now(), 'BN任务结束')
     gc.collect()
 
 
 if __name__ == "__main__":
+    rzq()
     job()
     # 设置任务调度
-    scheduler.add_job(job, 'cron', minute='00', second='03', timezone='Asia/Shanghai')
+    scheduler_A.add_job(job, 'cron', hour='09', minute='58', second='03', day_of_week='mon-fri',
+                        timezone='Asia/Shanghai')
+    scheduler_BN.add_job(job, 'cron', minute='00', second='03', timezone='Asia/Shanghai')
     # 启动调度器
-    scheduler.start()
+    scheduler_A.start()
+    scheduler_BN.start()
