@@ -94,7 +94,7 @@ def job():
     try:
         symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
     except Exception as e:
-        print(e)
+        print('BN任务错误', e)
         return
     alert_b = []
     alert_b_else = []
