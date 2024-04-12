@@ -132,7 +132,7 @@ def job():
             alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
             alert_b.clear()
             for i, j in alert_b_sort:
-                alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}')
+                alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}\n三点:{j[4]}\n10cm:{[j[5]]}')
                 if j[0] in symbols_tvl:
                     alert_tvl.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
                 elif j[0] in symbols_dwf:
