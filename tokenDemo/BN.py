@@ -68,30 +68,38 @@ client = Spot(api_key='A19rSNSOEbZqeQrKaV1wyoyhuDOFomARNu8omNQaII3Iv1DvYorfN5OeV
 
 
 def rzq():
-    print(datetime.datetime.now(), 'A任务开始')
-    json = {
-        "msgtype": "news",
-        "news": {
-            "articles": [
-                {
-                    "title": "会所嫩模领取",
-                    "description": "",
-                    "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E9%AB%98%E5%BC%80%3B%E7%AB%9E%E4%BB%B7%E5%BC%82%E5%8A%A8%E8%AF%B4%E6%98%8E%3B%E6%B6%A8%E5%81%9C%E5%8E%9F%E5%9B%A0%E7%B1%BB%E5%88%AB%3B%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84%E7%BA%A7&querytype=stock",
-                    "picurl": "https://img11.chkaja.com/files/20240402/cf65830bbf07486c.jpg"
-                }
-            ]
+    try:
+        print(datetime.datetime.now(), 'A任务开始')
+        json = {
+            "msgtype": "news",
+            "news": {
+                "articles": [
+                    {
+                        "title": "会所嫩模领取",
+                        "description": "",
+                        "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E9%AB%98%E5%BC%80%3B%E7%AB%9E%E4%BB%B7%E5%BC%82%E5%8A%A8%E8%AF%B4%E6%98%8E%3B%E6%B6%A8%E5%81%9C%E5%8E%9F%E5%9B%A0%E7%B1%BB%E5%88%AB%3B%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84%E7%BA%A7&querytype=stock",
+                        "picurl": "https://img11.chkaja.com/files/20240402/cf65830bbf07486c.jpg"
+                    }
+                ]
+            }
         }
-    }
-    session.post(
-        url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
-        json=json)
-    print(datetime.datetime.now(), 'A任务结束')
-    gc.collect()
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
+            json=json)
+    except Exception as e:
+        print(str(e))
+    finally:
+        print(datetime.datetime.now(), 'A任务结束')
+        gc.collect()
 
 
 def job():
-    print(datetime.datetime.now(), 'BN任务开始')
-    symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
+    try:
+        print(datetime.datetime.now(), 'BN任务开始')
+        symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
+    except Exception as e:
+        symbols_asset = set()
+        print(str(e))
     alert_b = []
     alert_b_else = []
     alert_tvl = []
@@ -119,35 +127,40 @@ def job():
         except Exception as e:
             print(str(e))
             continue
-    if alert_b:
-        alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
-        alert_b.clear()
-        for i, j in alert_b_sort:
-            alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}\n三点:{j[4]}\n10cm:{j[5]}')
-            if j[0] in symbols_tvl:
-                alert_tvl.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
-            elif j[0] in symbols_dwf:
-                alert_dwf.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
-            else:
-                alert_b_else.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
-        json = {
-            "msgtype": "text",
-            "text": {'content': f'===B===\n' + '\n-------\n'.join(alert_b)}
-        }
-        session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
-            json=json)
-        json = {
-            "msgtype": "text",
-            "text": {'content': f'===低市值===\n' + '\n-------\n'.join(
-                alert_tvl) + f'\n===DWF===\n' + '\n-------\n'.join(alert_dwf) + f'\n===其他===\n' + '\n-------\n'.join(
-                alert_b_else)}
-        }
-        session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-            json=json)
-    print(datetime.datetime.now(), 'BN任务结束')
-    gc.collect()
+    try:
+        if alert_b:
+            alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
+            alert_b.clear()
+            for i, j in alert_b_sort:
+                alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}')
+                if j[0] in symbols_tvl:
+                    alert_tvl.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+                elif j[0] in symbols_dwf:
+                    alert_dwf.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+                else:
+                    alert_b_else.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+            json = {
+                "msgtype": "text",
+                "text": {'content': f'===B===\n' + '\n-------\n'.join(alert_b)}
+            }
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
+                json=json)
+            json = {
+                "msgtype": "text",
+                "text": {'content': f'===低市值===\n' + '\n-------\n'.join(
+                    alert_tvl) + f'\n===DWF===\n' + '\n-------\n'.join(
+                    alert_dwf) + f'\n===其他===\n' + '\n-------\n'.join(
+                    alert_b_else)}
+            }
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+                json=json)
+    except Exception as e:
+        print(str(e))
+    finally:
+        print(datetime.datetime.now(), 'BN任务结束')
+        gc.collect()
 
 
 if __name__ == "__main__":
