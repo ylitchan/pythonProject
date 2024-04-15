@@ -1,9 +1,9 @@
 import datetime
 import gc
 import requests
-from binance.spot import Spot
-from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
+from binance.spot import Spot
 
 session = requests.Session()
 session.headers = {'Content-Type': 'application/json',
@@ -112,7 +112,7 @@ def job():
             if price_close >= price_open:
                 # 第一个倍量所在索引
                 kline_vol = next(filter(
-                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] - 1 >= 0.0299 and price_close >= kline_hour[x][
+                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0299 and price_close >= kline_hour[x][
                         4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
                         max(kline_hour[:x], key=lambda y: y[5])[5], kline_hour[-1][5]) * 2, range(3, 6)), None)
                 if kline_vol:

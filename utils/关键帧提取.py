@@ -40,7 +40,7 @@ class PyAvUtils:
         stream = container.streams.video[0]
         stream.codec_context.skip_frame = 'NONKEY'
         for frame in container.decode(stream):
-            frame.to_image().save(cur_video_keyframe_dir + '/' + 'frame.{:04d}.jpg'.format(frame.pts),
+            frame.to_image().save(cur_video_keyframe_dir + '/' + 'frame.{:04d}.png'.format(frame.pts),
                                   quality=90)
 
 
