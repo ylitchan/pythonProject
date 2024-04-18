@@ -96,7 +96,7 @@ def rzq():
 def job():
     try:
         print(datetime.datetime.now(), 'BN任务开始')
-        symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
+        symbols_asset = {s['asset'] for s in client.user_asset()}
     except Exception as e:
         symbols_asset = set()
         print(str(e))
