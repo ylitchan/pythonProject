@@ -141,7 +141,7 @@ def job():
                     alert_b_else.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
             json = {
                 "msgtype": "text",
-                "text": {'content': f'===小步快跑===\n' + '\n-------\n'.join(alert_b)}
+                "text": {'content': f'===B===\n' + '\n-------\n'.join(alert_b)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
