@@ -1,11 +1,12 @@
 import asyncio
 import datetime
 import threading
-
+from apscheduler.schedulers.background import BackgroundScheduler
 from jsonpath_ng.parser import parse
 import requests
 from DrissionPage import ChromiumPage, ChromiumOptions
 
+scheduler = BackgroundScheduler()
 session = requests.Session()
 session.proxies = {'https': 'http://127.0.0.1:1081', 'http': 'http://127.0.0.1:1081'}
 session.headers = {
@@ -20,7 +21,8 @@ class Biaoqian(object):
         self.tab = tab
         self.tokens = tokens
 
-    def get_price(self):
+    @staticmethod
+    def get_price():
         try:
             res = session.get(
                 f'https://api.coingecko.com/api/v3/simple/price?ids={"%2C".join(price_all.keys())}&vs_currencies=usd',
@@ -29,10 +31,9 @@ class Biaoqian(object):
             price_all.update(res.json())
         except Exception as e:
             pass
-        finally:
-            return [price_all.get(j, {}).get('usd', 0) for j in self.tokens]
 
-    def get_gas(self):
+    @staticmethod
+    def get_gas():
         try:
             res = session.get('https://milkroad-api.vercel.app/api/gas')
             res.raise_for_status()
@@ -40,10 +41,9 @@ class Biaoqian(object):
             gas[0] = gwei * 0.0007 * price_all.get('ethereum', {}).get('usd', 0)
         except Exception as e:
             pass
-        finally:
-            return gas[0]
 
-    def push(self, content):
+    @staticmethod
+    def push(content):
         try:
             headers = {'Content-Type': 'application/json'}
             json = {
@@ -61,12 +61,12 @@ def get_profit(biaoqian):
     while True:
         try:
             eth = biaoqian.tab.eles('xpath://*[@class="dashboard_willReceive__vxyQo"]//p')
-            price_part = biaoqian.get_price()
+            price_part = [price_all.get(j, {}).get('usd', 0) for j in biaoqian.tokens]
             if 'lybra-finance' not in biaoqian.tokens:
                 content = [float(j.split('/', 1)[-1].strip().split(' ')[0].strip('%')) for j in
                            [i.text for i in eth]]
                 rigid = content[0]
-                gas_eth = biaoqian.get_gas()
+                gas_eth = gas[0]
                 profit1 = (1 - price_part[1]) * price_part[0] * rigid - gas_eth
                 print({'time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'token': biaoqian.tokens[0],
                        'rigid': rigid, 'gas': gas_eth,
@@ -113,6 +113,11 @@ def get_profit(biaoqian):
 
 
 def main():
+    Biaoqian.get_price()
+    Biaoqian.get_gas()
+    scheduler.add_job(Biaoqian.get_gas, 'cron', minute='03', timezone='Asia/Shanghai')
+    scheduler.add_job(Biaoqian.get_price, 'cron', minute='03', timezone='Asia/Shanghai')
+    scheduler.start()
     # 创建浏览器配置对象，指定浏览器路径
     co = ChromiumOptions().set_browser_path(r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe')
     # 用该配置创建页面对象
