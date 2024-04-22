@@ -133,12 +133,12 @@ def job():
             alert_b.clear()
             for i, j in alert_b_sort:
                 alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}\n目标:{j[4]}')
-                if j[0] in symbols_tvl:
-                    alert_tvl.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
-                elif j[0] in symbols_dwf:
-                    alert_dwf.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
-                else:
-                    alert_b_else.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+                # if j[0] in symbols_tvl:
+                #     alert_tvl.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+                # elif j[0] in symbols_dwf:
+                #     alert_dwf.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
+                # else:
+                #     alert_b_else.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
             json = {
                 "msgtype": "text",
                 "text": {'content': f'===B===\n' + '\n-------\n'.join(alert_b)}
@@ -146,16 +146,16 @@ def job():
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
                 json=json)
-            json = {
-                "msgtype": "text",
-                "text": {'content': f'===低市值===\n' + '\n-------\n'.join(
-                    alert_tvl) + f'\n===DWF===\n' + '\n-------\n'.join(
-                    alert_dwf) + f'\n===其他===\n' + '\n-------\n'.join(
-                    alert_b_else)}
-            }
-            session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-                json=json)
+            # json = {
+            #     "msgtype": "text",
+            #     "text": {'content': f'===低市值===\n' + '\n-------\n'.join(
+            #         alert_tvl) + f'\n===DWF===\n' + '\n-------\n'.join(
+            #         alert_dwf) + f'\n===其他===\n' + '\n-------\n'.join(
+            #         alert_b_else)}
+            # }
+            # session.post(
+            #     url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            #     json=json)
     except Exception as e:
         print(str(e))
     finally:

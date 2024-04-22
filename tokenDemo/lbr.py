@@ -97,7 +97,7 @@ async def get_profit(biaoqians):
                              'gas': gas_lbr,
                              'cost': cost,
                              'price': price_part, 'profit3': profit3})
-                        if profit3 >= 100:
+                        if profit3 >= 400:
                             biaoqian.push(
                                 f"token: {biaoqian.tokens[0]}\nbounty: {bounty}\ngas: {gas_lbr}\ncost: {cost}\nprice: {price_part}\nprofit3: {profit3}")
             except Exception as e:
