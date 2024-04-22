@@ -34,7 +34,9 @@ class Biaoqian(object):
 
     def get_gas(self):
         try:
-            gwei = float(parse('$..high').find(session.get('https://milkroad-api.vercel.app/api/gas').json())[0].value)
+            res = session.get('https://milkroad-api.vercel.app/api/gas')
+            res.raise_for_status()
+            gwei = float(parse('$..high').find(res.json())[0].value)
             gas[0] = gwei * 0.0007 * price_all.get('ethereum', {}).get('usd', 0)
         except Exception as e:
             pass
