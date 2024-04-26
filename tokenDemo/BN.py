@@ -1,5 +1,6 @@
 import datetime
 import gc
+import threading
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -93,6 +94,26 @@ def rzq():
         gc.collect()
 
 
+def bn(symbol, symbols_asset, alert_b):
+    try:
+        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
+        price_close = kline_hour[-1][4]
+        price_open = kline_hour[-1][1]
+        if price_close >= price_open:
+            # 第一个倍量所在索引
+            kline_vol = next(filter(
+                lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0299 and price_close >= kline_hour[x][
+                    4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
+                    max(kline_hour[:x], key=lambda y: y[5])[5], kline_hour[-1][5]) * 2, range(3, 6)), None)
+            if kline_vol:
+                cc = symbol[:-4] in symbols_asset
+                alert_b.append(
+                    (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100, cc,
+                     price_close * 1.0333687020354))
+    except Exception as e:
+        print(str(e))
+
+
 def job():
     try:
         print(datetime.datetime.now(), 'BN任务开始')
@@ -101,44 +122,22 @@ def job():
         symbols_asset = set()
         print(str(e))
     alert_b = []
-    alert_b_else = []
-    alert_tvl = []
-    alert_dwf = []
+    # 创建线程列表
+    threads = []
     for symbol in symbols:
-        try:
-            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
-            price_close = kline_hour[-1][4]
-            price_open = kline_hour[-1][1]
-            if price_close >= price_open:
-                # 第一个倍量所在索引
-                kline_vol = next(filter(
-                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0299 and price_close >= kline_hour[x][
-                        4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5], kline_hour[-1][5]) * 2, range(3, 6)), None)
-                if kline_vol:
-                    cc = symbol[:-4] in symbols_asset
-                    alert_b.append(
-                        (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100, cc,
-                         price_close * 1.0333687020354))
-                else:
-                    continue
-            else:
-                continue
-        except Exception as e:
-            print(str(e))
-            continue
+        # 创建并启动多个线程
+        t = threading.Thread(target=bn, args=(symbol, symbols_asset, alert_b))
+        t.start()
+        threads.append(t)
+        # 等待所有线程完成
+    for t in threads:
+        t.join()
     try:
         if alert_b:
             alert_b_sort = enumerate(sorted(alert_b, key=lambda x: x[2], reverse=True))
             alert_b.clear()
             for i, j in alert_b_sort:
                 alert_b.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n持仓:{j[3]}\n目标:{j[4]}')
-                # if j[0] in symbols_tvl:
-                #     alert_tvl.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
-                # elif j[0] in symbols_dwf:
-                #     alert_dwf.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
-                # else:
-                #     alert_b_else.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}')
             json = {
                 "msgtype": "text",
                 "text": {'content': f'===B===\n' + '\n-------\n'.join(alert_b)}
@@ -146,16 +145,6 @@ def job():
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
                 json=json)
-            # json = {
-            #     "msgtype": "text",
-            #     "text": {'content': f'===低市值===\n' + '\n-------\n'.join(
-            #         alert_tvl) + f'\n===DWF===\n' + '\n-------\n'.join(
-            #         alert_dwf) + f'\n===其他===\n' + '\n-------\n'.join(
-            #         alert_b_else)}
-            # }
-            # session.post(
-            #     url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-            #     json=json)
     except Exception as e:
         print(str(e))
     finally:
@@ -163,9 +152,9 @@ def job():
         gc.collect()
 
 
-if __name__ == "__main__":
-    rzq()
+def main():
     job()
+    rzq()
     # 设置任务调度
     scheduler_A.add_job(rzq, 'cron', hour='09', minute='25', second='00', day_of_week='mon-fri',
                         timezone='Asia/Shanghai')
@@ -173,3 +162,7 @@ if __name__ == "__main__":
     # 启动调度器
     scheduler_A.start()
     scheduler_BN.start()
+
+
+if __name__ == "__main__":
+    main()
