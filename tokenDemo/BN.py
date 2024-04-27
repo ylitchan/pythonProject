@@ -103,26 +103,40 @@ def bn(symbol, symbols_asset, alert_b):
             if price_close >= price_open:
                 # 第一个倍量所在索引
                 kline_vol = next(filter(
-                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0333687020354 and price_close >= kline_hour[x][
-                        4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
+                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0333687020354 and price_close >=
+                              kline_hour[x][
+                                  4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
                         max(kline_hour[:x], key=lambda y: y[5])[5] * 2, kline_hour[-1][5]), range(1, 2)), None)
                 if kline_vol:
-                    cc = symbol[:-4] in symbols_asset
+                    # try:
+                    #     res = client.new_order(symbol=symbol, side='BUY', type='MARKET', timeInForce="GTC",
+                    #                            quoteOrderQty=1,
+                    #                            newOrderRespType='RESULT', recvWindow=5000).json()
+                    #     print(res)
+                    #     client.new_order(symbol=symbol, side='SELL', type='LIMIT', timeInForce="GTC",
+                    #                      quantity=res.get('executedQty'),
+                    #                      price=price_close * 1.0333687020354, newOrderRespType='ACK', recvWindow=5000)
+                    #
+                    # except Exception as e:
+                    #     res = {}
+                    #     print(str(e))
                     alert_b.append(
-                        (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100, cc,
-                         price_close * 1.0333687020354))
+                        (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100,
+                         symbol[:-4] in symbols_asset, price_close * 1.0333687020354))
             break
         except Exception as e:
             print(str(e))
 
 
 def job():
-    try:
-        print(datetime.datetime.now(), 'BN任务开始')
-        symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
-    except Exception as e:
-        symbols_asset = set()
-        print(str(e))
+    print(datetime.datetime.now(), 'BN任务开始')
+    symbols_asset = set()
+    for i in range(10):
+        try:
+            symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=5000)}
+            break
+        except Exception as e:
+            print(str(e))
     alert_b = []
     # 创建线程列表
     threads = []
