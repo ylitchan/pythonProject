@@ -101,7 +101,7 @@ def rzq():
 def bn(symbol, symbols_asset, alert_b):
     for i in range(10):
         try:
-            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="15m", limit=6)[:5]]
+            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="15m", limit=7)[:6]]
             price_close = kline_hour[-1][4]
             price_open = kline_hour[-1][1]
             if price_close >= price_open:
@@ -109,7 +109,7 @@ def bn(symbol, symbols_asset, alert_b):
                 kline_vol = next(filter(
                     lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1 and price_close >=
                               kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5] * 10, kline_hour[-1][5]), range(4, 5)), None)
+                        max(kline_hour[:x], key=lambda y: y[5])[5] * 10, kline_hour[-1][5]), range(5, 6)), None)
                 if kline_vol:
                     # try:
                     #     res = client.new_order(symbol=symbol, side='BUY', type='MARKET', timeInForce="GTC",
