@@ -96,15 +96,15 @@ def rzq():
 
 def bn(symbol, symbols_asset, alert_b):
     try:
-        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="15m", limit=8)[:-1]]
+        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="15m", limit=4)[:3]]
         price_close = kline_hour[-1][4]
         price_open = kline_hour[-1][1]
         if price_close >= price_open:
             # 第一个倍量所在索引
             kline_vol = next(filter(
-                lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0299 and price_close >= kline_hour[x][
+                lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0333687020354 and price_close >= kline_hour[x][
                     4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
-                    max(kline_hour[:x], key=lambda y: y[5])[5], kline_hour[-1][5]) * 2, range(1, 6)), None)
+                    max(kline_hour[:x], key=lambda y: y[5])[5], kline_hour[-1][5]), range(1, 2)), None)
             if kline_vol:
                 cc = symbol[:-4] in symbols_asset
                 alert_b.append(
