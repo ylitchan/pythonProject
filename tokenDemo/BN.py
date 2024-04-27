@@ -96,7 +96,7 @@ def rzq():
 
 def bn(symbol, symbols_asset, alert_b):
     try:
-        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=8)[:-1]]
+        kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="15m", limit=8)[:-1]]
         price_close = kline_hour[-1][4]
         price_open = kline_hour[-1][1]
         if price_close >= price_open:
@@ -158,7 +158,7 @@ def main():
     # 设置任务调度
     scheduler_A.add_job(rzq, 'cron', hour='09', minute='25', second='00', day_of_week='mon-fri',
                         timezone='Asia/Shanghai')
-    scheduler_BN.add_job(job, 'cron', minute='00', second='03', timezone='Asia/Shanghai')
+    scheduler_BN.add_job(job, 'cron', minute='*/15', second='03', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler_A.start()
     scheduler_BN.start()
