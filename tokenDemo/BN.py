@@ -1,6 +1,7 @@
 import datetime
 import gc
 import threading
+
 import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -101,16 +102,16 @@ def rzq():
 def bn(symbol, symbols_asset, alert_b):
     for i in range(10):
         try:
-            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="15m", limit=7)[:6]]
+            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=7)[:6]]
             price_close = kline_hour[-1][4]
             price_open = kline_hour[-1][1]
             if price_close >= price_open:
                 # 第一个倍量所在索引
                 kline_vol = next(filter(
-                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1 and price_close >=
+                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0333687020354 and price_close >=
                               kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][
                                   5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5] * 10, kline_hour[-1][5]), range(4, 5)), None)
+                        max(kline_hour[:x], key=lambda y: y[5])[5] * 20, kline_hour[-1][5] * 0.9), range(4, 5)), None)
                 if kline_vol:
                     # try:
                     #     res = client.new_order(symbol=symbol, side='BUY', type='MARKET', timeInForce="GTC",
@@ -126,10 +127,10 @@ def bn(symbol, symbols_asset, alert_b):
                     #     print(str(e))
                     alert_b.append(
                         (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100,
-                         symbol[:-4] in symbols_asset, price_close * 1.10333687020354))
+                         symbol[:-4] in symbols_asset, price_close * 1.0333687020354))
             break
         except Exception as e:
-            print(str(e))
+            print(symbol, i)
 
 
 def job():
@@ -174,11 +175,11 @@ def job():
 
 def main():
     job()
-    rzq()
+    # rzq()
     # 设置任务调度
     scheduler_A.add_job(rzq, 'cron', hour='09', minute='25', second='00', day_of_week='mon-fri',
                         timezone='Asia/Shanghai')
-    scheduler_BN.add_job(job, 'cron', minute='*/15', second='03', timezone='Asia/Shanghai')
+    scheduler_BN.add_job(job, 'cron', minute='00', second='03', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler_A.start()
     scheduler_BN.start()
