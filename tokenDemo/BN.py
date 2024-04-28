@@ -108,8 +108,9 @@ def bn(symbol, symbols_asset, alert_b):
                 # 第一个倍量所在索引
                 kline_vol = next(filter(
                     lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1 and price_close >=
-                              kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5] * 10, kline_hour[-1][5]), range(5, 6)), None)
+                              kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][
+                                  5] >= max(
+                        max(kline_hour[:x], key=lambda y: y[5])[5] * 10, kline_hour[-1][5]), range(4, 5)), None)
                 if kline_vol:
                     # try:
                     #     res = client.new_order(symbol=symbol, side='BUY', type='MARKET', timeInForce="GTC",
@@ -167,7 +168,7 @@ def job():
     except Exception as e:
         print(str(e))
     finally:
-        print(datetime.datetime.now(), 'BN任务结束')
+        print(datetime.datetime.now(), 'BN任务结束', alert_b)
         gc.collect()
 
 
