@@ -79,11 +79,7 @@ def rzq():
                     {
                         "title": "会所嫩模领取",
                         "description": "",
-                        "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6"
-                               "%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E7%AB%9E%E4%BB%B7%E9%AB%98%E5%BC%80%3B%E7%AB%9E"
-                               "%E4%BB%B7%E5%BC%82%E5%8A%A8%E8%AF%B4%E6%98%8E%3B%E6%98%A8%E6%97%A5%E6%B6%A8%E5%81%9C"
-                               "%E5%8E%9F%E5%9B%A0%E7%B1%BB%E5%88%AB%3B%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84"
-                               "%E7%BA%A7&querytype=stock",
+                        "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E7%AB%9E%E4%BB%B7%E9%AB%98%E5%BC%80%3B%E7%AB%9E%E4%BB%B7%E5%BC%82%E5%8A%A8%E8%AF%B4%E6%98%8E%3B%E6%98%A8%E6%97%A5%E6%B6%A8%E5%81%9C%E5%8E%9F%E5%9B%A0%E7%B1%BB%E5%88%AB%3B%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84%E7%BA%A7%E5%8C%85%E5%90%AB%E7%9C%8B%E5%A4%9A%E6%88%96%E8%80%85%E5%81%8F%E5%A4%9A&querytype=stock",
                         "picurl": "https://img11.chkaja.com/files/20240402/cf65830bbf07486c.jpg"
                     }
                 ]
@@ -111,7 +107,7 @@ def bn(symbol, symbols_asset, alert_b):
                     lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1.0333687020354 and price_close >=
                               kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][
                                   5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5] * 20, kline_hour[-1][5] * 0.9), range(4, 5)), None)
+                        max(kline_hour[:x], key=lambda y: y[5])[5] * 20, kline_hour[-1][5] * 0.9), range(4, 6)), None)
                 if kline_vol:
                     # try:
                     #     res = client.new_order(symbol=symbol, side='BUY', type='MARKET', timeInForce="GTC",
@@ -130,7 +126,7 @@ def bn(symbol, symbols_asset, alert_b):
                          symbol[:-4] in symbols_asset, price_close * 1.0333687020354))
             break
         except Exception as e:
-            print(symbol, i)
+            print(symbol, i, '\n')
 
 
 def job():
@@ -141,7 +137,7 @@ def job():
             symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=5000)}
             break
         except Exception as e:
-            print(str(e))
+            print('assert', i, '\n')
     alert_b = []
     # 创建线程列表
     threads = []
