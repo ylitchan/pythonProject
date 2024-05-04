@@ -69,7 +69,7 @@ client = Spot(api_key='A19rSNSOEbZqeQrKaV1wyoyhuDOFomARNu8omNQaII3Iv1DvYorfN5OeV
               api_secret='fF6yzKflVZNaDbjYUvh2nyc5aMgzSgst8GnxF3hixE9UKwKnjWVxOfg7gipqTztD')
 
 
-def rzq():
+def rzq_a():
     try:
         print(datetime.datetime.now(), 'A任务开始')
         json = {
@@ -100,10 +100,10 @@ def rzq():
         gc.collect()
 
 
-def bn(symbol, symbols_asset, alert_b):
+def rzq_bn(symbol, symbols_asset, alert_b):
     for i in range(10):
         try:
-            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1h", limit=7)[:6]]
+            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1d", limit=7)[:6]]
             price_close = kline_hour[-1][4]
             price_open = kline_hour[-1][1]
             if price_close >= price_open:
@@ -112,7 +112,7 @@ def bn(symbol, symbols_asset, alert_b):
                     lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1 and price_close >=
                               kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][
                                   5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5] * 10, kline_hour[-1][5] * 0.9), range(4, 5)), None)
+                        max(kline_hour[:x], key=lambda y: y[5])[5] * 4, kline_hour[-1][5] * 0), range(4, 5)), None)
                 if kline_vol:
                     # try:
                     #     res = client.new_order(symbol=symbol, side='BUY', type='MARKET', timeInForce="GTC",
@@ -134,7 +134,7 @@ def bn(symbol, symbols_asset, alert_b):
             print(symbol, i, '\n')
 
 
-def job():
+def bn():
     print(datetime.datetime.now(), 'BN任务开始')
     symbols_asset = set()
     for i in range(10):
@@ -148,7 +148,7 @@ def job():
     threads = []
     for symbol in symbols:
         # 创建并启动多个线程
-        t = threading.Thread(target=bn, args=(symbol, symbols_asset, alert_b))
+        t = threading.Thread(target=rzq_bn, args=(symbol, symbols_asset, alert_b))
         t.start()
         threads.append(t)
         # 等待所有线程完成
@@ -175,12 +175,12 @@ def job():
 
 
 def main():
-    job()
+    bn()
     # rzq()
     # 设置任务调度
-    scheduler_A.add_job(rzq, 'cron', hour='09', minute='25', second='00', day_of_week='mon-fri',
+    scheduler_A.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', day_of_week='mon-fri',
                         timezone='Asia/Shanghai')
-    scheduler_BN.add_job(job, 'cron', minute='00', second='03', timezone='Asia/Shanghai')
+    scheduler_BN.add_job(bn, 'cron', hour='09', minute='00', second='03', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler_A.start()
     scheduler_BN.start()
