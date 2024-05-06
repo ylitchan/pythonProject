@@ -140,7 +140,7 @@ def bn():
     symbols_asset = set()
     for i in range(10):
         try:
-            symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=5000)}
+            symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
             break
         except Exception as e:
             print('assert', i, '\n')
