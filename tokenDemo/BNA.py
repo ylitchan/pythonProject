@@ -132,7 +132,7 @@ def rzq_bn(symbol, symbols_asset, alert_b):
                          symbol[:-4] in symbols_asset, price_close * 1.04))
             break
         except Exception as e:
-            print(symbol, i, '\n')
+            print((symbol, i), '\n')
 
 
 def bn():
@@ -143,7 +143,7 @@ def bn():
             symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
             break
         except Exception as e:
-            print('assert', i, '\n')
+            print(('assert', i), '\n')
     alert_b = []
     # 创建线程列表
     threads = []
