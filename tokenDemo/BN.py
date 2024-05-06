@@ -112,7 +112,8 @@ def rzq_bn(symbol, symbols_asset, alert_b):
                     lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1 and price_close >=
                               kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][
                                   5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5] * 4, kline_hour[-1][5] * 0), range(4, 5)), None)
+                        max(kline_hour[:x], key=lambda y: y[5])[5] * 4, kline_hour[-1][5] * 4) and kline_hour[-1][
+                                  5] >= kline_hour[x][5] * 0.0, range(4, 5)), None)
                 if kline_vol:
                     # try:
                     #     res = client.new_order(symbol=symbol, side='BUY', type='MARKET', timeInForce="GTC",
@@ -178,9 +179,9 @@ def main():
     bn()
     # rzq()
     # 设置任务调度
-    scheduler_A.add_job(rzq_a, 'cron', hour='09', minute='25', second='00',# day_of_week='mon-fri',
+    scheduler_A.add_job(rzq_a, 'cron', hour='09', minute='25', second='00',  # day_of_week='mon-fri',
                         timezone='Asia/Shanghai')
-    scheduler_BN.add_job(bn, 'cron', hour='09', minute='00', second='00', timezone='Asia/Shanghai')
+    scheduler_BN.add_job(bn, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler_A.start()
     scheduler_BN.start()
