@@ -115,18 +115,6 @@ def rzq_bn(symbol, symbols_asset, alert_b):
                         max(kline_hour[:x], key=lambda y: y[5])[5] * 4, kline_hour[-1][5] * 4) and kline_hour[-1][
                                   5] >= kline_hour[x][5] * 0.0, range(4, 5)), None)
                 if kline_vol:
-                    # try:
-                    #     res = client.new_order(symbol=symbol, side='BUY', type='MARKET', timeInForce="GTC",
-                    #                            quoteOrderQty=1,
-                    #                            newOrderRespType='RESULT', recvWindow=5000).json()
-                    #     print(res)
-                    #     client.new_order(symbol=symbol, side='SELL', type='LIMIT', timeInForce="GTC",
-                    #                      quantity=res.get('executedQty'),
-                    #                      price=price_close * 1.0333687020354, newOrderRespType='ACK', recvWindow=5000)
-                    #
-                    # except Exception as e:
-                    #     res = {}
-                    #     print(str(e))
                     alert_b.append(
                         (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100,
                          symbol[:-4] in symbols_asset, price_close * 1.04))
