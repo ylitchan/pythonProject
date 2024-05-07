@@ -105,22 +105,19 @@ def rzq_bn(symbol, symbols_asset, alert_b):
         try:
             kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1d", limit=6)]
             price_close = kline_hour[-1][4]
-            price_open = kline_hour[-1][1]
-            if price_close >= price_open:
+            if price_close >= kline_hour[-1][1]:
                 # 第一个倍量所在索引
                 kline_vol = next(filter(
-                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1 and price_close >=
-                              kline_hour[x][4] >= max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][
-                                  5] >= max(
-                        max(kline_hour[:x], key=lambda y: y[5])[5] * 4, kline_hour[-1][5] * 4) and kline_hour[-1][
-                                  5] >= kline_hour[x][5] * 0.0, range(4, 5)), None)
+                    lambda x: kline_hour[x][4] / kline_hour[x - 1][4] >= 1 and kline_hour[x][4] >=
+                              max(kline_hour[:x], key=lambda y: y[2])[2] and kline_hour[x][5] >= max(
+                        max(kline_hour[:x], key=lambda y: y[5])[5] * 4, kline_hour[-1][5] * 4), range(4, 5)), None)
                 if kline_vol:
                     alert_b.append(
                         (symbol, price_close, (kline_hour[kline_vol][4] / kline_hour[kline_vol - 1][4] - 1) * 100,
                          symbol[:-4] in symbols_asset, price_close * 1.04))
             break
         except Exception as e:
-            print((symbol, i), '\n')
+            print((symbol, i))
 
 
 def bn():
@@ -131,7 +128,7 @@ def bn():
             symbols_asset = {s['asset'] for s in client.user_asset(recvWindow=60000)}
             break
         except Exception as e:
-            print(('assert', i), '\n')
+            print(('assert', i))
     alert_b = []
     # 创建线程列表
     threads = []
@@ -169,7 +166,7 @@ def main():
     # 设置任务调度
     scheduler_A.add_job(rzq_a, 'cron', hour='09', minute='25', second='00',  # day_of_week='mon-fri',
                         timezone='Asia/Shanghai')
-    scheduler_BN.add_job(bn, 'cron', hour='*/1', minute='59', second='50', timezone='Asia/Shanghai')
+    scheduler_BN.add_job(bn, 'cron', hour='*/1', minute='00', second='01', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler_A.start()
     scheduler_BN.start()
