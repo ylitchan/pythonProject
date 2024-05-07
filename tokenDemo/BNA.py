@@ -94,7 +94,7 @@ def rzq_a():
 def rzq_bn(symbol, symbols_asset, alert_b):
     for i in range(10):
         try:
-            kline_hour = [[float(i) for i in sub] for sub in client.klines(symbol=symbol, interval="1d", limit=6)]
+            kline_hour = [list(map(float, sublist)) for sublist in client.klines(symbol=symbol, interval="1d", limit=6)]
             price_close = kline_hour[-1][4]
             if (price_close >= kline_hour[-1][1] and kline_hour[-2][4] >= max(kline_hour[:-2], key=lambda y: y[2])[2]
                     and kline_hour[-2][5] >= max(max(kline_hour[:-2], key=lambda y: y[5])[5] * 4,
