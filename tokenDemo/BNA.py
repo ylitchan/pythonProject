@@ -55,16 +55,7 @@ symbols = {'PORTALUSDT', 'PHBUSDT', 'PNTUSDT', 'ADXUSDT', 'APEUSDT', 'SUPERUSDT'
            'MOBUSDT', 'QIUSDT', 'BELUSDT', 'WAXPUSDT', 'ROSEUSDT', 'ZECUSDT', 'ALGOUSDT', 'USDCUSDT', 'FILUSDT',
            'AVAUSDT', 'REEFUSDT', 'PHAUSDT', 'MINAUSDT', 'ZRXUSDT', 'ONTUSDT', 'DIAUSDT', 'SNXUSDT', 'UTKUSDT',
            'FIDAUSDT', 'DUSKUSDT', 'MANAUSDT', 'AUCTIONUSDT', 'APTUSDT', 'ACEUSDT', 'ALPINEUSDT', 'XRPUSDT', 'TNSRUSDT',
-           'WUSDT', 'ENAUSDT'}
-symbols_tvl = {'CELRUSDT', 'DIAUSDT', 'TKOUSDT', 'HIGHUSDT', 'API3USDT', 'JOEUSDT', 'AXLUSDT', 'SSVUSDT', 'METISUSDT',
-               'CHRUSDT', 'SUSHIUSDT', 'VOXELUSDT', 'GTCUSDT', 'FUNUSDT', 'MLNUSDT', 'XVGUSDT', 'ARKMUSDT',
-               'PENDLEUSDT', 'AVAUSDT', 'MOBUSDT', 'SCRTUSDT', 'MAVUSDT', 'ORDIUSDT', 'STORJUSDT',
-               'FIROUSDT', 'KDAUSDT', 'SYNUSDT', 'LPTUSDT', 'ZRXUSDT', 'OGNUSDT', 'CYBERUSDT',
-               'GLMRUSDT', 'UMAUSDT', 'POLSUSDT', 'XVSUSDT', 'LOKAUSDT', 'MBOXUSDT', 'FLUXUSDT', 'STGUSDT',
-               'HARDUSDT', 'WAXPUSDT', 'ALPACAUSDT', 'GALUSDT', 'QIUSDT', 'GNSUSDT', 'PERPUSDT', 'RAYUSDT',
-               'RSRUSDT', 'BLZUSDT', 'BAKEUSDT', 'BIFIUSDT', 'SPELLUSDT', 'BANDUSDT', 'LQTYUSDT', 'IDUSDT',
-               'RDNTUSDT', 'MAGICUSDT'}
-symbols_dwf = {'DODOUSDT', 'AUCTIONUSDT', 'WAVESUSDT', 'YGGUSDT', 'AGLDUSDT', 'C98USDT'}
+           'WUSDT', 'ENAUSDT', 'REZUSDT', 'OMNIUSDT', 'TAOUSDT', 'SAGAUSDT'}
 client = Spot(api_key='A19rSNSOEbZqeQrKaV1wyoyhuDOFomARNu8omNQaII3Iv1DvYorfN5OeVlTv198A',
               api_secret='fF6yzKflVZNaDbjYUvh2nyc5aMgzSgst8GnxF3hixE9UKwKnjWVxOfg7gipqTztD')
 
@@ -164,8 +155,7 @@ def main():
     bn()
     # rzq()
     # 设置任务调度
-    scheduler_A.add_job(rzq_a, 'cron', hour='09', minute='25', second='00',  # day_of_week='mon-fri',
-                        timezone='Asia/Shanghai')
+    scheduler_A.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
     scheduler_BN.add_job(bn, 'cron', hour='*/1', minute='00', second='01', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler_A.start()
