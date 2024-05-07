@@ -169,7 +169,7 @@ def main():
     # 设置任务调度
     scheduler_A.add_job(rzq_a, 'cron', hour='09', minute='25', second='00',  # day_of_week='mon-fri',
                         timezone='Asia/Shanghai')
-    scheduler_BN.add_job(bn, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai')
+    scheduler_BN.add_job(bn, 'cron', hour='*/1', minute='59', second='50', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler_A.start()
     scheduler_BN.start()
