@@ -127,7 +127,6 @@ def rzq_okx(symbol, alert):
             break
         except Exception as e:
             time.sleep(2)
-            print((symbol, i))
 
 
 def rzq_token(market, symbols, job):
