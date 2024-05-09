@@ -53,26 +53,15 @@ def rzq_a():
         gc.collect()
 
 
-def rzq_bn(symbol, alert):
+def rzq_token(symbol, alert):
     for i in range(10):
         try:
-            kline_hour = [list(map(float, sublist)) for sublist in client.klines(symbol=symbol, interval="1d", limit=6)]
-            price_close = kline_hour[-1][4]
-            if (price_close >= kline_hour[-2][4] >= max(kline_hour[:-2], key=lambda y: y[2])[2]
-                    and kline_hour[-2][5] >= max(max(kline_hour[:-2], key=lambda y: y[5])[5] * 4,
-                                                 kline_hour[-1][5] * 4)):
-                alert.append(
-                    (symbol, price_close, (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100, price_close * 1.04))
-            break
-        except Exception as e:
-            print((symbol, i))
-
-
-def rzq_okx(symbol, alert):
-    for i in range(10):
-        try:
-            kline_hour = [list(map(float, sublist)) for sublist in
-                          marketDataAPI.get_candlesticks(instId=symbol, bar="1Dutc", limit=6).get('data')[::-1]]
+            if "-USDT" in symbol:
+                kline_hour = [list(map(float, sublist)) for sublist in
+                              marketDataAPI.get_candlesticks(instId=symbol, bar="1Dutc", limit=6).get('data')[::-1]]
+            else:
+                kline_hour = [list(map(float, sublist)) for sublist in
+                              client.klines(symbol=symbol, interval="1d", limit=6)]
             price_close = kline_hour[-1][4]
             if (price_close >= kline_hour[-2][4] >= max(kline_hour[:-2], key=lambda y: y[2])[2]
                     and kline_hour[-2][5] >= max(max(kline_hour[:-2], key=lambda y: y[5])[5] * 4,
@@ -84,7 +73,7 @@ def rzq_okx(symbol, alert):
             time.sleep(2)
 
 
-def rzq_token(market, symbols, job):
+def rzq_market(market, symbols, job):
     print(datetime.datetime.now(), f'{market}任务开始', len(symbols))
     alert = []
     # 创建线程列表
@@ -132,15 +121,15 @@ def main():
             break
         except Exception as e:
             print(('symbols_okx', i))
-    rzq_token('BN', symbols_bn, rzq_bn)
-    rzq_token('OKX', symbols_okx, rzq_okx)
+    rzq_market('BN', symbols_bn, rzq_token)
+    rzq_market('OKX', symbols_okx, rzq_token)
     # rzq()
     # 设置任务调度
     scheduler.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
-    scheduler.add_job(rzq_token, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
-                      args=['BN', symbols_bn, rzq_bn])
-    scheduler.add_job(rzq_token, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
-                      args=['OKX', symbols_okx, rzq_okx])
+    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
+                      args=['BN', symbols_bn, rzq_token])
+    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
+                      args=['OKX', symbols_okx, rzq_token])
     # 启动调度器
     scheduler.start()
 
