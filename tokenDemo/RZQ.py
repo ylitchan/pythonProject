@@ -85,7 +85,7 @@ def rzq_okx(symbol, alert):
 
 
 def rzq_token(market, symbols, job):
-    print(datetime.datetime.now(), f'{market}任务开始:{len(symbols)}')
+    print(datetime.datetime.now(), f'{market}任务开始', len(symbols))
     alert = []
     # 创建线程列表
     threads = []
