@@ -148,7 +148,7 @@ def rzq_token(market, symbols, job):
             alert_sort = enumerate(sorted(alert, key=lambda x: x[2], reverse=True))
             alert.clear()
             for i, j in alert_sort:
-                alert.append(f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n目标:{j[4]}')
+                alert.append(f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n目标:{j[3]}')
             json = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
