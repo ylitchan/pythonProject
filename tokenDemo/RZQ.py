@@ -148,13 +148,13 @@ def rzq_token(market, symbols, job):
             alert_sort = enumerate(sorted(alert, key=lambda x: x[2], reverse=True))
             alert.clear()
             for i, j in alert_sort:
-                alert.append(f'{i + 1}.{j[0][:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n目标:{j[4]}')
+                alert.append(f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n目标:{j[4]}')
             json = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
             }
             session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
                 json=json)
     except Exception as e:
         print(str(e))
