@@ -97,7 +97,7 @@ def rzq_market(market, symbols, job):
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
             }
             session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
                 json=json)
     except Exception as e:
         print(str(e))
