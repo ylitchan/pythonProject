@@ -30,7 +30,7 @@ def rzq_a():
             "news": {
                 "articles": [
                     {
-                        "title": "会所嫩模领取",
+                        "title": "钱到手了",
                         "description": "",
                         "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6"
                                "%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E7%AB%9E%E4%BB%B7%E9%AB%98%E5%BC%80%3B%E7%AB%9E"
@@ -38,7 +38,7 @@ def rzq_a():
                                "%E5%8E%9F%E5%9B%A0%E7%B1%BB%E5%88%AB%3B%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84"
                                "%E7%BA%A7%E5%8C%85%E5%90%AB%E7%9C%8B%E5%A4%9A%E6%88%96%E8%80%85%E5%81%8F%E5%A4%9A"
                                "&querytype=stock",
-                        "picurl": "https://img11.chkaja.com/files/20240402/cf65830bbf07486c.jpg"
+                        "picurl": "https://img.chkaja.com/88e15fc820b78b0e.png"
                     }
                 ]
             }
@@ -123,7 +123,7 @@ def main():
             print(('symbols_okx', i))
     rzq_market('BN', symbols_bn, rzq_token)
     rzq_market('OKX', symbols_okx, rzq_token)
-    # rzq()
+    # rzq_a()
     # 设置任务调度
     scheduler.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
@@ -135,4 +135,5 @@ def main():
 
 
 if __name__ == "__main__":
+    # rzq_a()
     main()
