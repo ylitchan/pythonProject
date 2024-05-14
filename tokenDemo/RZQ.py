@@ -1,6 +1,7 @@
 import datetime
 import gc
 import json
+import math
 import threading
 import time
 
@@ -67,7 +68,8 @@ def rzq_token(symbol, alert):
                     and kline_hour[-2][5] >= max(max(kline_hour[:-2], key=lambda y: y[5])[5] * 4,
                                                  kline_hour[-1][5] * 4)):
                 alert.append(
-                    (symbol, price_close, (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100, price_close * 1.04))
+                    (
+                    symbol, price_close, (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100, price_close * math.sqrt(2)))
             break
         except Exception as e:
             time.sleep(2)
