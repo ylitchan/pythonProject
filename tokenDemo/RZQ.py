@@ -69,7 +69,8 @@ def rzq_token(symbol, alert):
                                                  kline_hour[-1][5] * 4)):
                 alert.append(
                     (
-                    symbol, price_close, (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100, price_close * math.sqrt(2)))
+                        symbol, price_close, (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100,
+                        price_close * (math.sqrt(0.02) + 0.9)))
             break
         except Exception as e:
             time.sleep(2)
