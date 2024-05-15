@@ -31,7 +31,7 @@ def rzq_a():
             "news": {
                 "articles": [
                     {
-                        "title": "金币落袋的响声",
+                        "title": "钱到手了",
                         "description": "",
                         "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6"
                                "%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E7%AB%9E%E4%BB%B7%E9%AB%98%E5%BC%80%3B%E7%AB%9E"
