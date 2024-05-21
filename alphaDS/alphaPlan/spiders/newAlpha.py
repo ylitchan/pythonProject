@@ -1,8 +1,9 @@
+import redis
 import requests
+import scrapy
 from jsonpath_ng import parse
 from scrapy import Request
-import redis
-import scrapy
+
 from ..settings import *
 
 
@@ -12,7 +13,7 @@ class NewAlphaSpider(scrapy.Spider):
     redis_bloom = redis.Redis(host='localhost', port=6379, decode_responses=True)
     session = requests.session()
     alert = []
-    id_bloom=set()
+    id_bloom = set()
     user_dict = {'@doctorDefi2020': 1410877375198285827,
                  '@ugly42061647': 1161902865969025024,
                  '@FedAgentAaron': 1442919050, '@Sajuio8': 1479930165761302531, '@cryptamurai': 914788213763559424,

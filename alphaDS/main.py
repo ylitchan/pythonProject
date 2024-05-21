@@ -1,8 +1,8 @@
-import time
-import schedule
 import subprocess
-from scrapy import cmdline
+import time
 
+import schedule
+from scrapy import cmdline
 
 cmdline.execute(['scrapy', 'crawl', 'alpha', '--nolog'])
 

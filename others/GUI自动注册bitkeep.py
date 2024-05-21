@@ -1,8 +1,11 @@
 import datetime
 import time
-import pyperclip
+
 import pyautogui
-for w in ['0xb221ae8361b39158916938303bf498905038b51284d957a9a565db5abe84a0e2max','tube raccoon scare travel goddess enlist screen balcony text payment you board']:
+import pyperclip
+
+for w in ['0xb221ae8361b39158916938303bf498905038b51284d957a9a565db5abe84a0e2max',
+          'tube raccoon scare travel goddess enlist screen balcony text payment you board']:
     time.sleep(5)
     print(pyautogui.position())
     # # 新建模拟器
@@ -39,26 +42,26 @@ for w in ['0xb221ae8361b39158916938303bf498905038b51284d957a9a565db5abe84a0e2max
     #     pyautogui.click(x=1278, y=862)
     # # 导入助记词
     # time.sleep(2)
-    pyautogui.click(x=1225, y=428)#助记词输入框
+    pyautogui.click(x=1225, y=428)  # 助记词输入框
     pyperclip.copy(w)
     # time.sleep(2)
     pyperclip.paste()
     pyautogui.click(x=1274, y=674)
     time.sleep(20)
-    pyautogui.click(x=1320, y=1266)#立即体验
+    pyautogui.click(x=1320, y=1266)  # 立即体验
     # 发现页面
-    pyautogui.click(x=1567, y=1301)#发现
+    pyautogui.click(x=1567, y=1301)  # 发现
     time.sleep(3)
-    pyautogui.click(x=1363, y=381)#邀请
+    pyautogui.click(x=1363, y=381)  # 邀请
     time.sleep(20)
-    pyautogui.click(x=1237, y=693)#邀请码框
+    pyautogui.click(x=1237, y=693)  # 邀请码框
     # pyperclip.copy('De75eA')
     time.sleep(2)
-    pyautogui.typewrite(['D', 'e', '7', '5','e','A'])
+    pyautogui.typewrite(['D', 'e', '7', '5', 'e', 'A'])
     pyautogui.press('enter')
     # pyautogui.hotkey('ctrl','v')
     time.sleep(2)
-    pyautogui.click(x=1424, y=841)#确认
+    pyautogui.click(x=1424, y=841)  # 确认
     time.sleep(2)
     pyautogui.click(x=1145, y=897)
     time.sleep(2)
@@ -66,17 +69,17 @@ for w in ['0xb221ae8361b39158916938303bf498905038b51284d957a9a565db5abe84a0e2max
     time.sleep(2)
     pyautogui.click(x=1113, y=238)
     time.sleep(2)
-    pyautogui.click(x=1177, y=258)#复制id
+    pyautogui.click(x=1177, y=258)  # 复制id
     time.sleep(2)
     # 复制id发送
-    pyautogui.click(x=2423, y=1343)#微信输入
-    pyautogui.hotkey('ctrl','v')
+    pyautogui.click(x=2423, y=1343)  # 微信输入
+    pyautogui.hotkey('ctrl', 'v')
     pyautogui.press('enter')
     # 关闭模拟器并删除
-    pyautogui.click(x=1928, y=195)#关闭
+    pyautogui.click(x=1928, y=195)  # 关闭
     pyautogui.click(x=1776, y=395)
     time.sleep(5)
-    pyautogui.click(x=2130, y=195)#删除
+    pyautogui.click(x=2130, y=195)  # 删除
     pyautogui.click(x=1778, y=400)
 
     print(datetime.datetime.now().strftime('%H:%M'))

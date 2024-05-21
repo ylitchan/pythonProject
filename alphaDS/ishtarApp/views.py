@@ -1,13 +1,11 @@
 import json
-from django.shortcuts import render
-from rest_framework.response import Response
 from threading import Thread
-from rest_framework.decorators import api_view
-from django.http import HttpResponse
+
+from django.shortcuts import render
 from ishtarApp.models import *
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
 from utils.tools import *
-from django.http import StreamingHttpResponse
-from django.views.decorators.http import condition
 
 
 # Create your views here.

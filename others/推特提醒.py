@@ -2,30 +2,27 @@ import re
 import threading
 import time
 from collections import Counter
-from selenium.common.exceptions import TimeoutException
 import selenium.webdriver.edge.service
 from discord_webhook import DiscordWebhook
 import json
 import random
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from flask import Flask, redirect, url_for, request, render_template
 from decimal import Decimal
 from functools import reduce
 
 from selenium.webdriver.support import expected_conditions as EC
 
-
 from selenium.webdriver.support.ui import WebDriverWait
+
 options = webdriver.EdgeOptions()
 options.headless = True
 service = webdriver.edge.service.Service(executable_path="msedgedriver.exe")  # executable_path="D:/msedgedriver.exe"
-heads=['user-agent=Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) '
-       'Chrome/104.0.5112.81 Mobile Safari/537.36 Edg/104.0.1293.54', "user-agent=Mozilla/5.0 (Linux; Android 6.0; "
-                                                                      "Nexus 5 Build/MRA58N) AppleWebKit/537.36 ("
-                                                                      "KHTML, like Gecko) Chrome/103.0.5060.134 "
-                                                                      "Mobile Safari/537.36 Edg/103.0.1264.71"]
-
+heads = ['user-agent=Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) '
+         'Chrome/104.0.5112.81 Mobile Safari/537.36 Edg/104.0.1293.54', "user-agent=Mozilla/5.0 (Linux; Android 6.0; "
+                                                                        "Nexus 5 Build/MRA58N) AppleWebKit/537.36 ("
+                                                                        "KHTML, like Gecko) Chrome/103.0.5060.134 "
+                                                                        "Mobile Safari/537.36 Edg/103.0.1264.71"]
 
 # driver = webdriver.Edge(options=options, service=service)
 # cookies=[
@@ -228,15 +225,18 @@ heads=['user-agent=Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleW
 # for item in cookies:
 #     driver.add_cookie(item)
 fp = open('twitterfollowing.json', 'r+')
-#读取本地文件，载入内存
-loadtext=json.loads(fp.read())
-#该函数为每个组更新数据
-def getsfollowing(group):# ,"yLitchan"
-    followinglist = []  #存储每个组
+# 读取本地文件，载入内存
+loadtext = json.loads(fp.read())
+
+
+# 该函数为每个组更新数据
+def getsfollowing(group):  # ,"yLitchan"
+    followinglist = []  # 存储每个组
+
     # 的所有following
-    #该函数为每个组的每个id获取following
+    # 该函数为每个组的每个id获取following
     def getfollowing(id):
-        followingset=set()
+        followingset = set()
         options.add_argument(random.choice(heads))
 
         driver = webdriver.Edge(options=options, service=service)
@@ -436,17 +436,18 @@ def getsfollowing(group):# ,"yLitchan"
                 "id": 14
             }
         ]
-        #先进入页面
+        # 先进入页面
         driver.get("https://twitter.com/")
-        #添加所有cookie
+        # 添加所有cookie
         for item in cookies:
             driver.add_cookie(item)
-        #打开每个id的following页面
-        driver.get('https://twitter.com/'+id+'/following')
+        # 打开每个id的following页面
+        driver.get('https://twitter.com/' + id + '/following')
         # 等待元素可见
-        WebDriverWait(driver, 60).until(EC.visibility_of_element_located((By.XPATH, '//*[@id="react-root"]/div/div/div[2]/main/div/div/div/div[1]/div/section')))
+        WebDriverWait(driver, 60).until(EC.visibility_of_element_located(
+            (By.XPATH, '//*[@id="react-root"]/div/div/div[2]/main/div/div/div/div[1]/div/section')))
         time.sleep(5)
-        #载入所有页面
+        # 载入所有页面
 
         while True:
             followingdata = driver.find_element(By.XPATH,
@@ -463,7 +464,6 @@ def getsfollowing(group):# ,"yLitchan"
                 break
         followinglist.extend(followingset)
 
-
         # followingdata=driver.find_element(By.XPATH,
         #                     '//*[@id="react-root"]/div/div/div[2]/main/div/div/div/div[1]/div/section').text
         # following = set(re.findall(r'\n(@\w+?)\n', followingdata))
@@ -471,11 +471,12 @@ def getsfollowing(group):# ,"yLitchan"
         # followinglist.extend(following)
 
         driver.close()
-            #     break
-            # except:
-            #     time.sleep(10)
-            #     continue
-    #为该组的每个id创建线程
+        #     break
+        # except:
+        #     time.sleep(10)
+        #     continue
+
+    # 为该组的每个id创建线程
     while True:
         try:
             threadlist = []
@@ -502,28 +503,27 @@ def getsfollowing(group):# ,"yLitchan"
     # for i in loadtext['allgroup'][group]['followinglistlist']:
     print(len(loadtext['allgroup'][group]['followinglistlist']))
 
-
     # try:
     #     cofollowingset = reduce(lambda a, b: a & b, followinglist)
     # except:
     #     cofollowingset=set()
-    #去掉原有的following
-    print('follwoing1',len(followinglist))
-    if len(loadtext['allgroup'][group]['followinglistlist'])>1:
+    # 去掉原有的following
+    print('follwoing1', len(followinglist))
+    if len(loadtext['allgroup'][group]['followinglistlist']) > 1:
         for ex in loadtext['allgroup'][group]['followinglistlist'][0]:
             try:
                 followinglist.remove(ex)
             except:
                 continue
-    #计数新增following的个数
+    # 计数新增following的个数
     # count=dict(Counter())
     # print(count)
     print('following2', len(followinglist))
     alertset = set()
     for i in range(len(followinglist)):
-        num=followinglist.count(followinglist[i])
-        print(i, followinglist[i],num)
-        if num>1:#设置一个新增只通知一次
+        num = followinglist.count(followinglist[i])
+        print(i, followinglist[i], num)
+        if num > 1:  # 设置一个新增只通知一次
             alertset.add(followinglist[i])
     loadtext['allgroup'][group]['alertlist'].append(list(alertset))
     #     newco=list(cofollowingset - set(idzu['cofollowinglist']))
@@ -534,7 +534,7 @@ def getsfollowing(group):# ,"yLitchan"
         webhook = DiscordWebhook(
             embeds=[{"author": {"name": 'yLitchan', "icon_url": "https://api.cyfan.top/acg", },
                      "title": group,
-                     "description": str(alertset),# "fields": [{"name": "Value", "value": str(newco), "inline": True},
+                     "description": str(alertset),  # "fields": [{"name": "Value", "value": str(newco), "inline": True},
                      #                              {"name": "Txn Fee", "value": str(newco), "inline": True},
                      #                              {"name": "To", "value": str(newco), "inline": True},
                      #                              ],
@@ -544,14 +544,15 @@ def getsfollowing(group):# ,"yLitchan"
             # content=str(newco),
             username='Spidey Bot',
             avatar_url='https://api.cyfan.top/acg', )
-        webhook.api_post_request(url='https://discord.com/api/webhooks/1001134296972660816/cdIqGx2uw2Z3Rjk86c8jLHCU6Lmk1ZKtm3DKxSyivK64HfKaLbiXK8-f6F4po5tTxBAH')
+        webhook.api_post_request(
+            url='https://discord.com/api/webhooks/1001134296972660816/cdIqGx2uw2Z3Rjk86c8jLHCU6Lmk1ZKtm3DKxSyivK64HfKaLbiXK8-f6F4po5tTxBAH')
 
 
 while True:
     # try:
-    tlist=[]
+    tlist = []
     for group in loadtext['allgroup']:
-        thread=threading.Thread(target=getsfollowing,args=[group,])
+        thread = threading.Thread(target=getsfollowing, args=[group, ])
         thread.start()
         tlist.append(thread)
     for t in tlist:
@@ -559,21 +560,19 @@ while True:
     #
     # except:
     #     continue
-    #23h更新一次时间戳，预警列表，备份数据
+    # 23h更新一次时间戳，预警列表，备份数据
 
     for j in loadtext['allgroup']:
         # if loadtext['allgroup'][alpha.json]['timestamplist'][-1] - loadtext['allgroup'][alpha.json]['timestamplist'][0] > 88200:
         for timenum in range(len(loadtext['allgroup'][j]['timestamplist'])):
-            if loadtext['allgroup'][j]['timestamplist'][-1]-loadtext['allgroup'][j]['timestamplist'][timenum]> 88200:
+            if loadtext['allgroup'][j]['timestamplist'][-1] - loadtext['allgroup'][j]['timestamplist'][timenum] > 88200:
                 loadtext['allgroup'][j]['timestamplist'].remove(loadtext['allgroup'][j]['timestamplist'][timenum])
-                loadtext['allgroup'][j]['followinglistlist'].remove(loadtext['allgroup'][j]['followinglistlist'][timenum])
+                loadtext['allgroup'][j]['followinglistlist'].remove(
+                    loadtext['allgroup'][j]['followinglistlist'][timenum])
                 loadtext['allgroup'][j]['alertlist'].remove(loadtext['allgroup'][j]['alertlist'][timenum])
             else:
                 break
     with open('twitterfollowing.json', 'w') as fpw:
         fpw.truncate()
         # fpw.seek(0)
-        fpw.write(json.dumps(loadtext,indent=4))
-
-
-
+        fpw.write(json.dumps(loadtext, indent=4))

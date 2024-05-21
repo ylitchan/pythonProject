@@ -1,4 +1,5 @@
 import datetime
+
 import schedule
 from utils.tools import *
 
@@ -27,7 +28,8 @@ def do_task():
     alpha = LaunchInfo.objects.filter(tweet_tag__icontains=time.strftime('%Y-%m-%d')).values('tweet_alpha',
                                                                                              'tweet_tag',
                                                                                              'tweet_user', 'tweet_id',
-                                                                                             'tweet_text', 'list_account')
+                                                                                             'tweet_text',
+                                                                                             'list_account')
     index = 0
     while index < len(alpha):
         msg = '\n\n'.join([time.strftime('%Y-%m-%d'), "🚀Today's Alpha"] + [

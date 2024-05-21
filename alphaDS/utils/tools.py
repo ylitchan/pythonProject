@@ -1,24 +1,20 @@
 import json
 import re
 import time
-import moviepy.editor as mpe
+
 import openai
+import redis
 import requests
-from dateutil import parser
-from jsonpath_ng import parse
-from slack_sdk import WebClient
 import telebot
 import tweepy
-import queue
-from threading import Thread
-from pybloom_live import ScalableBloomFilter
-import random
-import speech_recognition as sr
-import redis
-from pygtrans import Translate
-from claude_api import Client
-from alphaPlan.settings import ACCOUNT_LIST, LIST_LIST
 from alphaPlan.items import *
+from alphaPlan.settings import LIST_LIST
+from claude_api import Client
+from dateutil import parser
+from jsonpath_ng import parse
+from pybloom_live import ScalableBloomFilter
+from pygtrans import Translate
+from slack_sdk import WebClient
 
 # 消息生产者
 # q_add = queue.Queue()
@@ -47,11 +43,6 @@ client_tweet = tweepy.Client(
 # admin = KafkaClient(bootstrap_servers=['localhost:9092'],api_version=(0,10,2))
 # admin.add_topic("ISHTAR")
 # producer = KafkaProducer(bootstrap_servers=['localhost:9092'],api_version=(0,10,2))
-from selenium.webdriver.support import expected_conditions as EC
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
 
 # chrome_driver_path = r'D:\allProjects\pyDemo\msedgedriver.exe'
 # options = webdriver.EdgeOptions()
@@ -253,7 +244,7 @@ def chat_gpt_stream(msg: list):
         return {'code': 400, 'data': {'hf': 'gpt error'}, 'msg': '小福吃竹子去了,请稍后再来'}
 
 
-def chat_claude(msg: str,conversation):
+def chat_claude(msg: str, conversation):
     res = claude.send_message(msg, conversation)
     return {'code': 200, 'data': {'hf': res}, 'msg': 'gpt返回结果'}
 

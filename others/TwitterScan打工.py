@@ -1,21 +1,19 @@
 # 创作人:颜立全
+import datetime
+import threading
+import time
 import tkinter as tk
 import tkinter.messagebox as messagebox
-import threading
 import tkinter.simpledialog
+
 import selenium.webdriver.edge.service
-import json
-from selenium import webdriver
-from selenium.webdriver.common.by import By
 from PIL import Image, ImageTk
-import random
+from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-import datetime
-import time
-from selenium.webdriver.common.keys import Keys
-import requests as req
 
 event = threading.Event()
 
@@ -30,8 +28,7 @@ class GUI():
         self.options = webdriver.EdgeOptions()
         # self.options.headless = True
         self.service = webdriver.edge.service.Service(executable_path="msedgedriver.exe")
-        self.msglist=['']
-
+        self.msglist = ['']
 
     def get_img(self, filename, width, height):
         self.im = Image.open(filename).resize((width, height))
@@ -55,9 +52,8 @@ class GUI():
     def draw(self, event):
         a.root.withdraw()
 
-
-    def login(self,driver,channel,id,pw):
-        driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F'+ channel)
+    def login(self, driver, channel, id, pw):
+        driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F' + channel)
 
         name = driver.find_element(By.XPATH,
                                    '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/div[1]/div/div[2]/input')
@@ -67,47 +63,46 @@ class GUI():
         password.send_keys(pw)
         driver.find_element(By.XPATH,
                             '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/button[2]').click()
-    def sendmsgs(self,channel,id,pw):
+
+    def sendmsgs(self, channel, id, pw):
         driver = webdriver.Edge(options=self.options, service=self.service)
         self.login(driver, channel, id, pw)
         WebDriverWait(driver, 60, 0.5).until(
             EC.visibility_of_element_located((By.CLASS_NAME, 'editor-H2NA06')),
             message='超时啦!')
-        n=0
+        n = 0
         while True:
             event.wait()
             ActionChains(driver).send_keys('!work').perform()
             time.sleep(2)
             ActionChains(driver).send_keys(Keys.ENTER).perform()
             time.sleep(2)
-            ActionChains(driver).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).perform()
-            self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f")+'第'+str(n)+'次'+'work正常\n')
-            if n==12:
+            ActionChains(driver).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(
+                Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).perform()
+            self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f") + '第' + str(
+                n) + '次' + 'work正常\n')
+            if n == 12:
                 ActionChains(driver).send_keys('!daily').perform()
                 time.sleep(2)
                 ActionChains(driver).send_keys(Keys.ENTER).perform()
                 time.sleep(2)
-                ActionChains(driver).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).perform()
+                ActionChains(driver).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(
+                    Keys.BACKSPACE).send_keys(Keys.BACKSPACE).send_keys(Keys.BACKSPACE).perform()
                 self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f") + 'daily正常\n')
-                n=0
+                n = 0
             else:
-                n+=1
+                n += 1
             time.sleep(7200)
-
-
-
-
 
     def start(self):
         event.set()
-        id = tkinter.simpledialog.askstring(title="dc",prompt="ID:")
-        pw = tkinter.simpledialog.askstring(title="pw",prompt="password:")
+        id = tkinter.simpledialog.askstring(title="dc", prompt="ID:")
+        pw = tkinter.simpledialog.askstring(title="pw", prompt="password:")
 
-        #币安的频道
-        thread = threading.Thread(target=self.sendmsgs, args=['917650164737536031%2F982308342368174140',id,pw])
+        # 币安的频道
+        thread = threading.Thread(target=self.sendmsgs, args=['917650164737536031%2F982308342368174140', id, pw])
         thread.daemon = True
         thread.start()
-
 
     def end(self):
         event.clear()
@@ -118,4 +113,3 @@ class GUI():
 if __name__ == '__main__':
     a = GUI()
     a.root.mainloop()
-

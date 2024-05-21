@@ -1,19 +1,19 @@
 # 创作人:颜立全
-import random
+import datetime
+import threading
+import time
 import tkinter as tk
 import tkinter.messagebox as messagebox
-import threading
 import tkinter.simpledialog
+
 import selenium.webdriver.edge.service
-from selenium import webdriver
-from selenium.webdriver.common.by import By
 from PIL import Image, ImageTk
-import time
-from selenium.webdriver.common.keys import Keys
+from selenium import webdriver
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-import datetime
 
 event = threading.Event()
 
@@ -105,7 +105,7 @@ class GUI():
 
                         except:
                             continue
-                        if c == b and n==1:
+                        if c == b and n == 1:
                             ActionChains(self.driver).key_down(Keys.NUMPAD0).key_up(Keys.NUMPAD0).send_keys(
                                 Keys.BACKSPACE).perform()
 
@@ -116,6 +116,7 @@ class GUI():
                             break
                     self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f") + '\n')
             time.sleep(5)
+
     def start(self):
         event.set()
         id = tkinter.simpledialog.askstring(title="dc", prompt="id:")

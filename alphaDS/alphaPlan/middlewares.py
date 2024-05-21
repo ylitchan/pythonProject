@@ -2,16 +2,15 @@
 #
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
-import logging
 import random
 import time
+
 import requests
-import json
-from scrapy.http import TextResponse
 from scrapy import signals
+from scrapy.http import TextResponse
+
 
 # useful for handling different item types with a single interface
-from itemadapter import is_item, ItemAdapter
 
 
 class AlphaplanSpiderMiddleware:

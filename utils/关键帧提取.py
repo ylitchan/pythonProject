@@ -7,9 +7,9 @@
 @time: 2022/4/15 14:09
 """
 
-import av
 import os
-import shutil
+
+import av
 
 
 # 视频提取关键帧工具类（支持批量视频）

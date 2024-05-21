@@ -44,11 +44,8 @@ async def startup():
         # converse = aws.manipulator
         await aws.send_json(data_raw)
 
-        tasks = [receDM(aws),sendHeartBeat(aws)]
+        tasks = [receDM(aws), sendHeartBeat(aws)]
         await asyncio.wait(tasks)
-
-
-
 
 
 async def sendHeartBeat(websocket):
@@ -57,7 +54,7 @@ async def sendHeartBeat(websocket):
         hb = {"op": 1, "d": d}
         await asyncio.sleep(40)
         await websocket.send_json(hb)
-        print('[Notice] Sent HeartBeat.',d)
+        print('[Notice] Sent HeartBeat.', d)
         d += 1
 
 

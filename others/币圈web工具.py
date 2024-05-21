@@ -1,17 +1,17 @@
+import json
+import random
+import threading
+import time
 import tkinter as tk
 import tkinter.messagebox as messagebox
-import threading
 import tkinter.simpledialog
+
+import requests as req
 import selenium.webdriver.edge.service
-from discord_webhook import DiscordWebhook
-import json
+from PIL import Image, ImageTk
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from PIL import Image, ImageTk
-import random
-import time
 from selenium.webdriver.common.keys import Keys
-import requests as req
 
 event = threading.Event()
 
@@ -26,8 +26,7 @@ class GUI():
         self.options = webdriver.EdgeOptions()
         # self.options.headless = True
         self.service = webdriver.edge.service.Service(executable_path="msedgedriver.exe")
-        self.msglist=['']
-
+        self.msglist = ['']
 
     def get_img(self, filename, width, height):
         self.im = Image.open(filename).resize((width, height))
@@ -107,8 +106,8 @@ class GUI():
     #                 time.sleep(21600)
     #         except:
     #             continue
-    def login(self,driver,channel,id,pw):
-        driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F'+ channel)
+    def login(self, driver, channel, id, pw):
+        driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F' + channel)
 
         name = driver.find_element(By.XPATH,
                                    '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/div[1]/div/div[2]/input')
@@ -118,13 +117,14 @@ class GUI():
         password.send_keys(pw)
         driver.find_element(By.XPATH,
                             '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/button[2]').click()
-    def sendmsgs(self,channel,id,pw,st,content):
+
+    def sendmsgs(self, channel, id, pw, st, content):
 
         while True:
             event.wait()
             try:
                 driver = webdriver.Edge(options=self.options, service=self.service)
-                self.login(driver,channel,id,pw)
+                self.login(driver, channel, id, pw)
                 time.sleep(10)
                 while True:
                     try:
@@ -139,15 +139,14 @@ class GUI():
                         # time.sleep(9999)
                         # try:
 
-
                         text.send_keys(Keys.ENTER)
 
                         # except:
                         #     pass
-                        self.w1.insert(1.0, channel+'频道正常\n')
+                        self.w1.insert(1.0, channel + '频道正常\n')
                     except:
                         driver.close()
-                        self.login(driver,channel,id,pw)
+                        self.login(driver, channel, id, pw)
                         continue
                     time.sleep(st)
             except:
@@ -155,8 +154,7 @@ class GUI():
             # except:
             #     continue
 
-
-    def autotada(self,channel,id,pw,st):
+    def autotada(self, channel, id, pw, st):
         # def login():
         #     driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F984569745447727124%2F994535100266070036')
         #
@@ -172,7 +170,7 @@ class GUI():
             event.wait()
             try:
                 driver = webdriver.Edge(options=self.options, service=self.service)
-                self.login(driver,channel,id,pw)
+                self.login(driver, channel, id, pw)
                 while True:
                     try:
                         time.sleep(st)
@@ -180,15 +178,15 @@ class GUI():
                         text = buttonlist[-1].get_attribute('class')
                         if 'reactionMe-1PwQAc' not in text:
                             buttonlist[-1].click()
-                        self.w1.insert(1.0, channel+text + '自动抽奖正常\n')
+                        self.w1.insert(1.0, channel + text + '自动抽奖正常\n')
                     except:
                         driver.close()
-                        self.login(driver,channel,id,pw)
+                        self.login(driver, channel, id, pw)
                         continue
             except:
                 continue
 
-    def tadaalert(self,channel,id,pw,st):
+    def tadaalert(self, channel, id, pw, st):
         # def login():
         #     driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F984569745447727124%2F994535100266070036')
         #
@@ -204,54 +202,56 @@ class GUI():
             event.wait()
             try:
                 driver = webdriver.Edge(options=self.options, service=self.service)
-                self.login(driver,channel,id,pw)
+                self.login(driver, channel, id, pw)
                 while True:
                     try:
                         time.sleep(st)
                         textlist = driver.find_elements(By.CLASS_NAME, 'message-2CShn3')
                         text = textlist[-1].text
                         if 'GiveawayBot' not in text and text not in self.msglist:
-                            data={
+                            data = {
                                 "token": "9c7cdf925dfb4c4aa05f25ef0ecac725",
                                 "title": "tada",
                                 "content": text,
                                 "topic": "1",
                                 "template": "html"
                             }
-                            data=json.dumps(data).encode(encoding='utf-8')
-                            req.post(url='http://www.pushplus.plus/send/',data=data)
-                            self.msglist[-1]=text
+                            data = json.dumps(data).encode(encoding='utf-8')
+                            req.post(url='http://www.pushplus.plus/send/', data=data)
+                            self.msglist[-1] = text
                         self.w1.insert(1.0, channel + '抽奖提醒正常\n')
                     except:
                         driver.close()
-                        self.login(driver,channel,id,pw)
+                        self.login(driver, channel, id, pw)
                         continue
             except:
                 continue
+
     def start(self):
         event.set()
-        id = tkinter.simpledialog.askstring(title="dc",prompt="ID:")
-        pw = tkinter.simpledialog.askstring(title="pw",prompt="password:")
-        #readon的两个频道，6h
+        id = tkinter.simpledialog.askstring(title="dc", prompt="ID:")
+        pw = tkinter.simpledialog.askstring(title="pw", prompt="password:")
+        # readon的两个频道，6h
         for i in ['920254345562439751%2F989777348205379624', '920254345562439751%2F943520679045775380']:
             driver = webdriver.Edge(options=self.options, service=self.service)
             a = random.randint(1, 67)
             driver.get('https://www.juzikong.com/tags/%E4%BC%A4%E6%84%9F?page=' + str(a))
-            content = driver.find_elements(By.CLASS_NAME, 'content_2hYZM')[random.randint(0,14)].text.replace('\n','')
+            content = driver.find_elements(By.CLASS_NAME, 'content_2hYZM')[random.randint(0, 14)].text.replace('\n', '')
             driver.close()
-            thread = threading.Thread(target=self.sendmsgs, args=[i,id,pw,21600,content])
+            thread = threading.Thread(target=self.sendmsgs, args=[i, id, pw, 21600, content])
             thread.daemon = True
             thread.start()
-        #币安的频道
-        thread = threading.Thread(target=self.sendmsgs, args=['898153438217633862%2F899598848102637589',id,pw,3600,'/work'])
+        # 币安的频道
+        thread = threading.Thread(target=self.sendmsgs,
+                                  args=['898153438217633862%2F899598848102637589', id, pw, 3600, '/work'])
         thread.daemon = True
         thread.start()
         thread = threading.Thread(target=self.sendmsgs,
                                   args=['898153438217633862%2F899598848102637589', id, pw, 86400, '/daily'])
         thread.daemon = True
         thread.start()
-        #币安的抽奖
-        thread = threading.Thread(target=self.tadaalert, args=['898153438217633862%2F968000068726718494',id, pw,10])
+        # 币安的抽奖
+        thread = threading.Thread(target=self.tadaalert, args=['898153438217633862%2F968000068726718494', id, pw, 10])
         thread.daemon = True
         thread.start()
         messagebox.showinfo(title='提示', message='开启')

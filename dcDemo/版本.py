@@ -1,34 +1,26 @@
 # -*- encoding=utf8 -*-
 __author__ = "颜立全"
 
-import random
-import time
-
-import requests
-# from airtest.core.api import *
-
-# auto_setup(__file__)
-
-
 # from poco.drivers.android.uiautomation import AndroidUiautomationPoco
 # poco = AndroidUiautomationPoco(use_airtest_input=True, screenshot_each_action=False)
 import asyncio
-import json
-import discord
+import random
 import re
-import datetime
-import aiohttp
+
+import discord
 import requests
-import sys
 
 
+# from airtest.core.api import *
+# auto_setup(__file__)
 
 
 # sys.path.append('D:\PycharmProjects\demos\itchatDemo\itchatuos.py')
-#聊天api
+# 聊天api
 async def chatGPT(gjc):
-    rsp=requests.post('https://api.forchange.cn/', json={"prompt": "Human:"+gjc+"\nAI:"})
+    rsp = requests.post('https://api.forchange.cn/', json={"prompt": "Human:" + gjc + "\nAI:"})
     return rsp.json()['choices'][0]['text']
+
 
 # 微信消息
 # def vrun():
@@ -48,7 +40,7 @@ async def chatGPT(gjc):
 # with open('doneguild.json', 'r+', encoding='utf-8') as fp:
 #     doneguild = json.load(fp)
 #     nowmday = [doneguild.pop()]
-#地板价查询
+# 地板价查询
 # async def floor(slug):
 #     nft=requests.get('https://app.nfttrack.ai/api/search?q='+slug).json()['data']['collections'][0]['opensea_slug']
 #     res=requests.get('https://app.nfttrack.ai/api/collection_info/'+nft)
@@ -125,11 +117,14 @@ async def chatGPT(gjc):
 # GETS THE CLIENT OBJECT FROM DISCORD.PY. CLIENT IS SYNONYMOUS WITH BOT.
 intents = discord.Intents.all()
 bot = discord.Client(intents=intents, proxy='http://127.0.0.1:10810')
+
+
 @bot.event
 async def on_ready():
     while True:
         await bot.get_channel(1085995494796447795).send()
         await asyncio.sleep(14400)
+
 
 # EVENT LISTENER FOR WHEN THE BOT HAS SWITCHED FROM OFFLINE TO ONLINE.
 # @bot.event
@@ -142,11 +137,12 @@ async def on_ready():
 # EVENT LISTENER FOR WHEN A NEW MESSAGE IS SENT TO A CHANNEL.
 @bot.event
 async def on_message(message):
-    print(bot.user.name, message.channel.id,message.guild.name, message.channel.name, message.author.name, message.content)
-#     # 判断消息是否是关于mint或者钱包地址提交
-#     if re.findall(r'submi', message.content, re.I) and re.findall(r'@everyone', message.content, re.I) and re.findall(r'addr|wallet', message.content, re.I):
-#         await push(message.guild.name + ' announcement',
-#                    'channel:\n' + message.channel.name + '\nauthor:\n' + message.author.name + '\ncontent:\n' + message.content)
+    print(bot.user.name, message.channel.id, message.guild.name, message.channel.name, message.author.name,
+          message.content)
+    #     # 判断消息是否是关于mint或者钱包地址提交
+    #     if re.findall(r'submi', message.content, re.I) and re.findall(r'@everyone', message.content, re.I) and re.findall(r'addr|wallet', message.content, re.I):
+    #         await push(message.guild.name + ' announcement',
+    #                    'channel:\n' + message.channel.name + '\nauthor:\n' + message.author.name + '\ncontent:\n' + message.content)
     # elif message.channel.name == 'bot':
     #     room = poco(text="DAY")[0]
     #     room.click()
@@ -171,17 +167,17 @@ async def on_message(message):
             async with bot.get_channel(1073989056565878796).typing():
                 # simulate something heavy
                 await bot.get_channel(1073989056565878796).send(message.content)
-    elif message.channel.id in [1073989056565878796,1073947096807391283] and message.author.name != bot.user.name:
-        a=random.randint(0,10)
-        if a>=50:
+    elif message.channel.id in [1073989056565878796, 1073947096807391283] and message.author.name != bot.user.name:
+        a = random.randint(0, 10)
+        if a >= 50:
             async with message.channel.typing():
                 # simulate something heavy
-                huifu=await chatGPT(message.content)
+                huifu = await chatGPT(message.content)
                 print(huifu)
                 try:
-                    spliter=re.search(r'[，。！？,.?!]',huifu).group()
-                    huifu=huifu.split(spliter)[0]
-                    print('=============',huifu)
+                    spliter = re.search(r'[，。！？,.?!]', huifu).group()
+                    huifu = huifu.split(spliter)[0]
+                    print('=============', huifu)
                 except:
                     pass
                 # if not re.findall(r'人工智能', huifu):
@@ -189,6 +185,7 @@ async def on_message(message):
                     await message.reply(huifu)
                 else:
                     await message.channel.send(huifu)
+
 
 #     # 推送alphabot消息，抓抽奖
 #     if message.author.name == 'Alphabot' and message.embeds:

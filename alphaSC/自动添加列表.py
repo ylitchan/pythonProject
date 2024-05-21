@@ -3,7 +3,6 @@ import os
 import time
 import requests
 import tweepy
-from confluent_kafka import Producer, Consumer
 import queue
 
 q = queue.Queue()
@@ -14,6 +13,8 @@ client = tweepy.Client(os.environ.get("tweetapi"))
 
 
 already = [i.id for i in client.get_list_members('1644339127071162369').data]
+
+
 # already =[]
 
 def add_list_member():

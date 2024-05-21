@@ -2,9 +2,7 @@
 __author__ = "颜立全"
 
 import random
-import time
 
-import requests
 from airtest.core.api import *
 
 auto_setup(__file__)

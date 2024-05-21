@@ -1,8 +1,9 @@
-import torch
-import numpy as np
-from transformers import CLIPProcessor, CLIPModel
-from PIL import Image
 import time
+
+import numpy as np
+import torch
+from PIL import Image
+from transformers import CLIPProcessor, CLIPModel
 
 # 默认从 HuggingFace 加载模型，也可以从本地加载，需要提前下载完毕
 model_name_or_local_path = "openai/clip-vit-base-patch16"

@@ -4,7 +4,6 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ('alphaApp', '0006_rename_projectinfo_alphainfo'),
     ]

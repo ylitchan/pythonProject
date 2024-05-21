@@ -1,10 +1,10 @@
+import asyncio
+import json
 import os
 
+import pymongo
 import telebot
 import tweepy
-import json
-import pymongo
-import asyncio
 
 # from discord_webhook import DiscordWebhook, DiscordEmbed
 ISHTARider_tg = telebot.TeleBot(os.environ.get("ISHTARider_tg"))

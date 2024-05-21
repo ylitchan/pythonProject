@@ -1,8 +1,10 @@
-from twarc import Twarc2, expansions
 import json
 
+from twarc import Twarc2, expansions
+
 # Replace your bearer token below
-client = Twarc2(bearer_token="AAAAAAAAAAAAAAAAAAAAAPEGjQEAAAAAREb6WuXu7rNwm8ChnkpJoSJmSkw%3DXgtd6IlBg9SyrAcVhTOVucCrYL4OGfSjjCmMbfM8mFTi3CqUcL")
+client = Twarc2(
+    bearer_token="AAAAAAAAAAAAAAAAAAAAAPEGjQEAAAAAREb6WuXu7rNwm8ChnkpJoSJmSkw%3DXgtd6IlBg9SyrAcVhTOVucCrYL4OGfSjjCmMbfM8mFTi3CqUcL")
 
 
 def main():

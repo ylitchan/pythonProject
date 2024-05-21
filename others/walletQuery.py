@@ -1,11 +1,10 @@
 import threading
+
 import selenium.webdriver.edge.service
+from flask import Flask, request, render_template
 # from discord_webhook import DiscordWebhook
-import json
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from flask import Flask, redirect, url_for, request, render_template
-from decimal import Decimal
 
 
 class App(Flask):
@@ -14,7 +13,7 @@ class App(Flask):
         # 设置浏览器参数
         self.options = webdriver.EdgeOptions()
         self.options.headless = True
-        self.service = webdriver.edge.service.Service()#executable_path="D:/msedgedriver.exe"
+        self.service = webdriver.edge.service.Service()  # executable_path="D:/msedgedriver.exe"
         self.options.add_argument(
             "user-agent=Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/103.0.5060.134 Mobile Safari/537.36 Edg/103.0.1264.71")
@@ -55,7 +54,7 @@ class App(Flask):
         # 初始化浏览器，打开20交易，获取页数数据
         tokendriver = webdriver.Edge(options=self.options, service=self.service)
 
-        def token20(url,num):
+        def token20(url, num):
             tokendriver.get('https://' + url + '/tokentxns?a=' + wallet + '&ps=100&p=' + num)
             for i in range(1, 101):
                 try:
@@ -72,14 +71,15 @@ class App(Flask):
                     value = tokendriver.find_element(By.XPATH,
                                                      '//*[@id="tblResult"]/tbody/tr[' + str(i) + ']/td[8]').text
                     if cr != 'OUT':
-                        value = float(value.replace(',',''))
+                        value = float(value.replace(',', ''))
                     else:
-                        value = -float(value.replace(',',''))
+                        value = -float(value.replace(',', ''))
                     value = float(value)
                     self.tokenvaluelist.append(value)
                     self.tokenfeelist.append(0)
                 except:
                     break
+
         # 数据爬取函数
         for url in ['etherscan.io', 'bscscan.com']:
             try:
@@ -90,7 +90,7 @@ class App(Flask):
                 page = '1'
                 pass
             for number in range(1, int(page) + 1):
-                token20(url,str(number))
+                token20(url, str(number))
         tokendriver.close()
         # def token20(token,num):
         #     for i in ['etherscan.io','bscscan.com']:
@@ -121,7 +121,6 @@ class App(Flask):
         # # 获取erc20数据
         #
 
-
     def interdata(self, wallet):
         # 打开Internal交易，获取数据，存放在列表中
         interdriver = webdriver.Edge(options=self.options, service=self.service)
@@ -130,7 +129,7 @@ class App(Flask):
                                         '//*[@id="ContentPlaceHolder1_divTopPagination"]/nav/ul/li[3]/span/strong[2]').text
 
         def intertxs(num):
-            interdriver.get('https://etherscan.io/txsInternal?a=' + wallet + '&ps=100&p='+num)
+            interdriver.get('https://etherscan.io/txsInternal?a=' + wallet + '&ps=100&p=' + num)
             for i in range(1, 101):
                 try:
                     href = interdriver.find_element(By.XPATH,
@@ -141,7 +140,7 @@ class App(Flask):
                                                      '//*[@id="ctl00"]/div[3]/div[2]/table/tbody/tr[' + str(
                                                          i) + ']/td[9]').text
                     self.intertokenlist.append('(Ether)')
-                    value = float(value.replace(' Ether', '').replace(',',''))
+                    value = float(value.replace(' Ether', '').replace(',', ''))
                     self.intervaluelist.append(value)
                     self.interfeelist.append(0)
                 except:
@@ -191,10 +190,10 @@ class App(Flask):
                     fee = txsdriver.find_element(By.XPATH,
                                                  '//*[@id="paywall_mask"]/table/tbody/tr[' + str(i) + ']/td[11]').text
                     if cr != 'OUT':
-                        value = float(value.replace(' Ether', '').replace(',',''))
+                        value = float(value.replace(' Ether', '').replace(',', ''))
                         self.txsfeelist.append(0)
                     else:
-                        value = -float(value.replace(' Ether', '').replace(',',''))
+                        value = -float(value.replace(' Ether', '').replace(',', ''))
                         self.txsfeelist.append(float(fee))
                     self.txsvaluelist.append(value)
 
@@ -260,7 +259,7 @@ def watchwallet():
         else:
             ethvalue = ethvalue + valuelist[n] - feelist[n]
         if nft not in tokendict:
-            tokendict[nft] = {'entry': 0, 'exit': 0, 'fee': 0, 'token': tokenlist[n], 'action': {'IN':{},'OUT':{}}}
+            tokendict[nft] = {'entry': 0, 'exit': 0, 'fee': 0, 'token': tokenlist[n], 'action': {'IN': {}, 'OUT': {}}}
         if valuelist[n] > 0:
             tokendict[nft]['exit'] = tokendict[nft]['exit'] + valuelist[n]
             tokendict[nft]['action']['IN'][action] = i
@@ -275,4 +274,4 @@ def watchwallet():
 
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.2',port=8080, debug=True)
+    app.run(host='127.0.0.2', port=8080, debug=True)

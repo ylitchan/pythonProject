@@ -1,26 +1,21 @@
 # 创作人:颜立全
-import re
-import tkinter as tk
-import tkinter.messagebox as messagebox
-import threading
-import tkinter.simpledialog
-import selenium.webdriver.edge.service
-import json
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from PIL import Image, ImageTk
-import random
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
 import datetime
+import json
+import re
 import time
-from selenium.webdriver.common.keys import Keys
+
 import requests as req
 from discord_webhook import DiscordWebhook
+from selenium import webdriver
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
 options = webdriver.EdgeOptions()
 options.headless = True
-driver=webdriver.Edge(options=options)
+driver = webdriver.Edge(options=options)
 driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F1001132842094432407%2F1001376763710033920')
 name = driver.find_element(By.XPATH,
                            '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/div[1]/div/div[2]/input')
@@ -28,16 +23,17 @@ password = driver.find_element(By.XPATH,
                                '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/div[2]/div/input')
 name.send_keys('898475174@qq.com')
 password.send_keys('yanlq2016')
-driver.find_element(By.XPATH,'//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/button[2]').click()
+driver.find_element(By.XPATH,
+                    '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/button[2]').click()
 WebDriverWait(driver, 60, 0.5).until(
-            EC.visibility_of_element_located((By.CLASS_NAME, 'heading-md-medium-2DVCeJ')),
-            message='超时啦!')
+    EC.visibility_of_element_located((By.CLASS_NAME, 'heading-md-medium-2DVCeJ')),
+    message='超时啦!')
 driver.find_element(By.CLASS_NAME, 'closedFolderIconWrapper-3tRb2d').click()
-monlist=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
-nowmday=[0]
-donechannel=set()
-commandlist=['']
-n=0
+monlist = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+nowmday = [0]
+donechannel = set()
+commandlist = ['']
+n = 0
 while True:
     ActionChains(driver).key_down(Keys.CONTROL).send_keys('k').key_up(Keys.CONTROL).send_keys(
         'https://discord.com/channels/898153438217633862/949271940428861440').send_keys(Keys.ENTER).perform()
@@ -64,10 +60,10 @@ while True:
     time.sleep(2)
     ActionChains(driver).send_keys(Keys.ENTER).perform()
     time.sleep(2)
-    for i in range(0,5):
+    for i in range(0, 5):
         ActionChains(driver).send_keys(Keys.BACKSPACE).perform()
 
-    if n ==11:
+    if n == 11:
         ActionChains(driver).send_keys('/daily').perform()
         time.sleep(2)
         ActionChains(driver).send_keys(Keys.ENTER).perform()
@@ -78,7 +74,7 @@ while True:
             ActionChains(driver).send_keys(Keys.BACKSPACE).perform()
         n = 0
 
-    elif n % 3==0:
+    elif n % 3 == 0:
         mday = datetime.datetime.now().timetuple().tm_mday
         print(mday)
         mon = datetime.datetime.now().timetuple().tm_mon
@@ -95,43 +91,45 @@ while True:
             try:
                 date = ['']
                 alert = [0]
-                month=[0]
-                price=['']
+                month = [0]
+                price = ['']
                 ActionChains(driver).key_down(Keys.CONTROL).send_keys('k').key_up(Keys.CONTROL).send_keys(i).perform()
                 time.sleep(2)
                 ActionChains(driver).send_keys(Keys.ENTER).perform()
                 WebDriverWait(driver, 60, 0.5).until(
                     EC.visibility_of_element_located((By.CLASS_NAME, 'channelName-3KPsGw')),
                     message='超时啦!')
-                for j in driver.find_elements(By.CLASS_NAME,'channelName-3KPsGw'):
+                for j in driver.find_elements(By.CLASS_NAME, 'channelName-3KPsGw'):
                     try:
-                        if re.findall(r'\bmint\b',j.text,re.I) and not re.findall(r'price|cost',j.text,re.I) and re.findall(r'\d+',j.text,re.I):
-                            for i in range(0,12):
-                                if re.findall(monlist[i],j.text,re.I):
-                                    month[-1]=i+1
+                        if re.findall(r'\bmint\b', j.text, re.I) and not re.findall(r'price|cost', j.text,
+                                                                                    re.I) and re.findall(r'\d+', j.text,
+                                                                                                         re.I):
+                            for i in range(0, 12):
+                                if re.findall(monlist[i], j.text, re.I):
+                                    month[-1] = i + 1
                                     alert[-1] = int(re.findall(r'\d+', j.text, re.I)[0])
                                     date[-1] = j.text
                                     break
-                                elif i==11 and '/' in j.text:
+                                elif i == 11 and '/' in j.text:
                                     month[-1] = int(re.findall(r'\d+', j.text, re.I)[0])
                                     alert[-1] = int(re.findall(r'\d+', j.text, re.I)[1])
                                     date[-1] = j.text
                         elif re.findall(r'price|cost', j.text, re.I):
-                            price[-1]=j.text
+                            price[-1] = j.text
                     except:
                         continue
 
-                if mday - alert[-1] in (0,-1) and month[-1]==mon:
-                    if mday - alert[-1]==-1:
-                        djs='明天'
-                    elif mday - alert[-1]==0:
-                        djs='今天'
+                if mday - alert[-1] in (0, -1) and month[-1] == mon:
+                    if mday - alert[-1] == -1:
+                        djs = '明天'
+                    elif mday - alert[-1] == 0:
+                        djs = '今天'
                     print('yes')
                     pjname = driver.find_element(By.CLASS_NAME, 'name-3Uvkvr').text
                     data = {
                         "token": "e73179f25ade41729eae654a2decec15",
                         "title": pjname,
-                        "content": djs+'mint\ny:' + date[-1] +'\n' + price[-1],
+                        "content": djs + 'mint\ny:' + date[-1] + '\n' + price[-1],
                         "topic": "1",
                         "template": "html"
                     }
@@ -140,11 +138,11 @@ while True:
                     webhook = DiscordWebhook(
                         embeds=[{"author": {"name": 'mint 提醒', "icon_url": "https://api.cyfan.top/acg", },
                                  "title": pjname,
-                                 "description":date[-1]+'\n'+price[-1],
+                                 "description": date[-1] + '\n' + price[-1],
                                  "thumbnail": {"url": "https://api.cyfan.top/acg"},
                                  "image": {"url": 'https://api.cyfan.top/acg'},
                                  "footer": {"text": 'yLitchan', "icon_url": " ", }, }],
-                        content=pjname+djs+'mint',
+                        content=pjname + djs + 'mint',
                         username='Spidey Bot',
                         avatar_url='https://api.cyfan.top/acg', )
                     webhook.api_post_request(
@@ -153,7 +151,7 @@ while True:
                 continue
         nowmday[-1] = datetime.datetime.now().timetuple().tm_mday
         print(nowmday)
-        n+=1
+        n += 1
     else:
         oldtime = time.time()
         ActionChains(driver).key_down(Keys.CONTROL).send_keys('k').key_up(Keys.CONTROL).send_keys(
@@ -161,8 +159,8 @@ while True:
         WebDriverWait(driver, 60, 0.5).until(
             EC.visibility_of_element_located((By.CLASS_NAME, 'messageListItem-ZZ7v6g')),
             message='超时啦!')
-        while time.time()-oldtime<=3600:
-            command=driver.find_elements(By.CLASS_NAME,'messageListItem-ZZ7v6g')[-1].text
+        while time.time() - oldtime <= 3600:
+            command = driver.find_elements(By.CLASS_NAME, 'messageListItem-ZZ7v6g')[-1].text
             if re.findall(r'/giveaway create', command) and command != commandlist[-1]:
                 commandlist[-1] = command
                 data = {
@@ -175,9 +173,4 @@ while True:
                 data = json.dumps(data).encode(encoding='utf-8')
                 req.post(url='http://www.pushplus.plus/send/', data=data)
         n += 1
-    print(datetime.datetime.now().strftime('%H:%M:%S'),n)
-
-
-
-
-
+    print(datetime.datetime.now().strftime('%H:%M:%S'), n)

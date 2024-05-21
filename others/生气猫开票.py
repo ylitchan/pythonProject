@@ -1,21 +1,17 @@
 # 创作人:颜立全
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+import datetime
+import threading
+import time
 import tkinter as tk
 import tkinter.messagebox as messagebox
-import threading
 import tkinter.simpledialog
+
 import selenium.webdriver.edge.service
-import json
+from PIL import Image, ImageTk
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from PIL import Image, ImageTk
-import random
-import time
-from selenium.webdriver.common.keys import Keys
-import requests as req
-import datetime
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 event = threading.Event()
 
@@ -30,8 +26,7 @@ class GUI():
         self.options = webdriver.EdgeOptions()
         # self.options.headless = True
         self.service = webdriver.edge.service.Service(executable_path="msedgedriver.exe")
-        self.msglist=['']
-
+        self.msglist = ['']
 
     def get_img(self, filename, width, height):
         self.im = Image.open(filename).resize((width, height))
@@ -57,9 +52,8 @@ class GUI():
     def draw(self, event):
         a.root.withdraw()
 
-
-    def login(self,driver,channel,id,pw):
-        driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F'+ channel.replace('/','%2F'))
+    def login(self, driver, channel, id, pw):
+        driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F' + channel.replace('/', '%2F'))
 
         name = driver.find_element(By.XPATH,
                                    '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/div[1]/div/div[2]/input')
@@ -69,7 +63,8 @@ class GUI():
         password.send_keys(pw)
         driver.find_element(By.XPATH,
                             '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/button[2]').click()
-    def sendmsgs(self,channel,id,pw):
+
+    def sendmsgs(self, channel, id, pw):
         driver = webdriver.Edge(options=self.options, service=self.service)
         self.login(driver, channel, id, pw)
         WebDriverWait(driver, 10, 0.5).until(
@@ -79,11 +74,11 @@ class GUI():
             event.wait()
             try:
 
-                driver.find_element(By.CLASS_NAME,'label-31sIdr').click()
+                driver.find_element(By.CLASS_NAME, 'label-31sIdr').click()
                 time.sleep(5)
             except:
                 continue
-            self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f")+ '正常\n')
+            self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f") + '正常\n')
 
     def goon(self):
         channel = tkinter.simpledialog.askstring(title="channel", prompt="channel:")
@@ -97,15 +92,12 @@ class GUI():
     def start(self):
         event.set()
 
-        self.id = tkinter.simpledialog.askstring(title="dc",prompt="ID:")
-        self.pw = tkinter.simpledialog.askstring(title="pw",prompt="password:")
+        self.id = tkinter.simpledialog.askstring(title="dc", prompt="ID:")
+        self.pw = tkinter.simpledialog.askstring(title="pw", prompt="password:")
         self.goon()
-
 
     def add(self):
         self.goon()
-
-
 
     def end(self):
         event.clear()
@@ -116,5 +108,3 @@ class GUI():
 if __name__ == '__main__':
     a = GUI()
     a.root.mainloop()
-
-

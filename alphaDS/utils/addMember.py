@@ -1,4 +1,3 @@
-import json
 from tools import *
 
 # member = client_tweet.get_list_members('1639838455760035840').data

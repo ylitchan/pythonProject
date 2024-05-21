@@ -1,14 +1,13 @@
 # 创作人:颜立全
-import tkinter as tk
-import threading
-import tkinter.simpledialog
-import selenium.webdriver.edge.service
-from selenium import webdriver
-from PIL import Image, ImageTk
 import datetime
+import threading
 import time
-import pyperclip
+import tkinter as tk
+import tkinter.simpledialog
+
 import pyautogui
+import pyperclip
+from PIL import Image, ImageTk
 
 event = threading.Event()
 
@@ -20,8 +19,6 @@ class GUI():
         self.root.geometry("355x300+300+150")
         self.root.resizable(0, 0)
         self.interface()
-
-
 
     def get_img(self, filename, width, height):
         self.im = Image.open(filename).resize((width, height))
@@ -45,7 +42,7 @@ class GUI():
     def draw(self, event):
         a.root.withdraw()
 
-    def sendmsgs(self,jiange):
+    def sendmsgs(self, jiange):
         fp = open('ts2.txt', 'r+', encoding='utf-8').readlines()
         print(fp)
         lenth = len(fp)
@@ -61,23 +58,18 @@ class GUI():
             # pyautogui.press('enter')
             # pyautogui.press('enter')
             # pyautogui.hotkey('ctrl', 'tab')
-            self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f") + context +'\n')
+            self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f") + context + '\n')
             n += 1
-            time.sleep(jiange+1)
-
-
-
-
+            time.sleep(jiange + 1)
 
     def start(self):
         event.set()
-        jiange = tkinter.simpledialog.askfloat(title="间隔",prompt="cd:")
+        jiange = tkinter.simpledialog.askfloat(title="间隔", prompt="cd:")
 
-        #币安的频道
-        thread = threading.Thread(target=self.sendmsgs, args=[jiange,])
+        # 币安的频道
+        thread = threading.Thread(target=self.sendmsgs, args=[jiange, ])
         thread.daemon = True
         thread.start()
-
 
     def end(self):
         event.clear()
@@ -86,4 +78,3 @@ class GUI():
 if __name__ == '__main__':
     a = GUI()
     a.root.mainloop()
-

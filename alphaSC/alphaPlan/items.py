@@ -11,10 +11,10 @@ class AlphaplanItem(scrapy.Item):
     # name = scrapy.Field()
     pass
 
+
 class TweetlItem(scrapy.Item):
     # define the fields for your item here like:
     tweet_id = scrapy.Field()
     tweet_text = scrapy.Field()
     tweet_media = scrapy.Field()
     tweet_user = scrapy.Field()
-

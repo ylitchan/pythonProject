@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ('alphaApp', '0009_launchinfo_list_name'),
     ]

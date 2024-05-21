@@ -1,8 +1,9 @@
 import datetime
 import random
 import time
-import requests
 from threading import Thread
+
+import requests
 
 diane = requests.Session()
 diane.headers = {
@@ -41,7 +42,7 @@ def task(d: dict):
                                                    "description": "Optional action like claim"}]},
                                           "attachments": []}, "nonce": nonce},
                            proxies={"https": "http://192.168.6.42:10502"})
-                print(datetime.datetime.now(),d)
+                print(datetime.datetime.now(), d)
                 if index == 0:
                     nonce = "962932744101429308"[:4] + "".join(random.choice("0123456789") for _ in range(14))
                     b = p.post('https://discord.com/api/v9/interactions',

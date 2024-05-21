@@ -1,8 +1,9 @@
+import datetime
+from collections import Counter
+
 import requests as requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from bs4 import BeautifulSoup
-from collections import Counter
-import datetime
 
 session = requests.Session()
 session.headers = {

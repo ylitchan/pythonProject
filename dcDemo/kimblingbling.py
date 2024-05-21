@@ -1,16 +1,13 @@
 import asyncio
 import random
-import time
+
 import discord
-import re
-import datetime
-import aiohttp
 
 # GETS THE CLIENT OBJECT FROM DISCORD.PY. CLIENT IS SYNONYMOUS WITH BOT.
 intents = discord.Intents.all()
 bot = discord.Client(intents=intents, proxy='http://127.0.0.1:1081')
-msgs=[]
-#获取对应的剧本，写入列表
+msgs = []
+# 获取对应的剧本，写入列表
 with open('msg0.txt', 'r+', encoding='utf-8') as fp:
     for i in [line.strip('\n') for line in fp.readlines()]:
         if i not in msgs:
@@ -31,7 +28,7 @@ async def on_ready():
 
     # PRINTS HOW MANY GUILDS / SERVERS THE BOT IS IN.
     print("SampleDiscordBot is in " + str(guild_count) + " guilds.")
-    channel = bot.get_channel(1036569767236083712)#刷经验的频道id
+    channel = bot.get_channel(1036569767236083712)  # 刷经验的频道id
     while 1:
         try:
             async with channel.typing():
@@ -43,7 +40,7 @@ async def on_ready():
         except:
             print('error')
             continue
-        await asyncio.sleep(random.randint(10,30))
+        await asyncio.sleep(random.randint(10, 30))
 
 
 # EVENT LISTENER FOR WHEN A NEW MESSAGE IS SENT TO A CHANNEL.

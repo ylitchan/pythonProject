@@ -3,9 +3,11 @@
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/items.html
 import os
+
 import django
 import scrapy
 from scrapy_djangoitem import DjangoItem
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'alphaDS.settings')  # 替换成您的项目名
 django.setup()
 from alphaApp.models import *

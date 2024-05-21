@@ -1,6 +1,6 @@
-import re
-import time
 import os
+import time
+
 import openai
 from jsonpath_ng import parse
 

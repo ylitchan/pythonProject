@@ -5,14 +5,13 @@
 import re
 
 import openai
+import pymongo
 import pytesseract
 import requests
 import telebot
 from PIL import Image
-# useful for handling different item types with a single interface
-from itemadapter import ItemAdapter
 
-import pymongo
+# useful for handling different item types with a single interface
 
 bot = telebot.TeleBot("6291256191:AAExAaaagpZgEAdBvhOMRN2JxlXr8om4qJA")
 openai.api_key = "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"
@@ -41,7 +40,8 @@ class TweetPipeline(object):
 
     def process_item(self, item, spider):
         if not self.collection.find_one({'tweet_id': item['tweet_id']}) and re.findall(
-                    r'\blaunch\b|sale|release|live|list|发射|fire|available|time|liquidity|contract|address|stealth|airdrop', item['tweet_text'], re.I):
+                r'\blaunch\b|sale|release|live|list|发射|fire|available|time|liquidity|contract|address|stealth|airdrop',
+                item['tweet_text'], re.I):
             if item['tweet_media']:
                 res = requests.get(item['tweet_media'], stream=True)
                 with open('alpha.png', 'wb') as file:
@@ -54,11 +54,14 @@ class TweetPipeline(object):
                 media_text = ''
             tweet_text = item['tweet_text'] + '\n' + media_text
 
-            msg = [{"role": "assistant", "content":"sale:unknown,launch:unknown,listing:unknown,liquidity providing:unknown,airdrop:unknown"},{"role": "user","content": tweet_text + '\n按照之前的格式提取以上内容中代币sale时间/代币launch时间/代币listing时间/代币liquidity providing时间/代币airdrop时间,若时间为现在则为now,若为其他情况则为unknown'}]
+            msg = [{"role": "assistant",
+                    "content": "sale:unknown,launch:unknown,listing:unknown,liquidity providing:unknown,airdrop:unknown"},
+                   {"role": "user",
+                    "content": tweet_text + '\n按照之前的格式提取以上内容中代币sale时间/代币launch时间/代币listing时间/代币liquidity providing时间/代币airdrop时间,若时间为现在则为now,若为其他情况则为unknown'}]
 
             hf = self.chatGPT(msg)
             print(len(re.findall(r'unknown', hf, re.I)))
-            if len(re.findall(r'unknown',hf,re.I))<5 and ':' in hf:
+            if len(re.findall(r'unknown', hf, re.I)) < 5 and ':' in hf:
                 bot.send_message(-980470620,
                                  '@' + item['tweet_user'] + '\n' + hf + '\n详见以下推文https://twitter.com/' + item[
                                      'tweet_user'] + '/status/' + item['tweet_id'] + '\n' + item['tweet_text'])
@@ -71,11 +74,3 @@ class TweetPipeline(object):
             self.collection.insert_one(dict(item))
 
         return item
-
-
-
-
-
-
-
-

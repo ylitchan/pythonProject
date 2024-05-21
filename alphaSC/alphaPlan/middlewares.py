@@ -2,14 +2,13 @@
 #
 # See documentation in:
 # https://docs.scrapy.org/en/latest/topics/spider-middleware.html
-import logging
 import random
 import time
 
 from scrapy import signals
 
+
 # useful for handling different item types with a single interface
-from itemadapter import is_item, ItemAdapter
 
 
 class AlphaplanSpiderMiddleware:
@@ -104,6 +103,7 @@ class AlphaplanDownloaderMiddleware:
 
     def spider_opened(self, spider):
         spider.logger.info('Spider opened: %s' % spider.name)
+
 
 # 设置随机延时
 class RandomDelayMiddleware(object):

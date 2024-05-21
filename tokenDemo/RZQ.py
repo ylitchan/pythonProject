@@ -31,7 +31,7 @@ def rzq_a():
             "news": {
                 "articles": [
                     {
-                        "title": "钱到手了",
+                        "title": "主人，请享用",
                         "description": "",
                         "url": "https://www.iwencai.com/unifiedwap/result?w=%E6%98%A8%E6%97%A5%E7%88%86%E9%87%8F%E6"
                                "%B6%A8%E5%81%9C%3B%E4%BB%8A%E6%97%A5%E7%AB%9E%E4%BB%B7%E9%AB%98%E5%BC%80%3B%E7%AB%9E"
@@ -39,7 +39,7 @@ def rzq_a():
                                "%E5%8E%9F%E5%9B%A0%E7%B1%BB%E5%88%AB%3B%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84"
                                "%E7%BA%A7%E5%8C%85%E5%90%AB%E7%9C%8B%E5%A4%9A%E6%88%96%E8%80%85%E5%81%8F%E5%A4%9A"
                                "&querytype=stock",
-                        "picurl": "https://5b0988e595225.cdn.sohucs.com/images/20200514/ce5c4d2c88014db19bf75cfa8ac8d41f.jpeg"
+                        "picurl": "http://i0.hdslb.com/bfs/article/4b07355eb1849a211bd0f54c5c865c42298252208.png"
                     }
                 ]
             }
@@ -110,6 +110,7 @@ def rzq_market(market, symbols, job):
 
 
 def main():
+    rzq_a()
     symbols_bn = []
     symbols_okx = []
     for i in range(10):
@@ -126,7 +127,6 @@ def main():
             print(('symbols_okx', i))
     rzq_market('BN', symbols_bn, rzq_token)
     rzq_market('OKX', symbols_okx, rzq_token)
-    # rzq_a()
     # 设置任务调度
     scheduler.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',

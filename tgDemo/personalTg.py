@@ -2,12 +2,13 @@
 # @Author: ylitchan
 # @Source: rdti_crawl_defense
 # @Site:
-from datetime import datetime
 import base64
 import hashlib
+import os
+from datetime import datetime
+
 import requests
 from pyrogram import Client
-import os
 
 api_id = 23306769
 api_hash = "c4edead58afb1bf4fe0c1da91e820730"
@@ -69,7 +70,7 @@ async def raw(client, message):
     username = message.from_user.username if message.from_user else ""
     title = message.chat.title if message.chat else ""
     if username in ['Keycoooo', 'USTDAO', 'EinsteinLee'] or title in ['一撇 Degen Calls',
-                                                                                  'Daily alpha😊财富密码😊UST DAO投研']:
+                                                                      'Daily alpha😊财富密码😊UST DAO投研']:
         username = message.from_user.first_name if message.from_user else ""
         print(datetime.now(), f'{title}\n{username}\n\n')
         reply = message.reply_to_message

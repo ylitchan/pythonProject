@@ -1,9 +1,9 @@
 import re
-import subprocess
-from dateutil.parser import parse
+from datetime import datetime, timedelta
+
 import requests
 import yt_dlp
-from datetime import datetime, timedelta
+from dateutil.parser import parse
 
 
 def search_and_download_videos(query, max_results=10, download_path='downloads/'):
@@ -12,8 +12,8 @@ def search_and_download_videos(query, max_results=10, download_path='downloads/'
         'extract_flat': True,
         'max_entries': max_results,
         'outtmpl': download_path + '%(title)s.%(ext)s',
-        'proxy':'http://192.168.6.42:10502',
-        'format':'mp4',
+        'proxy': 'http://192.168.6.42:10502',
+        'format': 'mp4',
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -21,8 +21,10 @@ def search_and_download_videos(query, max_results=10, download_path='downloads/'
         if 'entries' in result:
             for video in result['entries']:
                 try:
-                    if re.search('Satellite.*?IoT', video['title'], re.I) and video['url'].startswith('https://www.youtube.com/watch'):
-                        video_date = parse(re.search('dateText.*?}',requests.get(video['url'],proxies={'https':'http://192.168.6.42:10502'}).text).group().split('"')[-2])
+                    if re.search('Satellite.*?IoT', video['title'], re.I) and video['url'].startswith(
+                            'https://www.youtube.com/watch'):
+                        video_date = parse(re.search('dateText.*?}', requests.get(video['url'], proxies={
+                            'https': 'http://192.168.6.42:10502'}).text).group().split('"')[-2])
                         one_year_ago = datetime.now() - timedelta(days=365)
                         if not video_date >= one_year_ago:
                             print(f"下载视频: {video['title']}")

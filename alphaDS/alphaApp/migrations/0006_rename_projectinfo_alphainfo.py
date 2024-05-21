@@ -4,7 +4,6 @@ from django.db import migrations
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ('alphaApp', '0005_callerinfo_tweet_time'),
     ]

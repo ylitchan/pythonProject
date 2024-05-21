@@ -1,5 +1,5 @@
-﻿from fastapi import FastAPI, Body
-import uvicorn
+﻿import uvicorn
+from fastapi import FastAPI, Body
 from utils.tools import *
 
 # 创建生产者实例

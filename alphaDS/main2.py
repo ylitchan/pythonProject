@@ -1,6 +1,3 @@
-import datetime
-import subprocess
-from apscheduler.schedulers.blocking import BlockingScheduler
 from scrapy import cmdline
 
 cmdline.execute(['scrapy', 'crawl', 'newAlpha'])

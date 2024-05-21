@@ -1,13 +1,14 @@
+import json
+import threading
 import tkinter as tk
 import tkinter.messagebox as messagebox
-import threading
 import tkinter.simpledialog
+
 import selenium.webdriver.edge.service
+from PIL import Image, ImageTk
 from discord_webhook import DiscordWebhook
-import json
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from PIL import Image, ImageTk
 
 event = threading.Event()
 
@@ -95,7 +96,8 @@ class GUI():
                                 content=self.loadtext['urldict'][i],
                                 username='Spidey Bot',
                                 avatar_url='https://api.cyfan.top/acg', )
-                            self.webhook.api_post_request(url='https://discord.com/api/webhooks/1001134296972660816/cdIqGx2uw2Z3Rjk86c8jLHCU6Lmk1ZKtm3DKxSyivK64HfKaLbiXK8-f6F4po5tTxBAH')
+                            self.webhook.api_post_request(
+                                url='https://discord.com/api/webhooks/1001134296972660816/cdIqGx2uw2Z3Rjk86c8jLHCU6Lmk1ZKtm3DKxSyivK64HfKaLbiXK8-f6F4po5tTxBAH')
                             self.hashlist.append(a)
                             self.loadtext.update({'nfthash': self.hashlist})
                             fp.seek(0)

@@ -1,12 +1,12 @@
-import re
-import threading
-import selenium.webdriver.edge.service
 # from discord_webhook import DiscordWebhook
 import json
+import re
+import threading
+
+import selenium.webdriver.edge.service
+from flask import Flask, request, render_template
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from flask import Flask, redirect, url_for, request, render_template
-from decimal import Decimal
 
 tokenLock = threading.Lock()
 interLock = threading.Lock()
@@ -122,6 +122,7 @@ def watchwallet():
                     else:
                         i += 1
             return projectset
+
         def tokendata(url, datanum):
             # 初始化浏览器，打开20交易，获取页数数据
             tokendriver = webdriver.Edge(options=app.options, service=app.service)
@@ -130,11 +131,11 @@ def watchwallet():
             # def token20(num, total):
             tokendriver.get('https://' + url + '/address/' + wallet)
             loadtext[wallet][url]['totaltokenvalue'] = tokendriver.find_element(By.XPATH,
-                                                '//*[@id="ContentPlaceHolder1_divSummary"]/div[1]/div[1]/div/div[2]/div[1]/div[2]').text
+                                                                                '//*[@id="ContentPlaceHolder1_divSummary"]/div[1]/div[1]/div/div[2]/div[1]/div[2]').text
             loadtext[wallet][url]['totalvalue'] = tokendriver.find_element(By.XPATH,
-                                                                                '//*[@id="ContentPlaceHolder1_divSummary"]/div[1]/div[1]/div/div[2]/div[2]/div[2]').text
+                                                                           '//*[@id="ContentPlaceHolder1_divSummary"]/div[1]/div[1]/div/div[2]/div[2]/div[2]').text
 
-            print(loadtext[wallet][url]['totalvalue'],loadtext[wallet][url]['totaltokenvalue'])
+            print(loadtext[wallet][url]['totalvalue'], loadtext[wallet][url]['totaltokenvalue'])
             tokendriver.get('https://' + url + '/tokentxns?a=' + wallet + '&ps=100&p=1')
             try:
 
@@ -203,14 +204,14 @@ def watchwallet():
             n = 0
             for href in app.tokenhreflist:
                 tokendriver.get(href)
-                html=tokendriver.find_element(By.XPATH,'/html').text
+                html = tokendriver.find_element(By.XPATH, '/html').text
                 if app.tokencrlist[n] != ' IN':
                     fee = tokendriver.find_element(By.ID, 'ContentPlaceHolder1_spanTxFee').text.split()[0]
                     app.tokenfeelist[n] = float(fee)
-                projectset=func(html)
+                projectset = func(html)
                 if projectset:
-                # timestamp = tokendriver.find_element(By.ID, 'ContentPlaceHolder1_divTimeStamp').text.split('ago')[-1]
-                # action = action + timestamp
+                    # timestamp = tokendriver.find_element(By.ID, 'ContentPlaceHolder1_divTimeStamp').text.split('ago')[-1]
+                    # action = action + timestamp
                     for xm in projectset:
                         project = xm + app.tokentokenlist[n]
                         if project not in loadtext[wallet][url]['project']:
@@ -218,15 +219,18 @@ def watchwallet():
                                                                          'token': app.tokentokenlist[n],
                                                                          'action': {'IN': {}, 'OUT': {}}}
                         if app.tokenvaluelist[n] > 0:
-                            loadtext[wallet][url]['project'][project]['exit'] = loadtext[wallet][url]['project'][project][
-                                                                                    'exit'] + app.tokenvaluelist[n]/len(projectset)
+                            loadtext[wallet][url]['project'][project]['exit'] = \
+                            loadtext[wallet][url]['project'][project][
+                                'exit'] + app.tokenvaluelist[n] / len(projectset)
                             # loadtext[wallet][url]['project'][project]['action']['IN'][action] = href
                         else:
-                            loadtext[wallet][url]['project'][project]['entry'] = loadtext[wallet][url]['project'][project][
-                                                                                     'entry'] - app.tokenvaluelist[n]/len(projectset)
+                            loadtext[wallet][url]['project'][project]['entry'] = \
+                            loadtext[wallet][url]['project'][project][
+                                'entry'] - app.tokenvaluelist[n] / len(projectset)
                             # loadtext[wallet][url]['project'][project]['action']['OUT'][action] = href
-                        loadtext[wallet][url]['project'][project]['fee'] = loadtext[wallet][url]['project'][project]['fee'] + \
-                                                                           app.tokenfeelist[n]/len(projectset)
+                        loadtext[wallet][url]['project'][project]['fee'] = loadtext[wallet][url]['project'][project][
+                                                                               'fee'] + \
+                                                                           app.tokenfeelist[n] / len(projectset)
                         print(loadtext[wallet][url]['project'])
                 n += 1
             app.tokenhreflist = []
@@ -315,7 +319,8 @@ def watchwallet():
                                                                          'token': app.intertokenlist[n],
                                                                          'action': {'IN': {}, 'OUT': {}}}
                         loadtext[wallet][url]['project'][project]['exit'] = loadtext[wallet][url]['project'][project][
-                                                                                'exit'] + app.intervaluelist[n]/len(projectset)
+                                                                                'exit'] + app.intervaluelist[n] / len(
+                            projectset)
                         # loadtext[wallet][url]['project'][project]['action']['IN'][action] = href
                 n += 1
             app.interhreflist = []
@@ -411,15 +416,18 @@ def watchwallet():
                     if app.txsvaluelist[n] > 0:
                         # action = txsdriver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_maintable"]/div[5]').text
                         loadtext[wallet][url]['project'][project]['exit'] = loadtext[wallet][url]['project'][project][
-                                                                                'exit'] + app.txsvaluelist[n]/len(projectset)
+                                                                                'exit'] + app.txsvaluelist[n] / len(
+                            projectset)
 
                     else:
                         # action = txsdriver.find_element(By.XPATH, '//*[@id="ContentPlaceHolder1_maintable"]/div[6]').text
                         loadtext[wallet][url]['project'][project]['entry'] = loadtext[wallet][url]['project'][project][
-                                                                                 'entry'] - app.txsvaluelist[n]/len(projectset)
+                                                                                 'entry'] - app.txsvaluelist[n] / len(
+                            projectset)
 
-                    loadtext[wallet][url]['project'][project]['fee'] = loadtext[wallet][url]['project'][project]['fee'] + \
-                                                                       app.txsfeelist[n]/len(projectset)
+                    loadtext[wallet][url]['project'][project]['fee'] = loadtext[wallet][url]['project'][project][
+                                                                           'fee'] + \
+                                                                       app.txsfeelist[n] / len(projectset)
                 n += 1
                 print(n)
             app.txshreflist = []
@@ -437,13 +445,17 @@ def watchwallet():
             thread2.start()
             thread3 = TxsThread(key, loadtext[wallet][key]['txsnum'])
             thread3.start()
-            threadlist.extend([thread1,thread2,thread3])
+            threadlist.extend([thread1, thread2, thread3])
         for t in threadlist:
             t.join()
         fp.seek(0)
         json.dump(loadtext, fp)
         return render_template('wallet.html', result1=loadtext[wallet]["bscscan.com"]['project'],
-                               result2=loadtext[wallet]["etherscan.io"]['project'],totaltokenvalue1=loadtext[wallet]["etherscan.io"]['totaltokenvalue'],totaltokenvalue2=loadtext[wallet]["bscscan.com"]['totaltokenvalue'],totalvalue1=loadtext[wallet]["etherscan.io"]['totalvalue'],totalvalue2=loadtext[wallet]["bscscan.com"]['totalvalue'])
+                               result2=loadtext[wallet]["etherscan.io"]['project'],
+                               totaltokenvalue1=loadtext[wallet]["etherscan.io"]['totaltokenvalue'],
+                               totaltokenvalue2=loadtext[wallet]["bscscan.com"]['totaltokenvalue'],
+                               totalvalue1=loadtext[wallet]["etherscan.io"]['totalvalue'],
+                               totalvalue2=loadtext[wallet]["bscscan.com"]['totalvalue'])
 
 
 if __name__ == '__main__':

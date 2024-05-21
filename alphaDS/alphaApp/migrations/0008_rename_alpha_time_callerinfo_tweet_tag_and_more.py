@@ -4,7 +4,6 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
         ('alphaApp', '0007_rename_tweet_gpt_callerinfo_tweet_ai_and_more'),
     ]

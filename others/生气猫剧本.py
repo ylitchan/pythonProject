@@ -1,21 +1,20 @@
 # 创作人:颜立全
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+import datetime
+import random
+import threading
+import time
 import tkinter as tk
 import tkinter.messagebox as messagebox
-import threading
 import tkinter.simpledialog
+
 import selenium.webdriver.edge.service
-import json
-from selenium import webdriver
-from selenium.webdriver.common.by import By
 from PIL import Image, ImageTk
-import random
-import time
+from selenium import webdriver
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-import requests as req
-import datetime
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 event = threading.Event()
 
@@ -30,8 +29,7 @@ class GUI():
         self.options = webdriver.EdgeOptions()
         # self.options.headless = True
         self.service = webdriver.edge.service.Service(executable_path="msedgedriver.exe")
-        self.msglist=['']
-
+        self.msglist = ['']
 
     def get_img(self, filename, width, height):
         self.im = Image.open(filename).resize((width, height))
@@ -57,9 +55,8 @@ class GUI():
     def draw(self, event):
         a.root.withdraw()
 
-
-    def login(self,driver,channel,id,pw):
-        driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F'+ channel.replace('/','%2F'))
+    def login(self, driver, channel, id, pw):
+        driver.get('https://discord.com/login?redirect_to=%2Fchannels%2F' + channel.replace('/', '%2F'))
 
         name = driver.find_element(By.XPATH,
                                    '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/div[1]/div/div[2]/input')
@@ -69,37 +66,38 @@ class GUI():
         password.send_keys(pw)
         driver.find_element(By.XPATH,
                             '//*[@id="app-mount"]/div[2]/div/div[1]/div/div/div/div/form/div/div/div[1]/div[2]/button[2]').click()
-    def sendmsgs(self,channel,id,pw,st):
+
+    def sendmsgs(self, channel, id, pw, st):
         driver = webdriver.Edge(options=self.options, service=self.service)
 
         self.login(driver, channel, id, pw)
-        fp=open('sqm2.txt', 'r+', encoding='utf-8').readlines()
+        fp = open('sqm2.txt', 'r+', encoding='utf-8').readlines()
         print(fp)
         x = len(fp)
-        n=0
+        n = 0
         WebDriverWait(driver, 10, 0.5).until(
             EC.visibility_of_element_located((By.CLASS_NAME, 'messageContent-2t3eCI')),
             message='超时啦!')
-        while n<x:
+        while n < x:
             event.wait()
-            content=fp[n].replace('\n','')
+            content = fp[n].replace('\n', '')
             print(n)
             ActionChains(driver).send_keys(content).perform()
             time.sleep(2)
             ActionChains(driver).send_keys(Keys.ENTER).perform()
             time.sleep(2)
             ActionChains(driver).send_keys(Keys.ENTER).perform()
-            n+=1
+            n += 1
 
-            self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f")+content + '频道正常\n')
-            time.sleep(random.randint(st+10,st+15))
+            self.w1.insert(1.0, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S %f") + content + '频道正常\n')
+            time.sleep(random.randint(st + 10, st + 15))
 
     def goon(self):
         channel = tkinter.simpledialog.askstring(title="channel", prompt="channel:")
         st = tkinter.simpledialog.askfloat(title="st", prompt="st:")
         if channel:
             thread = threading.Thread(target=self.sendmsgs,
-                                      args=[channel, self.id, self.pw,st])
+                                      args=[channel, self.id, self.pw, st])
             thread.daemon = True
             thread.start()
         messagebox.showinfo(title='提示', message='开启')
@@ -107,15 +105,12 @@ class GUI():
     def start(self):
         event.set()
 
-        self.id = tkinter.simpledialog.askstring(title="dc",prompt="ID:")
-        self.pw = tkinter.simpledialog.askstring(title="pw",prompt="password:")
+        self.id = tkinter.simpledialog.askstring(title="dc", prompt="ID:")
+        self.pw = tkinter.simpledialog.askstring(title="pw", prompt="password:")
         self.goon()
-
 
     def add(self):
         self.goon()
-
-
 
     def end(self):
         event.clear()
@@ -126,4 +121,3 @@ class GUI():
 if __name__ == '__main__':
     a = GUI()
     a.root.mainloop()
-
