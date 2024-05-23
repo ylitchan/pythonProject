@@ -54,14 +54,14 @@ def rzq_token(symbol, alert):
         try:
             if "-USDT" in symbol:
                 kline_hour = [list(map(float, sublist)) for sublist in
-                              marketDataAPI.get_candlesticks(instId=symbol, bar="1Dutc", limit=6).get('data')[::-1]]
+                              marketDataAPI.get_candlesticks(instId=symbol, bar="1Dutc", limit=22).get('data')[::-1]]
             else:
                 kline_hour = [list(map(float, sublist)) for sublist in
-                              client.klines(symbol=symbol, interval="1d", limit=6)]
+                              client.klines(symbol=symbol, interval="1d", limit=22)]
             price_close = kline_hour[-1][4]
             if (price_close >= kline_hour[-2][4] >= max(kline_hour[:-2], key=lambda y: y[2])[2]
-                    and kline_hour[-2][5] >= max(max(kline_hour[:-2], key=lambda y: y[5])[5] * 4,
-                                                 kline_hour[-1][5] * 4)):
+                    and kline_hour[-2][5] >= max(max(kline_hour[:-2], key=lambda y: y[5])[5] * 3,
+                                                 kline_hour[-1][5] * 3)):
                 alert.append(
                     (
                         symbol, price_close, (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100,
