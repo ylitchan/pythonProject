@@ -54,13 +54,10 @@ def rzq_a():
 def bollinger_band_upper(data, window_size=20, num_std_dev=2):
     if len(data) < window_size:
         return None
-
     # 计算滚动均值
     rolling_mean = statistics.mean(data[-window_size:])
-
     # 计算滚动标准差
     rolling_std = statistics.stdev(data[-window_size:])
-
     # 计算布林带上轨
     upper_band = rolling_mean + (rolling_std * num_std_dev)
     return upper_band
@@ -76,7 +73,7 @@ def rzq_token(symbol, alert):
                 kline_hour = [list(map(float, sublist)) for sublist in
                               client.klines(symbol=symbol, interval="1d", limit=22)]
             price_close = kline_hour[-1][4]
-            if (price_close >= kline_hour[-2][4] >= bollinger_band_upper([k[4] for k in kline_hour])
+            if (price_close >= kline_hour[-2][4] >= bollinger_band_upper([k[4] for k in kline_hour[:21]], 21)
                     and kline_hour[-2][5] >= max(max(kline_hour[:-2], key=lambda y: y[5])[5] * 3,
                                                  kline_hour[-1][5] * 3)):
                 alert.append(
