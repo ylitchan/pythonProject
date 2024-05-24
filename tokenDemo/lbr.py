@@ -1,12 +1,12 @@
-import asyncio
+import datetime
 import datetime
 import threading
 import time
-
-from apscheduler.schedulers.background import BackgroundScheduler, BlockingScheduler
-from jsonpath_ng.parser import parse
+from lxml import etree
 import requests
 from DrissionPage import ChromiumPage, ChromiumOptions
+from apscheduler.schedulers.background import BlockingScheduler
+from jsonpath_ng.parser import parse
 
 scheduler = BlockingScheduler()
 session = requests.Session()
@@ -69,11 +69,11 @@ class Biaoqian(object):
     def get_profit(self):
         while True:
             try:
-                eth = self.tab.eles('xpath://*[@class="dashboard_willReceive__vxyQo"]//p')
+                eth = etree.HTML(self.tab.html).xpath('//*[@class="dashboard_willReceive__vxyQo"]//p')
                 price_part = [price_all.get(j, {}).get('usd', 0) for j in self.tokens]
                 if 'lybra-finance' not in self.tokens:
                     content = [float(j.split('/', 1)[-1].strip().split(' ')[0].strip('%')) for j in
-                               [i.text for i in eth]]
+                               [''.join(i.xpath('.//text()')) for i in eth]]
                     rigid = content[0]
                     gas_eth = gas[0]
                     profit1 = (1 - price_part[1]) * price_part[0] * rigid - gas_eth
@@ -97,12 +97,12 @@ class Biaoqian(object):
                                 f'token: {self.tokens[0]}\nrigid: {rigid}\ngas: {gas_eth}\nprice: {price_all}\nprofit2:{profit2}')
                 else:
                     lbr = \
-                        self.tab.ele('xpath://*[@class="earn_tabItem__ST764"][1]//div[.//img]').text.strip().split(
+                        ''.join(etree.HTML(self.tab.html).xpath('//*[@class="earn_tabItem__ST764"][1]//div[.//img]//text()')).strip().split(
                             ' ')[0].strip()
                     if lbr:
                         bounty = float(lbr.strip().split(' ')[0].strip())
                         gas_lbr = float(
-                            self.tab.ele('xpath://div[@class="earn_totalCost__yIrMB"]//span').text.split('$')[
+                            ''.join(etree.HTML(self.tab.html).xpath('//div[@class="earn_totalCost__yIrMB"]//span//text()')).split('$')[
                                 -1].replace(')', ''))
                         cost = bounty * 0.6
                         profit3 = (bounty - cost) * price_part[0] - gas_lbr
@@ -112,7 +112,7 @@ class Biaoqian(object):
                              'gas': gas_lbr,
                              'cost': cost,
                              'price': price_all, 'profit3': profit3})
-                        if profit3 >= 400:
+                        if profit3 >= 200:
                             self.push(
                                 f"token: {self.tokens[0]}\nbounty: {bounty}\ngas: {gas_lbr}\ncost: {cost}\nprice: {price_all}\nprofit3: {profit3}")
             except Exception as e:
@@ -121,17 +121,19 @@ class Biaoqian(object):
 
 def main():
     threading.Thread(target=Biaoqian.get_price, args=()).start()
-    thread = threading.Thread(target=Biaoqian.get_gas, args=()).start()
+    threading.Thread(target=Biaoqian.get_gas, args=()).start()
     # 创建浏览器配置对象，指定浏览器路径
-    co = ChromiumOptions().set_browser_path(r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe')
+    co = ChromiumOptions().set_browser_path(r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe').set_paths(
+        local_port=9111, user_data_path=r'D:\DrissionPage')
     # 用该配置创建页面对象
     page = ChromiumPage(addr_or_opts=co)
-    stETH = Biaoqian(page.get_tab(1), ['staked-ether', 'eusd-new', 'ethereum'])
-    wstETH = Biaoqian(page.get_tab(2), ['wrapped-steth', 'peg-eusd', 'ethereum'])
-    wbeth = Biaoqian(page.get_tab(3), ['wrapped-beacon-eth', 'peg-eusd', 'ethereum'])
-    rETH = Biaoqian(page.get_tab(4), ['rocket-pool-eth', 'peg-eusd', 'ethereum'])
-    lbr = Biaoqian(page.get_tab(5), ['lybra-finance'])  # 创建5个任务
-    for biaoqian in [stETH, wstETH, wbeth, rETH, lbr]:
+    # stETH = Biaoqian(page.get_tab(1), ['staked-ether', 'eusd-new', 'ethereum'])
+    # wstETH = Biaoqian(page.get_tab(2), ['wrapped-steth', 'peg-eusd', 'ethereum'])
+    # wbeth = Biaoqian(page.get_tab(3), ['wrapped-beacon-eth', 'peg-eusd', 'ethereum'])
+    # rETH = Biaoqian(page.get_tab(4), ['rocket-pool-eth', 'peg-eusd', 'ethereum'])
+    lbr = Biaoqian(page, ['lybra-finance'])
+    # 创建5个任务
+    for biaoqian in [lbr]:#[stETH, wstETH, wbeth, rETH, lbr]:
         threading.Thread(target=biaoqian.get_profit, args=()).start()
 
 
