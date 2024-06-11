@@ -1,12 +1,12 @@
 import datetime
-import datetime
 import threading
 import time
-from lxml import etree
+
 import requests
 from DrissionPage import ChromiumPage, ChromiumOptions
 from apscheduler.schedulers.background import BlockingScheduler
 from jsonpath_ng.parser import parse
+from lxml import etree
 
 scheduler = BlockingScheduler()
 session = requests.Session()
@@ -97,12 +97,14 @@ class Biaoqian(object):
                                 f'token: {self.tokens[0]}\nrigid: {rigid}\ngas: {gas_eth}\nprice: {price_all}\nprofit2:{profit2}')
                 else:
                     lbr = \
-                        ''.join(etree.HTML(self.tab.html).xpath('//*[@class="earn_tabItem__ST764"][1]//div[.//img]//text()')).strip().split(
+                        ''.join(etree.HTML(self.tab.html).xpath(
+                            '//*[@class="earn_tabItem__ST764"][1]//div[.//img]//text()')).strip().split(
                             ' ')[0].strip()
                     if lbr:
                         bounty = float(lbr.strip().split(' ')[0].strip())
                         gas_lbr = float(
-                            ''.join(etree.HTML(self.tab.html).xpath('//div[@class="earn_totalCost__yIrMB"]//span//text()')).split('$')[
+                            ''.join(etree.HTML(self.tab.html).xpath(
+                                '//div[@class="earn_totalCost__yIrMB"]//span//text()')).split('$')[
                                 -1].replace(')', ''))
                         cost = bounty * 0.6
                         profit3 = (bounty - cost) * price_part[0] - gas_lbr
@@ -133,7 +135,7 @@ def main():
     # rETH = Biaoqian(page.get_tab(4), ['rocket-pool-eth', 'peg-eusd', 'ethereum'])
     lbr = Biaoqian(page, ['lybra-finance'])
     # 创建5个任务
-    for biaoqian in [lbr]:#[stETH, wstETH, wbeth, rETH, lbr]:
+    for biaoqian in [lbr]:  # [stETH, wstETH, wbeth, rETH, lbr]:
         threading.Thread(target=biaoqian.get_profit, args=()).start()
 
 

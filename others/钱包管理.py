@@ -220,13 +220,13 @@ def watchwallet():
                                                                          'action': {'IN': {}, 'OUT': {}}}
                         if app.tokenvaluelist[n] > 0:
                             loadtext[wallet][url]['project'][project]['exit'] = \
-                            loadtext[wallet][url]['project'][project][
-                                'exit'] + app.tokenvaluelist[n] / len(projectset)
+                                loadtext[wallet][url]['project'][project][
+                                    'exit'] + app.tokenvaluelist[n] / len(projectset)
                             # loadtext[wallet][url]['project'][project]['action']['IN'][action] = href
                         else:
                             loadtext[wallet][url]['project'][project]['entry'] = \
-                            loadtext[wallet][url]['project'][project][
-                                'entry'] - app.tokenvaluelist[n] / len(projectset)
+                                loadtext[wallet][url]['project'][project][
+                                    'entry'] - app.tokenvaluelist[n] / len(projectset)
                             # loadtext[wallet][url]['project'][project]['action']['OUT'][action] = href
                         loadtext[wallet][url]['project'][project]['fee'] = loadtext[wallet][url]['project'][project][
                                                                                'fee'] + \

@@ -1,9 +1,10 @@
 import json
 import os
+import queue
 import time
+
 import requests
 import tweepy
-import queue
 
 q = queue.Queue()
 with open('alpha.json', 'r') as f:

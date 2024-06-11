@@ -1,7 +1,6 @@
 import asyncio
-import zlib
+
 # from aiowebsocket.converses import AioWebSocket
-import json
 import aiohttp
 
 remote = 'wss://gateway.dcDemo.gg/?encoding=json&v=9&compress=zlib-stream'

@@ -1,11 +1,12 @@
 import asyncio
 import re
 from pprint import pprint
+
+import openai
+import pymongo
 import telebot
 import tweepy
 from notion_client import Client
-import openai
-import pymongo
 
 mgclient = pymongo.MongoClient('mongodb://localhost:27017/')
 bearer_token = "AAAAAAAAAAAAAAAAAAAAAPEGjQEAAAAAREb6WuXu7rNwm8ChnkpJoSJmSkw%3DXgtd6IlBg9SyrAcVhTOVucCrYL4OGfSjjCmMbfM8mFTi3CqUcL"

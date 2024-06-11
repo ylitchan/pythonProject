@@ -1,14 +1,12 @@
 import re
 
-from DrissionPage import SessionPage
+# 导入 ChromiumOptions
+from DrissionPage import ChromiumPage, ChromiumOptions
+from openpyxl import load_workbook
 
 # page = SessionPage()
 # page.get('http://g1879.gitee.io/drissionpage')
 # print(5)
-
-# 导入 ChromiumOptions
-from DrissionPage import ChromiumPage, ChromiumOptions
-from openpyxl import Workbook, load_workbook
 
 # 打开 Excel 文件
 workbook = load_workbook('D:\pythonProject\drissionDemo\https___www.google.com.hk_maps (8).xlsx')

@@ -1,18 +1,14 @@
+import json
+import random
 import re
 import threading
 import time
-from collections import Counter
+
 import selenium.webdriver.edge.service
 from discord_webhook import DiscordWebhook
-import json
-import random
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from decimal import Decimal
-from functools import reduce
-
 from selenium.webdriver.support import expected_conditions as EC
-
 from selenium.webdriver.support.ui import WebDriverWait
 
 options = webdriver.EdgeOptions()

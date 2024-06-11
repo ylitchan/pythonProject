@@ -1,7 +1,8 @@
 import datetime
 import gc
-from apscheduler.schedulers.blocking import BlockingScheduler
+
 import requests
+from apscheduler.schedulers.blocking import BlockingScheduler
 from jsonpath_ng import parse
 
 session = requests.Session()

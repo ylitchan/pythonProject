@@ -29,10 +29,10 @@ class AlphaSpider(scrapy.Spider):
                 'ct0': '5d54053bb46518b6eae62429e3ac8a7d76fd9bbbf4de72d7de25f6286ce9f6aabb063b15343c4b941b21d4a77d62d75764b061b8e49f285db120b02db6f7c878ea2ba385c682518a58e38d5fe760fbc9',
                 'personalization_id': '"v1_9MAr+iey/BOWvItd/ATJtA=="'}]
     headers = [{
-                   'authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
-                   'x-twitter-auth-type': 'OAuth2Session',
-                   'x-csrf-token': '5d54053bb46518b6eae62429e3ac8a7d76fd9bbbf4de72d7de25f6286ce9f6aabb063b15343c4b941b21d4a77d62d75764b061b8e49f285db120b02db6f7c878ea2ba385c682518a58e38d5fe760fbc9',
-                   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36 Edg/111.0.1661.62'}]
+        'authorization': 'Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA',
+        'x-twitter-auth-type': 'OAuth2Session',
+        'x-csrf-token': '5d54053bb46518b6eae62429e3ac8a7d76fd9bbbf4de72d7de25f6286ce9f6aabb063b15343c4b941b21d4a77d62d75764b061b8e49f285db120b02db6f7c878ea2ba385c682518a58e38d5fe760fbc9',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36 Edg/111.0.1661.62'}]
 
     def start_requests(self):
         for url in self.start_urls:
@@ -57,27 +57,30 @@ class AlphaSpider(scrapy.Spider):
             if theone['legacy']['entities'].get('media', [{}])[0].get('media_url_https', ''):
                 item['tweet_media'] = theone['legacy']['entities'].get('media', [{}])[0].get('media_url_https', '')
             elif \
-            theone.get('quoted_status_result', {}).get('result', {}).get('legacy', {}).get('entities', {}).get('media',
-                                                                                                               [{}])[
-                0].get('media_url_https', ''):
+                    theone.get('quoted_status_result', {}).get('result', {}).get('legacy', {}).get('entities', {}).get(
+                        'media',
+                        [{}])[
+                        0].get('media_url_https', ''):
                 item['tweet_media'] = \
-                theone.get('quoted_status_result', {}).get('result', {}).get('legacy', {}).get('entities', {}).get(
-                    'media', [{}])[0].get('media_url_https', '')
+                    theone.get('quoted_status_result', {}).get('result', {}).get('legacy', {}).get('entities', {}).get(
+                        'media', [{}])[0].get('media_url_https', '')
             elif theone['legacy'].get('retweeted_status_result', {}).get('result', {}).get('legacy', {}).get('entities',
                                                                                                              {}).get(
-                    'media', [{}])[0].get('media_url_https', ''):
+                'media', [{}])[0].get('media_url_https', ''):
                 item['tweet_media'] = \
-                theone['legacy'].get('retweeted_status_result', {}).get('result', {}).get('legacy', {}).get('entities',
-                                                                                                            {}).get(
-                    'media', [{}])[0].get('media_url_https', '')
+                    theone['legacy'].get('retweeted_status_result', {}).get('result', {}).get('legacy', {}).get(
+                        'entities',
+                        {}).get(
+                        'media', [{}])[0].get('media_url_https', '')
             elif \
-            theone['legacy'].get('retweeted_status_result', {}).get('result', {}).get('quoted_status_result', {}).get(
-                    'result', {}).get('legacy', {}).get('entities', {}).get('media', [{}])[0].get('media_url_https',
-                                                                                                  ''):
+                    theone['legacy'].get('retweeted_status_result', {}).get('result', {}).get('quoted_status_result',
+                                                                                              {}).get(
+                        'result', {}).get('legacy', {}).get('entities', {}).get('media', [{}])[0].get('media_url_https',
+                                                                                                      ''):
                 item['tweet_media'] = \
-                theone['legacy'].get('retweeted_status_result', {}).get('result', {}).get('quoted_status_result',
-                                                                                          {}).get('result', {}).get(
-                    'legacy', {}).get('entities', {}).get('media', [{}])[0].get('media_url_https', '')
+                    theone['legacy'].get('retweeted_status_result', {}).get('result', {}).get('quoted_status_result',
+                                                                                              {}).get('result', {}).get(
+                        'legacy', {}).get('entities', {}).get('media', [{}])[0].get('media_url_https', '')
             else:
                 item['tweet_media'] = ''
             print(item)

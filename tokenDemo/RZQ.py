@@ -1,7 +1,6 @@
 import datetime
 import gc
 import json
-import math
 import statistics
 import threading
 import time
@@ -73,13 +72,14 @@ def rzq_token(symbol, alert):
                 kline_hour = [list(map(float, sublist)) for sublist in
                               client.klines(symbol=symbol, interval="1d", limit=22)]
             price_close = kline_hour[-1][4]
-            if (price_close >= kline_hour[-2][4] >= bollinger_band_upper([k[4] for k in kline_hour[:21]], 21)
-                    and kline_hour[-2][5] >= max(max(kline_hour[:-2], key=lambda y: y[5])[5] * 3,
-                                                 kline_hour[-1][5] * 3)):
+            if (price_close >= kline_hour[-2][4] >= max(bollinger_band_upper([k[4] for k in kline_hour[:21]], 21),
+                                                        kline_hour[-3][4] * 1.04)
+                    and kline_hour[-2][5] >= max(statistics.mean([k[5] for k in kline_hour[:21]]),
+                                                 kline_hour[-1][5] * 4)):
                 alert.append(
                     (
                         symbol, price_close, (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100,
-                        price_close * (math.sqrt(0.02) + 0.9)))
+                        price_close * 1.04))
             break
         except Exception as e:
             time.sleep(2)

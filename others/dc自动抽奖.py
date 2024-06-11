@@ -1,14 +1,9 @@
 # 创作人:颜立全
-import re
-import threading
+import time
+
 import selenium.webdriver.edge.service
-import json
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-
-from decimal import Decimal
-from selenium.webdriver.support.ui import WebDriverWait
-import time
 
 options = webdriver.EdgeOptions()
 options.headless = True
