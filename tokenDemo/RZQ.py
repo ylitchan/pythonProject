@@ -42,8 +42,6 @@ def rzq_a():
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
             json=json)
-    except Exception as e:
-        print(str(e))
     finally:
         print(datetime.datetime.now(), 'A任务结束')
         gc.collect()
@@ -62,12 +60,12 @@ def bollinger_band_upper(data, window_size=20, num_std_dev=2):
     return upper_band
 
 
-def rzq_token(symbol, alert):
+def rzq_token(symbol, alert, success):
     for i in range(10):
         try:
             if "-USDT" in symbol:
                 kline_hour = [list(map(float, sublist)) for sublist in
-                              marketDataAPI.get_candlesticks(instId=symbol, bar="4Hutc", limit=22).get('data')[::-1]]
+                              marketDataAPI.get_candlesticks(instId=symbol, bar="4H", limit=22).get('data')[::-1]]
             else:
                 kline_hour = [list(map(float, sublist)) for sublist in
                               client.klines(symbol=symbol, interval="4h", limit=22)]
@@ -79,26 +77,28 @@ def rzq_token(symbol, alert):
                     bollinger_band_upper([k[4] for k in kline_hour[:21]], 21)
                     and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:21]]) * 4):
                 alert.append((symbol, price_close, zf, price_target))
+            success.add(symbol)
             break
-        except Exception as e:
-            print(str(e))
+        except Exception:
             time.sleep(2)
 
 
 def rzq_market(market, symbols, job):
     print(datetime.datetime.now(), f'{market}任务开始', len(symbols))
     alert = []
+    success = set()
     # 创建线程列表
     threads = []
     for symbol in symbols:
         # 创建并启动多个线程
-        t = threading.Thread(target=job, args=(symbol, alert))
+        t = threading.Thread(target=job, args=(symbol, alert, success))
         t.start()
         threads.append(t)
         # 等待所有线程完成
     for t in threads:
         t.join()
     try:
+        print(market, f"""{len(success)}/{len(symbols)}""")
         if alert:
             alert_sort = enumerate(sorted(alert, key=lambda x: x[2], reverse=True))
             alert.clear()
@@ -111,8 +111,6 @@ def rzq_market(market, symbols, job):
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
                 json=json)
-    except Exception as e:
-        print(str(e))
     finally:
         print(datetime.datetime.now(), f'{market}任务结束', alert)
         gc.collect()
@@ -132,9 +130,8 @@ def main():
                 instType="SPOT"
             ).get('data') if item.get('quoteCcy') == 'USDT']
             break
-        except Exception as e:
-            print(str(e))
-            print(('symbols_okx', i))
+        except Exception:
+            time.sleep(2)
     rzq_market('BN', symbols_bn, rzq_token)
     rzq_market('OKX', symbols_okx, rzq_token)
     # 设置任务调度
