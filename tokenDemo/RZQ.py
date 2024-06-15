@@ -67,22 +67,21 @@ def rzq_token(symbol, alert):
         try:
             if "-USDT" in symbol:
                 kline_hour = [list(map(float, sublist)) for sublist in
-                              marketDataAPI.get_candlesticks(instId=symbol, bar="1Dutc", limit=22).get('data')[::-1]]
+                              marketDataAPI.get_candlesticks(instId=symbol, bar="4Hutc", limit=22).get('data')[::-1]]
             else:
                 kline_hour = [list(map(float, sublist)) for sublist in
-                              client.klines(symbol=symbol, interval="1d", limit=22)]
+                              client.klines(symbol=symbol, interval="4h", limit=22)]
             price_close = kline_hour[-1][4]
             price_target = price_close * 1.04
             price_vol = kline_hour[-2][4]
             zf = (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100
-            if (zf >= 4 and price_target > kline_hour[-1][2] and price_close >= price_vol >= max(
-                    bollinger_band_upper([k[4] for k in kline_hour[:21]], 21),
-                    kline_hour[-3][4] * 1.04)
-                    and kline_hour[-2][5] >= max(statistics.mean([k[5] for k in kline_hour[:21]]) * 4,
-                                                 kline_hour[-1][5] * 4)):
+            if (zf >= 4 and price_target > kline_hour[-1][2] and price_close >= price_vol >=
+                    bollinger_band_upper([k[4] for k in kline_hour[:21]], 21)
+                    and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:21]]) * 4):
                 alert.append((symbol, price_close, zf, price_target))
             break
         except Exception as e:
+            print(str(e))
             time.sleep(2)
 
 
@@ -134,6 +133,7 @@ def main():
             ).get('data') if item.get('quoteCcy') == 'USDT']
             break
         except Exception as e:
+            print(str(e))
             print(('symbols_okx', i))
     rzq_market('BN', symbols_bn, rzq_token)
     rzq_market('OKX', symbols_okx, rzq_token)
