@@ -70,13 +70,13 @@ def rzq_token(symbol, alert, success):
                 kline_hour = [list(map(float, sublist)) for sublist in
                               client.klines(symbol=symbol, interval="4h", limit=22)]
             price_close = kline_hour[-1][4]
-            price_target = price_close * 1.04
+            price_target = price_close * 1.06
             price_vol = kline_hour[-2][4]
             zf = (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100
-            if (zf >= 4 and price_target > kline_hour[-1][2] and price_close >= price_vol >=
+            if (zf >= 4 and price_close * 1.04 > kline_hour[-1][2] and price_close >= price_vol >=
                     bollinger_band_upper([k[4] for k in kline_hour[:21]], 21)
                     and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:21]]) * 4):
-                alert.append((symbol, price_close, zf, price_target))
+                alert.append((symbol, price_close, zf, price_close * 1.06, price_close * 0.96))
             success.add(symbol)
             break
         except Exception:
@@ -103,7 +103,8 @@ def rzq_market(market, symbols, job):
             alert_sort = enumerate(sorted(alert, key=lambda x: x[2], reverse=True))
             alert.clear()
             for i, j in alert_sort:
-                alert.append(f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n目标:{j[3]}')
+                alert.append(
+                    f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n止盈:{j[3]}\n止损:{j[4]}')
             json = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
