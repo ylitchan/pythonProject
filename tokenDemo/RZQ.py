@@ -70,7 +70,6 @@ def rzq_token(symbol, alert, success):
                 kline_hour = [list(map(float, sublist)) for sublist in
                               client.klines(symbol=symbol, interval="4h", limit=22)]
             price_close = kline_hour[-1][4]
-            price_target = price_close * 1.06
             price_vol = kline_hour[-2][4]
             zf = (kline_hour[-2][4] / kline_hour[-3][4] - 1) * 100
             if (zf >= 4 and price_close * 1.04 > kline_hour[-1][2] and price_close >= price_vol >=
