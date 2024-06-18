@@ -70,8 +70,8 @@ def rzq_token(symbol, alert, success):
                 kline_hour = [list(map(float, sublist)) for sublist in
                               client.klines(symbol=symbol, interval="4h", limit=21)]
             price_close = kline_hour[-1][4]
-            price_zy = price_close * 1.05
             price_vol = kline_hour[-2][4]
+            price_zy = price_close + price_vol * 0.05
             zf = (price_vol / kline_hour[-3][4] - 1) * 100
             if (zf >= 3 and price_zy > kline_hour[-1][2] and price_close >= price_vol >=
                     bollinger_band_upper([k[4] for k in kline_hour[:20]])
