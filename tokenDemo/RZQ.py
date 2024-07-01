@@ -139,7 +139,7 @@ def main():
     scheduler.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
-    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
+    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/30', second='00', timezone='Asia/Shanghai',
                       args=['OKX', symbols_okx, rzq_token])
     # 启动调度器
     scheduler.start()
