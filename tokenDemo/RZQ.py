@@ -65,10 +65,10 @@ def rzq_token(symbol, alert, success):
         try:
             if "-USDT" in symbol:
                 kline_hour = [list(map(float, sublist)) for sublist in
-                              marketDataAPI.get_candlesticks(instId=symbol, bar="4H", limit=21).get('data')[::-1]]
+                              marketDataAPI.get_candlesticks(instId=symbol, bar="1H", limit=21).get('data')[::-1]]
             else:
                 kline_hour = [list(map(float, sublist)) for sublist in
-                              client.klines(symbol=symbol, interval="4h", limit=21)]
+                              client.klines(symbol=symbol, interval="1h", limit=21)]
             price_close = kline_hour[-1][4]
             price_vol = kline_hour[-2][4]
             price_zy = price_close + price_vol * 0.03
@@ -137,9 +137,9 @@ def main():
     rzq_market('OKX', symbols_okx, rzq_token)
     # 设置任务调度
     scheduler.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
-    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
+    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='01', second='00', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
-    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='00', timezone='Asia/Shanghai',
+    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='01', second='00', timezone='Asia/Shanghai',
                       args=['OKX', symbols_okx, rzq_token])
     # 启动调度器
     scheduler.start()
