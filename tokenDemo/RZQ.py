@@ -71,7 +71,7 @@ def rzq_token(symbol, alert, success):
                               client.klines(symbol=symbol, interval="1h", limit=21)]
             price_close = kline_hour[-1][4]
             price_vol = kline_hour[-2][4]
-            price_zy = price_close + price_vol * 0.03
+            price_zy = price_close + price_vol * 0.02
             zf = (price_vol / kline_hour[-3][4] - 1) * 100
             if (zf >= 1 and price_zy > kline_hour[-1][2] and price_close >= price_vol >= max(
                     (kline_hour[-2][2] + kline_hour[-2][3]) / 2,
