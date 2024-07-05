@@ -2,8 +2,8 @@ import datetime
 import gc
 import json
 import statistics
-import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import okx.MarketData as MarketData
 import okx.PublicData as PublicData
@@ -88,16 +88,10 @@ def rzq_market(market, symbols, job):
     print(datetime.datetime.now(), f'{market}任务开始', len(symbols))
     alert = []
     success = set()
-    # 创建线程列表
-    threads = []
-    for symbol in symbols:
-        # 创建并启动多个线程
-        t = threading.Thread(target=job, args=(symbol, alert, success))
-        t.start()
-        threads.append(t)
-        # 等待所有线程完成
-    for t in threads:
-        t.join()
+    thread_pool = ThreadPoolExecutor(max_workers=100)
+    futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
+    for future in as_completed(futures):
+        future.result()
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert:
@@ -106,6 +100,15 @@ def rzq_market(market, symbols, job):
             for i, j in alert_sort:
                 alert.append(
                     f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n止盈:{j[3]}\n止损:{j[4]}')
+            json = {
+                "msgtype": "text",
+                "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
+            }
+            session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
+                json=json)
+        elif not success:
+            alert = [f"""{len(success)}/{len(symbols)}"""]
             json = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
