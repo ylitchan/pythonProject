@@ -92,6 +92,7 @@ def rzq_market(market, symbols, job):
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
         future.result()
+    thread_pool.shutdown()
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert:
