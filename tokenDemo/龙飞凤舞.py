@@ -73,12 +73,11 @@ def rzq_token(symbol, alert, success):
             price_vol = kline_hour[-2][4]
             zf = (price_vol / kline_hour[-3][4] - 1)
             price_zy = price_close + price_vol * zf * 0.5
-            price_zs = (price_vol + kline_hour[-2][3]) * 0.51
             if (zf >= 0.04 and price_zy > kline_hour[-1][2]
                     and price_close >= price_vol >= max((kline_hour[-2][2] + kline_hour[-2][3]) * 0.51,
                                                         bollinger_band_upper([k[4] for k in kline_hour[:20]]))
                     and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:20]]) * 3):
-                alert.append((symbol, price_close, zf, price_zy, price_zs))
+                alert.append((symbol, price_close, zf, price_zy, kline_hour[-2][1]))
             success.add(symbol)
             break
         except Exception:
