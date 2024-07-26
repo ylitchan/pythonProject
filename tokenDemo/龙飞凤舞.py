@@ -88,7 +88,7 @@ def rzq_token(symbol, alert, success):
                     and price_vol >= bollinger_band_upper([k[4] for k in kline_hour[:20]])
                     and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:20]]) * 2):
                 kline_day = get_kline(symbol, "1d")
-                if price_vol >= bollinger_band_upper([k[4] for k in kline_day[:20]]):
+                if price_vol >= bollinger_band_upper([k[4] for k in kline_day]):
                     alert.append((symbol, price_close, zf, price_zy, kline_hour[-2][1]))
             success.add(symbol)
             break
