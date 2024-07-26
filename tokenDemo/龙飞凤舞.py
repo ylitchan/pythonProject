@@ -60,24 +60,36 @@ def bollinger_band_upper(data, window_size=20, num_std_dev=2):
     return upper_band
 
 
+def get_kline(symbol, t: str):
+    if "-USDT" in symbol:
+        kline = [list(map(float, sublist)) for sublist in
+                 marketDataAPI.get_candlesticks(instId=symbol, bar=t.upper(), limit=21).get('data')[::-1]]
+    else:
+        kline = [list(map(float, sublist)) for sublist in
+                 client.klines(symbol=symbol, interval=t, limit=21)]
+    return kline
+
+
 def rzq_token(symbol, alert, success):
     for i in range(10):
         try:
-            if "-USDT" in symbol:
-                kline_hour = [list(map(float, sublist)) for sublist in
-                              marketDataAPI.get_candlesticks(instId=symbol, bar="1H", limit=21).get('data')[::-1]]
-            else:
-                kline_hour = [list(map(float, sublist)) for sublist in
-                              client.klines(symbol=symbol, interval="1h", limit=21)]
+            kline_hour = get_kline(symbol, "1h")
+            # if "-USDT" in symbol:
+            #     kline_hour = [list(map(float, sublist)) for sublist in
+            #                   marketDataAPI.get_candlesticks(instId=symbol, bar="1H", limit=21).get('data')[::-1]]
+            # else:
+            #     kline_hour = [list(map(float, sublist)) for sublist in
+            #                   client.klines(symbol=symbol, interval="1h", limit=21)]
             price_close = kline_hour[-1][4]
             price_vol = kline_hour[-2][4]
             zf = (price_vol / kline_hour[-3][4] - 1)
             price_zy = price_close + price_vol * min(0.05, zf * 0.5)
             if (zf >= 0.03 and price_zy > kline_hour[-1][2]
-                    and price_vol >= max((kline_hour[-2][2] + kline_hour[-2][3]) * 0.51,
-                                         bollinger_band_upper([k[4] for k in kline_hour[:20]]))
+                    and price_vol >= bollinger_band_upper([k[4] for k in kline_hour[:20]])
                     and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:20]]) * 2):
-                alert.append((symbol, price_close, zf, price_zy, kline_hour[-2][1]))
+                kline_day = get_kline(symbol, "1d")
+                if price_vol >= bollinger_band_upper([k[4] for k in kline_day[:20]]):
+                    alert.append((symbol, price_close, zf, price_zy, kline_hour[-2][1]))
             success.add(symbol)
             break
         except Exception:
