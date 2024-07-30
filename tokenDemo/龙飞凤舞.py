@@ -35,7 +35,13 @@ def rzq_a():
                     {
                         "title": "主人，请享用[害羞]",
                         "description": "",
-                        "url": "https://www.iwencai.com/unifiedwap/result?w=%E7%8E%B0%E4%BB%B7%E5%A4%A7%E4%BA%8E%E7%AD%89%E4%BA%8Eboll%28upper%E5%80%BC%29%EF%BC%9B%E4%BB%8A%E6%97%A5%E7%9A%84%E7%AB%9E%E4%BB%B7%E6%B6%A8%E5%B9%85%E5%A4%A7%E4%BA%8E%E7%AD%89%E4%BA%8E0%EF%BC%9B%E4%BB%8A%E6%97%A5%E7%9A%84%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84%E7%BA%A7%E5%8C%85%E5%90%AB%E5%A4%9A%EF%BC%9B%E4%BB%8A%E6%97%A5%E7%9A%84%E7%AB%9E%E4%BB%B7%E5%BC%82%E5%8A%A8%E7%B1%BB%E5%9E%8B%E4%B8%8D%E4%B8%BA%E7%A9%BA&querytype=stock",
+                        "url": "https://www.iwencai.com/unifiedwap/result?w=5%E6%97%A510%E6%97%A520%E6%97%A5%E7%9A%84"
+                               "%E5%9D%87%E7%BA%BF%E5%A4%9A%E5%A4%B4%E6%8E%92%E5%88%97%EF%BC%9B%E7%8E%B0%E4%BB%B7%E5"
+                               "%A4%A7%E4%BA%8E%E7%AD%89%E4%BA%8Eboll%28upper%E5%80%BC%29%EF%BC%9B%E4%BB%8A%E6%97%A5"
+                               "%E7%9A%84%E7%AB%9E%E4%BB%B7%E6%B6%A8%E5%B9%85%E5%A4%A7%E4%BA%8E%E7%AD%89%E4%BA%8E0%EF"
+                               "%BC%9B%E4%BB%8A%E6%97%A5%E7%9A%84%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84%E7%BA"
+                               "%A7%E5%8C%85%E5%90%AB%E5%A4%9A%EF%BC%9B%E4%BB%8A%E6%97%A5%E7%9A%84%E7%AB%9E%E4%BB%B7"
+                               "%E5%BC%82%E5%8A%A8%E7%B1%BB%E5%9E%8B%E4%B8%8D%E4%B8%BA%E7%A9%BA&querytype=stock",
                         "picurl": "https://img.chkaja.com/7870533166c6773a.jpg"
                     }
                 ]
@@ -62,6 +68,17 @@ def bollinger_band_upper(data, window_size=20, num_std_dev=2):
     return upper_band
 
 
+# 判断多头排列
+def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
+    if len(data) < long_window:
+        return None
+    short_ma = statistics.mean(data[-short_window:])
+    mid_ma = statistics.mean(data[-mid_window:])
+    long_ma = statistics.mean(data[-long_window:])
+    # 判定是否满足多头排列条件
+    return short_ma >= mid_ma >= long_ma
+
+
 def get_kline(symbol, t: str):
     if "-USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
@@ -86,13 +103,14 @@ def rzq_token(symbol, alert, success):
             price_vol = kline_hour[-2][4]
             zf = (price_vol / kline_hour[-3][4] - 1)
             price_zy = price_close + price_vol * min(0.05, zf * 0.5)
-            if (zf >= 0.03 and price_zy > kline_hour[-1][2]
-                    and price_vol >= max(bollinger_band_upper([k[4] for k in kline_hour[:20]]),
-                                         (kline_hour[-2][2] + kline_hour[-2][3]) * 0.51)
-                    and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:20]]) * 2):
-                kline_day = get_kline(symbol, "1d")
-                if price_vol >= bollinger_band_upper([k[4] for k in kline_day]):
-                    alert.append((symbol, price_close, zf, price_zy, kline_hour[-2][1]))
+            if ((zf >= 0.03 and price_zy > kline_hour[-1][2]
+                 and price_vol >= max(bollinger_band_upper([k[4] for k in kline_hour[:20]]),
+                                      (kline_hour[-2][2] + kline_hour[-2][3]) * 0.51)
+                 and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:20]]) * 2)
+                    and is_golden_cross([k[4] for k in kline_hour[:20]])):
+                # kline_day = get_kline(symbol, "1d")
+                # if price_vol >= bollinger_band_upper([k[4] for k in kline_day]):
+                alert.append((symbol, price_close, zf, price_zy, kline_hour[-2][1]))
             success.add(symbol)
             break
         except Exception:

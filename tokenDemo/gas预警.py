@@ -1,7 +1,7 @@
 import datetime
 import gc
 import re
-
+import dj
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from lxml import etree
