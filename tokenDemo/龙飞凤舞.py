@@ -28,7 +28,7 @@ publicDataAPI = PublicData.PublicAPI(flag='0', debug=False)
 def rzq_a():
     try:
         print(datetime.datetime.now(), 'A任务开始')
-        json = {
+        json_msg = {
             "msgtype": "news",
             "news": {
                 "articles": [
@@ -49,7 +49,7 @@ def rzq_a():
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
-            json=json)
+            json=json_msg)
     finally:
         print(datetime.datetime.now(), 'A任务结束')
         gc.collect()
@@ -134,22 +134,22 @@ def rzq_market(market, symbols, job):
             for i, j in alert_sort:
                 alert.append(
                     f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n止盈:{j[3]}\n止损:{j[4]}')
-            json = {
+            json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
-                json=json)
+                json=json_msg)
         elif not success:
             alert = [f"""{len(success)}/{len(symbols)}"""]
-            json = {
+            json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
-                json=json)
+                json=json_msg)
     finally:
         print(datetime.datetime.now(), f'{market}任务结束', alert)
         gc.collect()
