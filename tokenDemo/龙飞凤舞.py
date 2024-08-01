@@ -82,10 +82,10 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
 def get_kline(symbol, t: str):
     if "-USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
-                 marketDataAPI.get_candlesticks(instId=symbol, bar=t.upper(), limit=21).get('data')[::-1]]
+                 marketDataAPI.get_candlesticks(instId=symbol, bar=t.upper(), limit=20).get('data')[::-1]]
     else:
         kline = [list(map(float, sublist)) for sublist in
-                 client.klines(symbol=symbol, interval=t, limit=21)]
+                 client.klines(symbol=symbol, interval=t, limit=20)]
     return kline
 
 
@@ -95,12 +95,12 @@ def rzq_token(symbol, alert, success):
             kline = get_kline(symbol, "1d")
             price_close = kline[-1][4]
             price_vol = kline[-2][4]
-            zf = price_vol / kline[-3][4] - 1
-            price_zy = price_vol + kline[-2][1] * min(0.05, zf * 0.5)
+            zf = price_close / price_vol - 1
+            price_zy = price_close + price_vol * min(0.05, zf * 0.5)
             if (zf >= 0.02 and price_zy > kline[-1][2]
-                    and price_vol >= max(bollinger_band_upper([k[4] for k in kline[:20]]),
-                                         (kline[-2][2] + kline[-2][3]) * 0.51)
-                    and is_golden_cross([k[4] for k in kline[:20]])):
+                    and price_close >= max(bollinger_band_upper([k[4] for k in kline]),
+                                           (kline[-2][2] + kline[-2][3]) * 0.51)
+                    and is_golden_cross([k[4] for k in kline])):
                 alert.append((symbol, price_close, zf, price_zy, kline[-2][1]))
             success.add(symbol)
             break
