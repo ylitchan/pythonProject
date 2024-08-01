@@ -56,7 +56,7 @@ def rzq_a():
 
 
 # 计算布林带上轨
-def bollinger_band_upper(data, window_size=20, num_std_dev=2):
+def bollinger_band(data, window_size=20, num_std_dev=2):
     if len(data) < window_size:
         return None
     # 计算滚动均值
@@ -65,7 +65,7 @@ def bollinger_band_upper(data, window_size=20, num_std_dev=2):
     rolling_std = statistics.stdev(data[-window_size:])
     # 计算布林带上轨
     upper_band = rolling_mean + (rolling_std * num_std_dev)
-    return upper_band
+    return rolling_mean, upper_band
 
 
 # 判断多头排列
@@ -97,11 +97,12 @@ def rzq_token(symbol, alert, success):
             price_vol = kline[-2][4]
             zf = price_close / price_vol - 1
             price_zy = price_close + price_vol * min(0.05, zf * 0.5)
+            kline_close = [k[4] for k in kline]
+            rolling_mean, upper_band = bollinger_band(kline_close)
             if (zf >= 0.02 and price_zy > kline[-1][2]
-                    and price_close >= max(bollinger_band_upper([k[4] for k in kline]),
-                                           (kline[-2][2] + kline[-2][3]) * 0.51)
-                    and is_golden_cross([k[4] for k in kline])):
-                alert.append((symbol, price_close, zf, price_zy, kline[-2][1]))
+                    and price_close >= max(upper_band, (kline[-2][2] + kline[-2][3]) * 0.51)
+                    and is_golden_cross(kline_close)):
+                alert.append((symbol, price_close, zf, price_zy, rolling_mean))
             success.add(symbol)
             break
         except Exception:
