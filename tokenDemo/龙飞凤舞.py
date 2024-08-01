@@ -82,7 +82,7 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
 def get_kline(symbol, t: str):
     if "-USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
-                 marketDataAPI.get_candlesticks(instId=symbol, bar=t.upper(), limit=21).get('data')[::-1]]
+                 marketDataAPI.get_candlesticks(instId=symbol, bar=t, limit=21).get('data')[::-1]]
     else:
         kline = [list(map(float, sublist)) for sublist in
                  client.klines(symbol=symbol, interval=t, limit=21)]
@@ -92,7 +92,7 @@ def get_kline(symbol, t: str):
 def rzq_token(symbol, alert, success):
     for i in range(10):
         try:
-            kline_hour = get_kline(symbol, "1h")
+            kline_hour = get_kline(symbol, "15m")
             # if "-USDT" in symbol:
             #     kline_hour = [list(map(float, sublist)) for sublist in
             #                   marketDataAPI.get_candlesticks(instId=symbol, bar="1H", limit=21).get('data')[::-1]]
@@ -175,9 +175,9 @@ def main():
     rzq_market('OKX', symbols_okx, rzq_token)
     # 设置任务调度
     scheduler.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
-    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='10', timezone='Asia/Shanghai',
+    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='10', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
-    scheduler.add_job(rzq_market, 'cron', hour='*/1', minute='00', second='10', timezone='Asia/Shanghai',
+    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='10', timezone='Asia/Shanghai',
                       args=['OKX', symbols_okx, rzq_token])
     # 启动调度器
     scheduler.start()
