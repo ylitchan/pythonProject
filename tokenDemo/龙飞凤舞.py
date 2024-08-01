@@ -82,7 +82,7 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
 def get_kline(symbol, t: str):
     if "-USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
-                 marketDataAPI.get_candlesticks(instId=symbol, bar=t, limit=21).get('data')[::-1]]
+                 marketDataAPI.get_candlesticks(instId=symbol, bar=t.upper(), limit=21).get('data')[::-1]]
     else:
         kline = [list(map(float, sublist)) for sublist in
                  client.klines(symbol=symbol, interval=t, limit=21)]
@@ -92,25 +92,16 @@ def get_kline(symbol, t: str):
 def rzq_token(symbol, alert, success):
     for i in range(10):
         try:
-            kline_hour = get_kline(symbol, "15m")
-            # if "-USDT" in symbol:
-            #     kline_hour = [list(map(float, sublist)) for sublist in
-            #                   marketDataAPI.get_candlesticks(instId=symbol, bar="1H", limit=21).get('data')[::-1]]
-            # else:
-            #     kline_hour = [list(map(float, sublist)) for sublist in
-            #                   client.klines(symbol=symbol, interval="1h", limit=21)]
-            price_close = kline_hour[-1][4]
-            price_vol = kline_hour[-2][4]
-            zf = price_vol / kline_hour[-3][4] - 1
-            price_zy = price_vol + kline_hour[-2][1] * min(0.05, zf * 0.5)
-            if (zf >= 0.02 and price_zy > kline_hour[-1][2]
-                    and price_vol >= max(bollinger_band_upper([k[4] for k in kline_hour[:20]]),
-                                         (kline_hour[-2][2] + kline_hour[-2][3]) * 0.51)
-                    # and kline_hour[-2][5] >= statistics.mean([k[5] for k in kline_hour[:20]]) * 2
-                    and is_golden_cross([k[4] for k in kline_hour[:20]])):
-                # kline_day = get_kline(symbol, "1d")
-                # if price_vol >= bollinger_band_upper([k[4] for k in kline_day]):
-                alert.append((symbol, price_close, zf, price_zy, kline_hour[-2][1]))
+            kline = get_kline(symbol, "1d")
+            price_close = kline[-1][4]
+            price_vol = kline[-2][4]
+            zf = price_vol / kline[-3][4] - 1
+            price_zy = price_vol + kline[-2][1] * min(0.05, zf * 0.5)
+            if (zf >= 0.02 and price_zy > kline[-1][2]
+                    and price_vol >= max(bollinger_band_upper([k[4] for k in kline[:20]]),
+                                         (kline[-2][2] + kline[-2][3]) * 0.51)
+                    and is_golden_cross([k[4] for k in kline[:20]])):
+                alert.append((symbol, price_close, zf, price_zy, kline[-2][1]))
             success.add(symbol)
             break
         except Exception:
