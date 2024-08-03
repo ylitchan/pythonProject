@@ -13,17 +13,6 @@ from binance.spot import Spot
 from jsonpath_ng import parse
 from lxml import etree
 
-requests.packages.urllib3.disable_warnings()
-session = requests.Session()
-session.verify = False
-session.headers = {'Content-Type': 'application/json',
-                   'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'}
-# 创建BlockingScheduler对象
-scheduler = BlockingScheduler()
-client = Spot()
-marketDataAPI = MarketData.MarketAPI(flag='0', debug=False)
-publicDataAPI = PublicData.PublicAPI(flag='0', debug=False)
-
 
 def rzq_a():
     try:
@@ -99,19 +88,21 @@ def rzq_token(symbol, alert, success):
             price_zy = price_close + price_vol * min(0.05, zf * 0.5)
             kline_close = [k[4] for k in kline]
             rolling_mean, upper_band = bollinger_band(kline_close)
-            if (zf >= 0.02 and price_zy > kline[-1][2]
+            if (symbol not in alert and zf >= 0.02 and price_zy > kline[-1][2]
                     and price_close >= max(upper_band, (kline[-2][2] + kline[-2][3]) * 0.51)
                     and is_golden_cross(kline_close)):
-                alert.append((symbol, price_close, zf, price_zy, rolling_mean))
+                alert.update({symbol: (price_close, zf, price_zy, rolling_mean)})
             success.add(symbol)
             break
-        except Exception:
+        except:
             time.sleep(2)
 
 
 def rzq_market(market, symbols, job):
     print(datetime.datetime.now(), f'{market}任务开始', len(symbols))
-    alert = []
+    alert = alert_m.get(market, {})
+    if datetime.datetime.now().hour == 8:
+        alert.clear()
     success = set()
     thread_pool = ThreadPoolExecutor(max_workers=100)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
@@ -121,23 +112,24 @@ def rzq_market(market, symbols, job):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert:
-            alert_sort = enumerate(sorted(alert, key=lambda x: x[2], reverse=True))
-            alert.clear()
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][1], reverse=True))
+            alert_final = []
             for i, j in alert_sort:
-                alert.append(
-                    f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n现价:{j[1]}\n涨幅:{j[2]}\n止盈:{j[3]}\n止损:{j[4]}')
+                alert_final.append(
+                    f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n'
+                    f'现价:{alert[j][0]}\n涨幅:{alert[j][1]}\n止盈:{alert[j][2]}\n止损:{alert[j][3]}')
             json_msg = {
                 "msgtype": "text",
-                "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
+                "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
                 json=json_msg)
         elif not success:
-            alert = [f"""{len(success)}/{len(symbols)}"""]
+            alert_final = [f"""{len(success)}/{len(symbols)}"""]
             json_msg = {
                 "msgtype": "text",
-                "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert)}
+                "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
@@ -176,4 +168,15 @@ def main():
 
 
 if __name__ == "__main__":
+    requests.packages.urllib3.disable_warnings()
+    session = requests.Session()
+    session.verify = False
+    session.headers = {'Content-Type': 'application/json',
+                       'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'}
+    # 创建BlockingScheduler对象
+    scheduler = BlockingScheduler()
+    client = Spot()
+    marketDataAPI = MarketData.MarketAPI(flag='0', debug=False)
+    publicDataAPI = PublicData.PublicAPI(flag='0', debug=False)
+    alert_m = {'BN': {}, 'OKX': {}}
     main()
