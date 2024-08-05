@@ -116,7 +116,7 @@ def rzq_market(market, symbols, job):
             alert_final = []
             for i, j in alert_sort:
                 alert_final.append(
-                    f'{i + 1}.{j[0].replace("-USDT", "USDT")[:-4]}\n'
+                    f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
                     f'现价:{alert[j][0]}\n涨幅:{alert[j][1]}\n止盈:{alert[j][2]}\n止损:{alert[j][3]}')
             json_msg = {
                 "msgtype": "text",
