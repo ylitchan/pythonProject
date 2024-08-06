@@ -140,7 +140,7 @@ def rzq_market(market, symbols, job):
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
                 json=json_msg)
     finally:
-        print(datetime.datetime.now(), f'{market}任务结束', alert)
+        print(datetime.datetime.now(), f'{market}任务结束', alert_m, alert)
         gc.collect()
 
 
