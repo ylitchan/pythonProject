@@ -107,12 +107,12 @@ def rzq_market(market, symbols, job):
     if datetime.datetime.now().hour == 8 and datetime.datetime.now().minute < 15:
         alert.clear()
     success = set()
-    alert_m = []
+    alert_m = {}
     thread_pool = ThreadPoolExecutor(max_workers=100)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
         if r := future.result():
-            alert_m.append(r)
+            alert_m.update(r)
     thread_pool.shutdown()
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
