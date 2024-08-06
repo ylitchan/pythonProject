@@ -79,6 +79,9 @@ def get_kline(symbol, t: str):
 
 
 def rzq_token(symbol, alert, success):
+    if symbol in alert:
+        success.add(symbol)
+        return
     for i in range(10):
         try:
             kline = get_kline(symbol, "1d")
@@ -88,36 +91,38 @@ def rzq_token(symbol, alert, success):
             price_zy = price_close + price_vol * min(0.05, zf * 0.5)
             kline_close = [k[4] for k in kline]
             rolling_mean, upper_band = bollinger_band(kline_close)
-            if (symbol not in alert and zf >= 0.02 and price_zy > kline[-1][2]
+            success.add(symbol)
+            if (zf >= 0.02 and price_zy > kline[-1][2]
                     and price_close >= max(upper_band, (kline[-2][2] + kline[-2][3]) * 0.51)
                     and is_golden_cross(kline_close)):
                 alert.update({symbol: (price_close, zf, price_zy, rolling_mean)})
-            success.add(symbol)
-            break
+                return {symbol: (price_close, zf, price_zy, rolling_mean)}
         except:
-            time.sleep(2)
+            time.sleep(1)
 
 
 def rzq_market(market, symbols, job):
     print(datetime.datetime.now(), f'{market}任务开始', len(symbols))
-    alert = alert_m.get(market, {})
+    alert = alert_all.get(market, {})
     if datetime.datetime.now().hour == 8 and datetime.datetime.now().minute < 15:
         alert.clear()
     success = set()
+    alert_m = []
     thread_pool = ThreadPoolExecutor(max_workers=100)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
-        future.result()
+        if r := future.result():
+            alert_m.append(r)
     thread_pool.shutdown()
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
-        if alert:
-            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][1], reverse=True))
+        if alert_m:
+            alert_sort = enumerate(sorted(alert_m, key=lambda x: alert_m[x][1], reverse=True))
             alert_final = []
             for i, j in alert_sort:
                 alert_final.append(
                     f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                    f'现价:{alert[j][0]}\n涨幅:{alert[j][1]}\n止盈:{alert[j][2]}\n止损:{alert[j][3]}')
+                    f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈:{alert_m[j][2]}\n止损:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
@@ -178,5 +183,5 @@ if __name__ == "__main__":
     client = Spot()
     marketDataAPI = MarketData.MarketAPI(flag='0', debug=False)
     publicDataAPI = PublicData.PublicAPI(flag='0', debug=False)
-    alert_m = {'BN': {}, 'OKX': {}}
+    alert_all = {'BN': {}, 'OKX': {}}
     main()
