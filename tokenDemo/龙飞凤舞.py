@@ -120,7 +120,6 @@ def rzq_token(symbol, alert, success):
             return {symbol: (price_close, zf, price_zy, rolling_mean)}
     except:
         return
-        time.sleep(1)
 
 
 def rzq_market(market, symbols, job):
@@ -130,7 +129,7 @@ def rzq_market(market, symbols, job):
         alert.clear()
     success = set()
     alert_m = {}
-    thread_pool = ThreadPoolExecutor(max_workers=100)
+    thread_pool = ThreadPoolExecutor(max_workers=1)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
         if r := future.result():
@@ -142,9 +141,13 @@ def rzq_market(market, symbols, job):
             alert_sort = enumerate(sorted(alert_m, key=lambda x: alert_m[x][1], reverse=True))
             alert_final = []
             for i, j in alert_sort:
-                alert_final.append(
-                    f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                    f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈:{alert_m[j][2]}\n止损:{alert_m[j][3]}')
+                if 'USDT' in j:
+                    alert_final.append(
+                        f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
+                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈:{alert_m[j][2]}\n止损:{alert_m[j][3]}')
+                else:
+                    alert_final.append(
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈:{alert_m[j][2]}\n止损:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
