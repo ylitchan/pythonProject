@@ -129,7 +129,7 @@ def rzq_market(market, symbols, job):
         alert.clear()
     success = set()
     alert_m = {}
-    thread_pool = ThreadPoolExecutor(max_workers=1)
+    thread_pool = ThreadPoolExecutor(max_workers=5)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
         if r := future.result():
