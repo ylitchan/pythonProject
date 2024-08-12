@@ -1,7 +1,6 @@
 import datetime
 import gc
 import json
-import logging
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -131,7 +130,7 @@ def rzq_market(market, symbols, job):
         alert.clear()
     success = set()
     alert_m = {}
-    thread_pool = ThreadPoolExecutor(max_workers=1000)
+    thread_pool = ThreadPoolExecutor(max_workers=100)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
         if r := future.result():
@@ -200,10 +199,6 @@ def main():
 
 
 if __name__ == "__main__":
-    # 获取要禁用日志记录的包的日志记录器
-    logger = logging.getLogger('baostock')
-    # 设置日志记录级别为CRITICAL
-    logger.setLevel(logging.CRITICAL)
     requests.packages.urllib3.disable_warnings()
     session = requests.Session()
     session.verify = False
