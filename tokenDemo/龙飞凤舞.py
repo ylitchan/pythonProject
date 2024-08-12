@@ -129,7 +129,7 @@ def rzq_market(market, symbols, job):
         alert.clear()
     success = set()
     alert_m = {}
-    thread_pool = ThreadPoolExecutor(max_workers=5)
+    thread_pool = ThreadPoolExecutor(max_workers=1)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
         if r := future.result():
@@ -192,7 +192,7 @@ def main():
     rzq_market('BN', symbols_bn, rzq_token)
     rzq_market('OKX', symbols_okx, rzq_token)
     # 设置任务调度
-    scheduler.add_job(rzq_wc, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
+    scheduler.add_job(rzq_market, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='10', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='10', timezone='Asia/Shanghai',
@@ -213,5 +213,5 @@ if __name__ == "__main__":
     client = Spot()
     marketDataAPI = MarketData.MarketAPI(flag='0', debug=False)
     publicDataAPI = PublicData.PublicAPI(flag='0', debug=False)
-    alert_all = {'BN': {}, 'OKX': {}}
+    alert_all = {'BN': {}, 'OKX': {}, 'A': {}}
     main()
