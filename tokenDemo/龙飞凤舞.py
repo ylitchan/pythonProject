@@ -1,10 +1,12 @@
 import datetime
 import gc
 import json
+import logging
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import baostock as bs
 import okx.MarketData as MarketData
 import okx.PublicData as PublicData
 import requests
@@ -14,7 +16,7 @@ from jsonpath_ng import parse
 from lxml import etree
 
 
-def rzq_a():
+def rzq_wc():
     try:
         print(datetime.datetime.now(), 'A任务开始')
         json_msg = {
@@ -42,6 +44,24 @@ def rzq_a():
     finally:
         print(datetime.datetime.now(), 'A任务结束')
         gc.collect()
+
+
+def klines_a(symbol):
+    #### 获取历史K线数据 ####
+    # 详细指标参数，参见“历史行情指标参数”章节
+    rs = bs.query_history_k_data_plus(symbol,  # 股票代码
+                                      "preclose, open, high, low, close, volume",
+                                      # 要获取的参数
+                                      start_date=(datetime.datetime.now() - datetime.timedelta(days=30)).strftime(
+                                          '%Y-%m-%d'), end_date=datetime.datetime.now().strftime('%Y-%m-%d'),
+                                      # 开始时间，结束时间
+                                      frequency="d", adjustflag="3")  # frequency="d"取日k线，adjustflag="3"默认不复权
+    #### 打印结果集 ####
+    data_list = []
+    while (rs.error_code == '0') & rs.next():
+        # 获取一条记录，将记录合并在一起
+        data_list.append(rs.get_row_data())
+    return data_list
 
 
 # 计算布林带上轨
@@ -72,9 +92,11 @@ def get_kline(symbol, t: str):
     if "-USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
                  marketDataAPI.get_candlesticks(instId=symbol, bar=t.upper(), limit=20).get('data')[::-1]]
-    else:
+    elif "USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
                  client.klines(symbol=symbol, interval=t, limit=20)]
+    else:
+        kline = [list(map(float, sublist)) for sublist in klines_a(symbol)]
     return kline
 
 
@@ -82,23 +104,24 @@ def rzq_token(symbol, alert, success):
     if symbol in alert:
         success.add(symbol)
         return
-    for i in range(10):
-        try:
-            kline = get_kline(symbol, "1d")
-            price_close = kline[-1][4]
-            price_vol = kline[-2][4]
-            zf = price_close / price_vol - 1
-            price_zy = price_close + price_vol * min(0.05, zf * 0.5)
-            kline_close = [k[4] for k in kline]
-            rolling_mean, upper_band = bollinger_band(kline_close)
-            success.add(symbol)
-            if (zf >= 0.02 and price_zy > kline[-1][2]
-                    and price_close >= max(upper_band, (kline[-2][2] + kline[-2][3]) * 0.51)
-                    and is_golden_cross(kline_close)):
-                alert.update({symbol: (price_close, zf, price_zy, rolling_mean)})
-                return {symbol: (price_close, zf, price_zy, rolling_mean)}
-        except:
-            time.sleep(1)
+    # for i in range(10):
+    try:
+        kline = get_kline(symbol, "1d")
+        price_close = kline[-1][4]
+        price_vol = kline[-2][4]
+        zf = price_close / price_vol - 1
+        price_zy = price_close + price_vol * min(0.05, zf * 0.5)
+        kline_close = [k[4] for k in kline]
+        rolling_mean, upper_band = bollinger_band(kline_close)
+        success.add(symbol)
+        if (zf >= 0.02 and price_zy > kline[-1][2]
+                and price_close >= max(upper_band, (kline[-2][2] + kline[-2][3]) * 0.51)
+                and is_golden_cross(kline_close)):
+            alert.update({symbol: (price_close, zf, price_zy, rolling_mean)})
+            return {symbol: (price_close, zf, price_zy, rolling_mean)}
+    except:
+        return
+        time.sleep(1)
 
 
 def rzq_market(market, symbols, job):
@@ -108,7 +131,7 @@ def rzq_market(market, symbols, job):
         alert.clear()
     success = set()
     alert_m = {}
-    thread_pool = ThreadPoolExecutor(max_workers=100)
+    thread_pool = ThreadPoolExecutor(max_workers=1000)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
         if r := future.result():
@@ -145,7 +168,10 @@ def rzq_market(market, symbols, job):
 
 
 def main():
-    # rzq_a()
+    symbols_a = [c[0] for c in bs.query_all_stock().data if 'ST' not in c[-1]]
+    # for i in symbols_a:
+    #     print(i)
+    #     klines_a(i)
     symbols_bn = []
     symbols_okx = []
     for i in range(10):
@@ -160,10 +186,11 @@ def main():
             break
         except Exception:
             time.sleep(2)
+    rzq_market('A', symbols_a, rzq_token)
     rzq_market('BN', symbols_bn, rzq_token)
     rzq_market('OKX', symbols_okx, rzq_token)
     # 设置任务调度
-    scheduler.add_job(rzq_a, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
+    scheduler.add_job(rzq_wc, 'cron', hour='09', minute='25', second='00', timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='10', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='10', timezone='Asia/Shanghai',
@@ -173,6 +200,10 @@ def main():
 
 
 if __name__ == "__main__":
+    # 获取要禁用日志记录的包的日志记录器
+    logger = logging.getLogger('baostock')
+    # 设置日志记录级别为CRITICAL
+    logger.setLevel(logging.CRITICAL)
     requests.packages.urllib3.disable_warnings()
     session = requests.Session()
     session.verify = False
@@ -180,6 +211,7 @@ if __name__ == "__main__":
                        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'}
     # 创建BlockingScheduler对象
     scheduler = BlockingScheduler()
+    bs.login()
     client = Spot()
     marketDataAPI = MarketData.MarketAPI(flag='0', debug=False)
     publicDataAPI = PublicData.PublicAPI(flag='0', debug=False)
