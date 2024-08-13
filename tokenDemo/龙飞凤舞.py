@@ -154,7 +154,7 @@ def rzq_market(market, symbols, job):
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
                 json=json_msg)
-        elif not success:
+        elif not success and symbols:
             alert_final = [f"""{len(success)}/{len(symbols)}"""]
             json_msg = {
                 "msgtype": "text",
