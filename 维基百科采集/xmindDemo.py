@@ -4,17 +4,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import wikipedia
 from lxml import etree
-from pygtrans import Translate, Null
+from pygtrans import Null
 from xmindparser import xmind_to_dict
 
-client_translate = Translate(target='en', source='auto')
+from utils.翻译 import translate
 
-
-def translate(text):
-    try:
-        return client_translate.translate(text).translatedText
-    except:
-        return text
+os.environ['http_proxy'] = 'http://127.0.0.1:7890'
+os.environ['https_proxy'] = 'http://127.0.0.1:7890'
 
 
 def parse_xmind_to_paths(file_path):
@@ -53,9 +49,13 @@ def parse_xmind_to_paths(file_path):
 def get_html(path):
     if len(path) <= 3:
         return
-    print(path)
-    kw = path[1][:2] + ';' + ';'.join(path[3:])
-    kw_t = translate(kw)
+    # print(path)
+    # kw = path[1][:2] + ';' + ';'.join(path[3:])
+    kw = path[1][:2] + ';' + path[-1]
+    if '俄罗;' in kw:
+        kw = kw.replace('俄罗;', '俄罗斯;')
+    # print(kw)
+    kw_t = translate(kw, target='en')
     if isinstance(kw_t, Null):
         kw_t = kw
     try:
@@ -65,12 +65,11 @@ def get_html(path):
         parser = etree.HTMLParser()
         tree = etree.fromstring(res.content, parser)
         title = ''.join(tree.xpath('//*[@id="firstHeading"]//text()'))
-        print(title, kw)
-        pt = translate(kw[2:])
-        if title.split('(')[0] not in pt:
+        # print(title, kw_t)
+        if not contains_any(kw_t, title, res.text):
             no_result.append(path)
             return
-        abs_fold = os.path.join(r'D:\pythonProject\维基百科采集', '\\'.join(path[:-1]).replace('/', '&'))
+        abs_fold = os.path.join(r'G:\维基百科', '\\'.join(path[:-1]).replace('/', '&'))
         if not os.path.exists(abs_fold):
             os.makedirs(abs_fold)
         with open(os.path.join(abs_fold, f"{path[-1]}.html"), 'wb') as file:
@@ -80,12 +79,27 @@ def get_html(path):
         print(path, '采集失败', str(e))
 
 
+def contains_any(keyword, title, content):
+    keyword = keyword.lower()
+    title = title.lower()
+    content = content.lower()
+
+    # 用 ';' 切割字符串 a
+    substrings = keyword.split(';')
+    if len(substrings) == 2:
+        substring = substrings[-1]
+        # 检查 title 和 content 是否包含切割后的最后一个子字符串
+        if substring in title or substring in content:
+            return True
+    return False
+
+
 if __name__ == '__main__':
     # 使用示例
-    file_path = 'D:\pythonProject\维基百科采集\中心主题.xmind'
+    file_path = 'D:\pythonProjects\维基百科采集\中心主题.xmind'
     parsed_paths = parse_xmind_to_paths(file_path)
     no_result = []
-    thread_pool = ThreadPoolExecutor(max_workers=100)
+    thread_pool = ThreadPoolExecutor(max_workers=10)
     # self.get_baidu_info(lists[1])
     futures = [thread_pool.submit(get_html, path) for path in parsed_paths]
     # 使用as_completed方法来获取已完成的任务

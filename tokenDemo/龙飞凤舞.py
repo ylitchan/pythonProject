@@ -103,7 +103,6 @@ def rzq_token(symbol, alert, success):
     if symbol in alert:
         success.add(symbol)
         return
-    # for i in range(10):
     try:
         kline = get_kline(symbol, "1d")
         price_close = kline[-1][4]
@@ -171,9 +170,6 @@ def rzq_market(market, symbols, job):
 
 def main():
     symbols_a = [c[0] for c in bs.query_all_stock().data if 'ST' not in c[-1]]
-    # for i in symbols_a:
-    #     print(i)
-    #     klines_a(i)
     symbols_bn = []
     symbols_okx = []
     for i in range(10):
@@ -192,7 +188,8 @@ def main():
     rzq_market('BN', symbols_bn, rzq_token)
     rzq_market('OKX', symbols_okx, rzq_token)
     # 设置任务调度
-    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai')
+    scheduler.add_job(rzq_market, 'cron', hour='9-15', minute='*/5', second='00', day_of_week='mon-fri',
+                      timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
