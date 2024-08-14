@@ -93,7 +93,7 @@ def get_kline(symbol, t: str):
                  marketDataAPI.get_candlesticks(instId=symbol, bar=t.upper(), limit=20).get('data')[::-1]]
     elif "USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
-                 client.klines(symbol=symbol, interval=t, limit=20)]
+                 client.klines(symbol=symbol, interval=t[:2].lower(), limit=20)]
     else:
         kline = [list(map(float, sublist)) for sublist in klines_a(symbol)]
     return kline
@@ -104,7 +104,7 @@ def rzq_token(symbol, alert, success):
         success.add(symbol)
         return
     try:
-        kline = get_kline(symbol, "1d")
+        kline = get_kline(symbol, "1Dutc")
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
         zf = price_close / price_vol - 1
@@ -128,7 +128,7 @@ def rzq_market(market, symbols, job):
         alert.clear()
     success = set()
     alert_m = {}
-    thread_pool = ThreadPoolExecutor(max_workers=1)
+    thread_pool = ThreadPoolExecutor(max_workers=100)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols]
     for future in as_completed(futures):
         if r := future.result():

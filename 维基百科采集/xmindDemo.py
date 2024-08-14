@@ -1,6 +1,8 @@
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import pinyin
 import requests
 import wikipedia
 from lxml import etree
@@ -11,6 +13,11 @@ from utils.翻译 import translate
 
 os.environ['http_proxy'] = 'http://127.0.0.1:7890'
 os.environ['https_proxy'] = 'http://127.0.0.1:7890'
+
+
+def extract_first_letters(text):
+    pinyin_str = pinyin.get_initial(text, delimiter='')
+    return pinyin_str
 
 
 def parse_xmind_to_paths(file_path):
@@ -31,7 +38,7 @@ def parse_xmind_to_paths(file_path):
             return paths
 
         else:
-            paths.append(list(current_path))
+            # paths.append(list(current_path))
             # 递归处理每个子节点
             for sub_topic in topic["topics"]:
                 extract_paths(sub_topic, current_path)
@@ -40,9 +47,30 @@ def parse_xmind_to_paths(file_path):
         current_path.pop()
 
     # 处理XMind文件的第一个工作簿和第一个工作表
-    first_sheet = xmind_data[0]["topic"]["topics"][0]
+    first_sheet = xmind_data[0]["topic"]["topics"][0]["topics"][0]["topics"][0]
     extract_paths(first_sheet, [])
+    import pandas as pd
 
+    # 列表的列表，子列表长度不一，元素都是值
+    data = paths
+    for p in paths:
+        for i, pp in enumerate(p):
+            if i == 0:
+                p[i] = pp.split('主战武器装备')[0].replace('台军', '台湾')
+            elif pp_s := re.search('[-\dA-Z]+', pp):
+                pp_ss = pp_s.group()
+                if pp_ss in extract_first_letters(pp.replace(pp_ss, '')).upper():
+                    p[i] = pp.replace(pp_ss, '')
+    # 将每个子列表转换为 Series，并组合成一个 DataFrame
+    df = pd.DataFrame([pd.Series(x) for x in data])
+
+    # 指定要写入的 Excel 文件名
+    excel_file = '台&外军主战武器装备.xlsx'
+
+    # 将数据写入 Excel 文件
+    df.to_excel(excel_file, index=False, header=False)
+
+    print(f'Data has been written to {excel_file}')
     return paths
 
 
@@ -96,7 +124,7 @@ def contains_any(keyword, title, content):
 
 if __name__ == '__main__':
     # 使用示例
-    file_path = 'D:\pythonProjects\维基百科采集\中心主题.xmind'
+    file_path = 'D:\pythonProject\维基百科采集\专题数据库构建-武器.xmind'
     parsed_paths = parse_xmind_to_paths(file_path)
     no_result = []
     thread_pool = ThreadPoolExecutor(max_workers=10)
