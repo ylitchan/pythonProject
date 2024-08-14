@@ -90,7 +90,7 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
 def get_kline(symbol, t: str):
     if "-USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
-                 marketDataAPI.get_candlesticks(instId=symbol, bar=t.upper(), limit=20).get('data')[::-1]]
+                 marketDataAPI.get_candlesticks(instId=symbol, bar=t, limit=20).get('data')[::-1]]
     elif "USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
                  client.klines(symbol=symbol, interval=t[:2].lower(), limit=20)]
