@@ -169,7 +169,7 @@ def rzq_market(market, symbols, job):
 
 
 def main():
-    symbols_a = [c[0] for c in bs.query_all_stock().data if 'ST' not in c[-1]]
+    # symbols_a = [c[0] for c in bs.query_all_stock().data if 'ST' not in c[-1]]
     symbols_bn = []
     symbols_okx = []
     for i in range(10):
@@ -184,18 +184,18 @@ def main():
             break
         except Exception:
             time.sleep(2)
+    # rzq_market('A', symbols_a, rzq_token)
+    rzq_market('BN', symbols_bn, rzq_token)
+    rzq_market('OKX', symbols_okx, rzq_token)
     # 设置任务调度
-    scheduler.add_job(rzq_market, 'cron', hour='9-15', minute='*/5', second='00', day_of_week='mon-fri',
-                      timezone='Asia/Shanghai', args=['A', symbols_a, rzq_token])
+    # scheduler.add_job(rzq_market, 'cron', hour='9-15', minute='*/5', second='00', day_of_week='mon-fri',
+    #                   timezone='Asia/Shanghai', args=['A', symbols_a, rzq_token])
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
                       args=['OKX', symbols_okx, rzq_token])
     # 启动调度器
     scheduler.start()
-    rzq_market('A', symbols_a, rzq_token)
-    rzq_market('BN', symbols_bn, rzq_token)
-    rzq_market('OKX', symbols_okx, rzq_token)
 
 
 if __name__ == "__main__":
@@ -207,6 +207,7 @@ if __name__ == "__main__":
     # 创建BlockingScheduler对象
     scheduler = BlockingScheduler()
     bs.login()
+    bs.logout()
     client = Spot()
     marketDataAPI = MarketData.MarketAPI(flag='0', debug=False)
     publicDataAPI = PublicData.PublicAPI(flag='0', debug=False)
