@@ -1,6 +1,7 @@
 import datetime
 import gc
 import json
+import re
 import statistics
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -99,20 +100,27 @@ def get_kline(symbol, t: str):
     return kline
 
 
+def get_max_decimal_places(price_s):
+    if p := re.search('\.\d+', price_s):
+        return len(p.group()) - 1
+    return 0
+
+
 def rzq_token(symbol, alert, success):
     if symbol in alert:
         success.add(symbol)
         return
     try:
         kline = get_kline(symbol, "1Dutc")
+        kline_close = [k[4] for k in kline]
+        max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
-        zf = price_close / price_vol - 1
-        price_zy = price_close + price_vol * min(0.05, zf * 0.5)
-        kline_close = [k[4] for k in kline]
-        rolling_mean, upper_band = bollinger_band(kline_close)
+        zf = round((price_close / price_vol - 1) * 100, 2)
+        price_zy = round(price_close + price_vol * min(0.05, zf * 0.005), max_decimal)
+        rolling_mean, upper_band = map(lambda x: round(x, max_decimal), bollinger_band(kline_close))
         success.add(symbol)
-        if (zf >= 0.02 and price_zy > kline[-1][2] and 0.5 <= kline[-1][5] / kline[-2][5] <= 1
+        if (zf >= 2 and price_zy > kline[-1][2] and 0.5 <= kline[-1][5] / kline[-2][5] <= 1
                 and price_vol > kline[-2][1] and price_close >= upper_band and is_golden_cross(kline_close)):
             alert.update({symbol: (price_close, zf, price_zy, rolling_mean)})
             return {symbol: (price_close, zf, price_zy, rolling_mean)}
