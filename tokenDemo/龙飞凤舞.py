@@ -74,7 +74,7 @@ def bollinger_band(data, window_size=20, num_std_dev=2):
     rolling_std = statistics.stdev(data[-window_size:])
     # 计算布林带上轨
     upper_band = rolling_mean + (rolling_std * num_std_dev)
-    return rolling_mean, upper_band
+    return upper_band
 
 
 # 判断多头排列
@@ -117,13 +117,14 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
         zf = round((price_close / price_vol - 1) * 100, 2)
-        price_zy = round(price_close + price_vol * min(0.05, zf * 0.005), max_decimal)
-        rolling_mean, upper_band = map(lambda x: round(x, max_decimal), bollinger_band(kline_close))
+        price_zy5 = round(price_close + price_vol * min(0.05, zf * 0.005), max_decimal)
+        price_zy3 = round(price_close + price_vol * min(0.03, zf * 0.005), max_decimal)
+        upper_band = round(bollinger_band(kline_close), max_decimal)
         success.add(symbol)
-        if (zf >= 2 and price_zy > kline[-1][2] and 0.5 <= kline[-1][5] / kline[-2][5] <= 1
+        if (zf >= 2 and price_zy3 > kline[-1][2] and 0.5 <= kline[-1][5] / kline[-2][5] <= 1
                 and price_vol > kline[-2][1] and price_close >= upper_band and is_golden_cross(kline_close)):
-            alert.update({symbol: (price_close, zf, price_zy, rolling_mean)})
-            return {symbol: (price_close, zf, price_zy, rolling_mean)}
+            alert.update({symbol: (price_close, zf, price_zy5, price_zy3)})
+            return {symbol: (price_close, zf, price_zy5, price_zy3)}
     except:
         return
 
@@ -153,7 +154,7 @@ def rzq_market(market, symbols, job):
                         f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈:{alert_m[j][2]}\n止损:{alert_m[j][3]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈:{alert_m[j][2]}\n止损:{alert_m[j][3]}')
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
