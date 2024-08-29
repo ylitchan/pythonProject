@@ -85,7 +85,7 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     mid_ma = statistics.mean(data[-mid_window:])
     long_ma = statistics.mean(data[-long_window:])
     # 判定是否满足多头排列条件
-    return short_ma >= mid_ma >= long_ma
+    return short_ma >= mid_ma >= long_ma, short_ma
 
 
 def get_kline(symbol, t: str):
@@ -120,9 +120,10 @@ def rzq_token(symbol, alert, success):
         price_zy5 = round(price_close + price_vol * min(0.05, zf * 0.005), max_decimal)
         price_zy3 = round(price_close + price_vol * min(0.03, zf * 0.005), max_decimal)
         upper_band = round(bollinger_band(kline_close), max_decimal)
+        golden_cross, short_ma = is_golden_cross(kline_close)
         success.add(symbol)
         if (zf >= 2 and price_zy3 > kline[-1][2] and 0.5 <= kline[-1][5] / kline[-2][5] <= 1
-                and price_vol > kline[-2][1] and price_close >= upper_band and is_golden_cross(kline_close)):
+                and price_vol > max(short_ma, kline[-2][1]) and price_close >= upper_band and golden_cross):
             alert.update({symbol: (price_close, zf, price_zy5, price_zy3)})
             return {symbol: (price_close, zf, price_zy5, price_zy3)}
     except:
