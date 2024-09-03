@@ -85,7 +85,7 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     mid_ma = statistics.mean(data[-mid_window:])
     long_ma = statistics.mean(data[-long_window:])
     # 判定是否满足多头排列条件
-    return short_ma >= mid_ma >= long_ma, short_ma
+    return short_ma >= mid_ma >= long_ma, statistics.mean(data[-short_window - 1:-1])
 
 
 def get_kline(symbol, t: str):
@@ -122,7 +122,7 @@ def rzq_token(symbol, alert, success):
         upper_band = round(bollinger_band(kline_close), max_decimal)
         golden_cross, short_ma = is_golden_cross(kline_close)
         success.add(symbol)
-        if (zf >= 2 and price_zy3 > kline[-1][2] and 0.5 <= kline[-1][5] / kline[-2][5] <= 1
+        if (zf >= 2 and price_zy3 > kline[-1][2] and 0.5 <= kline[-1][5] / kline[-2][5]
                 and price_vol > max(short_ma, kline[-2][1]) and price_close >= upper_band and golden_cross):
             alert.update({symbol: (price_close, zf, price_zy5, price_zy3)})
             return {symbol: (price_close, zf, price_zy5, price_zy3)}
@@ -201,8 +201,8 @@ def main():
     #                   timezone='Asia/Shanghai', args=['A', symbols_a, rzq_token])
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
-    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
-                      args=['OKX', symbols_okx, rzq_token])
+    # scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
+    #                   args=['OKX', symbols_okx, rzq_token])
     # 启动调度器
     scheduler.start()
 

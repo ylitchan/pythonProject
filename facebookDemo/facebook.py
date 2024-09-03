@@ -14,6 +14,7 @@ thread_pool = ThreadPoolExecutor(max_workers=100)
 
 
 def get_contact(k, v):
+    print(k, v)
     res = requests.get(f'{v}/about_contact_and_basic_info', impersonate='chrome110', headers=
     {
         "Reqable-Id": "",
@@ -49,9 +50,11 @@ def get_contact(k, v):
     })
     if email := re.findall('''"websites_and_social_links".*?"text":"(.*?)"},''', res.content.decode(),
                            re.S):
-        d = {'email': email[0].replace('\\\\', '\\').encode().decode('unicode_escape'), 'name': k, 'url': v}
-        print(d)
-        mem.append(d)
+        email = email[0].replace('\\\\', '\\').encode().decode('unicode_escape')
+        if '@' in email:
+            d = {'email': email, 'name': k, 'url': v}
+            print(d)
+            mem.append(d)
 
 
 def job(data):
