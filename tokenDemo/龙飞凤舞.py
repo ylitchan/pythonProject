@@ -122,7 +122,7 @@ def rzq_token(symbol, alert, success):
         upper_band = round(bollinger_band(kline_close), max_decimal)
         golden_cross, short_ma = is_golden_cross(kline_close)
         success.add(symbol)
-        if (zf >= 2 and price_zy5 > kline[-1][2] and kline[-1][5] / kline[-2][5] >= 0.5
+        if (price_zy5 > kline[-1][2] and kline[-1][5] / kline[-2][5] >= 0.5
                 and price_vol > short_ma and price_close >= upper_band and golden_cross):
             alert.update({symbol: (price_close, zf, price_zy5, price_zy3)})
             return {symbol: (price_close, zf, price_zy5, price_zy3)}
