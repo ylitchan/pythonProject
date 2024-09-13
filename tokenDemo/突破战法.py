@@ -56,7 +56,6 @@ def klines_a(symbol):
                                           '%Y-%m-%d'), end_date=datetime.datetime.now().strftime('%Y-%m-%d'),
                                       # 开始时间，结束时间
                                       frequency="d", adjustflag="3")  # frequency="d"取日k线，adjustflag="3"默认不复权
-    #### 打印结果集 ####
     data_list = []
     while (rs.error_code == '0') & rs.next():
         # 获取一条记录，将记录合并在一起
