@@ -64,19 +64,6 @@ def klines_a(symbol):
     return data_list
 
 
-# 计算布林带上轨
-def bollinger_band(data, window_size=20, num_std_dev=2):
-    if len(data) < window_size:
-        return None
-    # 计算滚动均值
-    rolling_mean = statistics.mean(data[-window_size:])
-    # 计算滚动标准差
-    rolling_std = statistics.stdev(data[-window_size:])
-    # 计算布林带上轨
-    upper_band = rolling_mean + (rolling_std * num_std_dev)
-    return upper_band
-
-
 # 判断多头排列
 def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     if len(data) < long_window:
@@ -85,7 +72,10 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     mid_ma = statistics.mean(data[-mid_window:])
     long_ma = statistics.mean(data[-long_window:])
     # 判定是否满足多头排列条件
-    return short_ma >= mid_ma >= long_ma, statistics.mean(data[-short_window - 1:-1])
+    return short_ma >= mid_ma >= long_ma and data[-2] >= statistics.mean(data[-short_window - 1:-1]) and filter(
+        lambda x: x[-1] <= data[x[0] - 1][-1] and x[-1] >= statistics.mean(
+            data[x[0] + 1 - short_window:x[0] + 1]) if len(data) - 1 > x[0] > len(data) - 1 - short_window else False,
+        enumerate(data))
 
 
 def get_kline(symbol, t: str):
@@ -119,11 +109,8 @@ def rzq_token(symbol, alert, success):
         zf = round((price_close / price_vol - 1) * 100, 2)
         price_zy5 = round(price_close + price_vol * min(0.05, zf * 0.005), max_decimal)
         price_zy3 = round(price_close + price_vol * min(0.03, zf * 0.005), max_decimal)
-        upper_band = round(bollinger_band(kline_close), max_decimal)
-        golden_cross, short_ma = is_golden_cross(kline_close)
         success.add(symbol)
-        if (price_zy5 > kline[-1][2] and kline[-1][5] / kline[-2][5] >= 0.5
-                and price_vol > short_ma and price_close >= upper_band and golden_cross):
+        if price_close > max([k[2] for k in kline[-5:-1]]) and is_golden_cross(kline_close):
             alert.update({symbol: (price_close, zf, price_zy5, price_zy3)})
             return {symbol: (price_close, zf, price_zy5, price_zy3)}
     except:

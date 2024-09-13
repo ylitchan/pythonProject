@@ -14,7 +14,6 @@ thread_pool = ThreadPoolExecutor(max_workers=100)
 
 
 def get_contact(k, v):
-    print(k, v)
     res = requests.get(f'{v}/about_contact_and_basic_info', impersonate='chrome110', headers=
     {
         "Reqable-Id": "",
