@@ -16,36 +16,6 @@ from jsonpath_ng import parse
 from lxml import etree
 
 
-def rzq_wc():
-    try:
-        print(datetime.datetime.now(), 'A任务开始')
-        json_msg = {
-            "msgtype": "news",
-            "news": {
-                "articles": [
-                    {
-                        "title": "主人，请享用[害羞]",
-                        "description": "",
-                        "url": "https://www.iwencai.com/unifiedwap/result?w=5%E6%97%A510%E6%97%A520%E6%97%A5%E7%9A%84"
-                               "%E5%9D%87%E7%BA%BF%E5%A4%9A%E5%A4%B4%E6%8E%92%E5%88%97%EF%BC%9B%E7%8E%B0%E4%BB%B7%E5"
-                               "%A4%A7%E4%BA%8E%E7%AD%89%E4%BA%8Eboll%28upper%E5%80%BC%29%EF%BC%9B%E4%BB%8A%E6%97%A5"
-                               "%E7%9A%84%E7%AB%9E%E4%BB%B7%E6%B6%A8%E5%B9%85%E5%A4%A7%E4%BA%8E%E7%AD%89%E4%BA%8E0%EF"
-                               "%BC%9B%E4%BB%8A%E6%97%A5%E7%9A%84%E9%9B%86%E5%90%88%E7%AB%9E%E4%BB%B7%E8%AF%84%E7%BA"
-                               "%A7%E5%8C%85%E5%90%AB%E5%A4%9A%EF%BC%9B%E4%BB%8A%E6%97%A5%E7%9A%84%E7%AB%9E%E4%BB%B7"
-                               "%E5%BC%82%E5%8A%A8%E7%B1%BB%E5%9E%8B%E4%B8%8D%E4%B8%BA%E7%A9%BA&querytype=stock",
-                        "picurl": "https://img.chkaja.com/7870533166c6773a.jpg"
-                    }
-                ]
-            }
-        }
-        session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
-            json=json_msg)
-    finally:
-        print(datetime.datetime.now(), 'A任务结束')
-        gc.collect()
-
-
 def klines_a(symbol):
     #### 获取历史K线数据 ####
     # 详细指标参数，参见“历史行情指标参数”章节
@@ -181,7 +151,7 @@ def main():
             time.sleep(2)
     # rzq_market('A', symbols_a, rzq_token)
     rzq_market('BN', symbols_bn, rzq_token)
-    rzq_market('OKX', symbols_okx, rzq_token)
+    # rzq_market('OKX', symbols_okx, rzq_token)
     # 设置任务调度
     # scheduler.add_job(rzq_market, 'cron', hour='9-15', minute='*/5', second='00', day_of_week='mon-fri',
     #                   timezone='Asia/Shanghai', args=['A', symbols_a, rzq_token])
