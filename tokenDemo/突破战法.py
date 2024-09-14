@@ -41,10 +41,9 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     mid_ma = statistics.mean(data[-mid_window:])
     long_ma = statistics.mean(data[-long_window:])
     # 判定是否满足多头排列条件
-    return short_ma >= mid_ma >= long_ma and data[-2] >= statistics.mean(data[-short_window - 1:-1]) and filter(
-        lambda x: x[-1] <= data[x[0] - 1][-1] and x[-1] >= statistics.mean(
-            data[x[0] + 1 - short_window:x[0] + 1]) if len(data) - 1 > x[0] > len(data) - 1 - short_window else False,
-        enumerate(data))
+    return short_ma >= mid_ma >= long_ma and data[-2] >= statistics.mean(data[-short_window - 1:-1]) and list(filter(
+        lambda x: statistics.mean(data[x[0] + 1 - short_window:x[0] + 1]) <= x[-1] <= data[x[0] - 1] if len(
+            data) - 1 > x[0] > len(data) - 1 - short_window else False, enumerate(data)))
 
 
 def get_kline(symbol, t: str):
