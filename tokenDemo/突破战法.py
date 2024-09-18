@@ -77,8 +77,8 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
         zf = round((price_close / price_vol - 1) * 100, 2)
-        price_zy5 = round(price_close + price_vol * min(0.05, zf), max_decimal)
-        price_zy3 = round(price_close + price_vol * min(0.03, zf), max_decimal)
+        price_zy5 = round(price_close + price_vol * 0.05, max_decimal)
+        price_zy3 = round(price_close + price_vol * 0.03, max_decimal)
         success.add(symbol)
         if price_close > max([k[2] for k in kline[-5:-1]]) and is_golden_cross(kline_close):
             alert.update({symbol: (price_close, zf, price_zy5, price_zy3)})
