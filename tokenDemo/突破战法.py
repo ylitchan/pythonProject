@@ -156,7 +156,7 @@ def main():
     # 设置任务调度
     # scheduler.add_job(rzq_market, 'cron', hour='9-15', minute='*/5', second='00', day_of_week='mon-fri',
     #                   timezone='Asia/Shanghai', args=['A', symbols_a, rzq_token])
-    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
+    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
     # scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
     #                   args=['OKX', symbols_okx, rzq_token])
