@@ -103,16 +103,16 @@ def rzq_market(market, symbols, job):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert_m, key=lambda x: alert_m[x][1], reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][1], reverse=True))
             alert_final = []
             for i, j in alert_sort:
                 if 'USDT' in j:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
+                        f'现价:{alert[j][0]}\n涨幅:{alert[j][1]}\n止盈5:{alert[j][2]}\n止盈3:{alert[j][3]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
+                        f'{i + 1}.{j}\n现价:{alert[j][0]}\n涨幅:{alert[j][1]}\n止盈5:{alert[j][2]}\n止盈3:{alert[j][3]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
