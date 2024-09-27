@@ -90,7 +90,7 @@ def rzq_token(symbol, alert, success):
 def rzq_market(market, symbols, job):
     print(datetime.datetime.now(), f'{market}任务开始', len(symbols))
     alert = alert_all.get(market, {})
-    if datetime.datetime.now().hour == 8 and datetime.datetime.now().minute < 15:
+    if datetime.datetime.now().hour == 8 and datetime.datetime.now().minute < 2:
         alert.clear()
     success = set()
     alert_m = {}
