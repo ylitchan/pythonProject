@@ -103,9 +103,11 @@ def rzq_market(market, symbols, job):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert_m, key=lambda x: alert_m[x][1], reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][1], reverse=True))
             alert_final = []
             for i, j in alert_sort:
+                if j not in alert_m:
+                    continue
                 if 'USDT' in j:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
