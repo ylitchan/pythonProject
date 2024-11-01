@@ -77,7 +77,7 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
         zf = round((price_close / price_vol - 1) * 100, 2)
-        price_zy5 = round(price_close + price_vol * 0.05, max_decimal)
+        price_zy5 = round(price_close + price_vol * 0.015, max_decimal)
         price_zy3 = round(price_close + price_vol * 0.03, max_decimal)
         success.add(symbol)
         if price_close > max([k[2] for k in kline[-5:-1]]) and is_golden_cross(kline_close):
@@ -111,10 +111,10 @@ def rzq_market(market, symbols, job):
                 if 'USDT' in j:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
+                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
