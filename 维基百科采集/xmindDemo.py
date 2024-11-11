@@ -56,7 +56,7 @@ def parse_xmind_to_paths(file_path):
     for p in paths:
         for i, pp in enumerate(p):
             if i == 0:
-                p[i] = pp.split('主战武器装备')[0].replace('台军', '台湾')
+                p[i] = pp.split('l')[0].replace('l', 'l')
             elif pp_s := re.search('[-\dA-Z]+', pp):
                 pp_ss = pp_s.group()
                 if pp_ss in extract_first_letters(pp.replace(pp_ss, '')).upper():
@@ -65,7 +65,7 @@ def parse_xmind_to_paths(file_path):
     df = pd.DataFrame([pd.Series(x) for x in data])
 
     # 指定要写入的 Excel 文件名
-    excel_file = '台&外军主战武器装备.xlsx'
+    excel_file = 'l.xlsx'
 
     # 将数据写入 Excel 文件
     df.to_excel(excel_file, index=False, header=False)
@@ -124,7 +124,7 @@ def contains_any(keyword, title, content):
 
 if __name__ == '__main__':
     # 使用示例
-    file_path = 'D:\pythonProject\维基百科采集\专题数据库构建-武器.xmind'
+    file_path = 'D:\pythonProject\维基百科采集\l.xmind'
     parsed_paths = parse_xmind_to_paths(file_path)
     no_result = []
     thread_pool = ThreadPoolExecutor(max_workers=10)
