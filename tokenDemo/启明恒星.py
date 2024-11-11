@@ -122,7 +122,7 @@ def rzq_market(market, symbols, job):
                         f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
-                "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
+                "text": {'content': f'==={market}{len(alert_m)}===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
@@ -131,7 +131,7 @@ def rzq_market(market, symbols, job):
             alert_final = [f"""{len(success)}/{len(symbols)}"""]
             json_msg = {
                 "msgtype": "text",
-                "text": {'content': f'==={market}===\n' + '\n-------\n'.join(alert_final)}
+                "text": {'content': f'==={market}{len(alert_m)}===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
