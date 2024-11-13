@@ -82,12 +82,12 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
         zf = round((price_close / price_vol - 1) * 100, 2)
-        price_zy5 = round(price_close + price_vol * 0.015, max_decimal)
-        price_zy3 = round(price_close + price_vol * 0.03, max_decimal)
+        price_zy15 = round(price_close + price_vol * 0.015, max_decimal)
+        price_zs3 = round(price_close - price_vol * 0.03, max_decimal)
         success.add(symbol)
         if zf >= 3 and price_close > max([k[4] for k in kline[-5:-1]]) and is_golden_cross(kline_close):
-            alert.update({symbol: (price_close, zf, price_zy5, price_zy3)})
-            return {symbol: (price_close, zf, price_zy5, price_zy3)}
+            alert.update({symbol: (price_close, zf, price_zy15, price_zs3)})
+            return {symbol: (price_close, zf, price_zy15, price_zs3)}
     except:
         return
 
@@ -116,13 +116,13 @@ def rzq_market(market, symbols, job):
                 if 'USDT' in j:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
+                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止损3:{alert_m[j][3]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止盈3:{alert_m[j][3]}')
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止损3:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
-                "text": {'content': f'==={market}{len(alert_m)}===\n' + '\n-------\n'.join(alert_final)}
+                "text": {'content': f'==={market}{len(alert)}===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
@@ -131,7 +131,7 @@ def rzq_market(market, symbols, job):
             alert_final = [f"""{len(success)}/{len(symbols)}"""]
             json_msg = {
                 "msgtype": "text",
-                "text": {'content': f'==={market}{len(alert_m)}===\n' + '\n-------\n'.join(alert_final)}
+                "text": {'content': f'==={market}{len(alert)}===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
