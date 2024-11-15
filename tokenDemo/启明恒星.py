@@ -41,16 +41,11 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     mid_ma = statistics.mean(data[-mid_window:])
     long_ma = statistics.mean(data[-long_window:])
     # 判定是否满足多头排列条件
-    # return list(filter(
-    #     lambda x: statistics.mean(data[x[0] + 1 - short_window:x[0] + 1]) <= x[-1] <= data[x[0] - 1] if len(data) - 1 >
-    #                                                                                                     x[0] > len(
-    #         data) - 1 - short_window else False,
-    #     enumerate(data)))
     return not list(filter(
         lambda x: statistics.mean(data[x[0] + 1 - short_window:x[0] + 1]) > x[-1] if len(data) - 1 > x[0] > len(
-            data) - 1 - short_window else False, enumerate(data))) and list(filter(
+            data) - 1 - short_window else False, enumerate(data))) and len(list(filter(
         lambda x: x[-1] <= data[x[0] - 1] if len(data) - 1 > x[0] > len(data) - 1 - short_window else False,
-        enumerate(data)))
+        enumerate(data)))) == 1 and data[-2] <= data[-3]
 
 
 def get_kline(symbol, t: str):
@@ -82,12 +77,12 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
         zf = round((price_close / price_vol - 1) * 100, 2)
-        price_zy15 = round(price_close + price_vol * 0.015, max_decimal)
-        price_zs3 = round(price_close - price_vol * 0.03, max_decimal)
+        price_zy = round(price_close + price_vol * 0.011, max_decimal)
+        price_zs = round(price_close - price_vol * 0.03, max_decimal)
         success.add(symbol)
-        if zf >= 3 and price_close > max([k[4] for k in kline[-5:-1]]) and is_golden_cross(kline_close):
-            alert.update({symbol: (price_close, zf, price_zy15, price_zs3)})
-            return {symbol: (price_close, zf, price_zy15, price_zs3)}
+        if zf >= 0 and price_close > max([k[4] for k in kline[-5:-1]]) and is_golden_cross(kline_close):
+            alert.update({symbol: (price_close, zf, price_zy, price_zs)})
+            return {symbol: (price_close, zf, price_zy, price_zs)}
     except:
         return
 
@@ -116,10 +111,10 @@ def rzq_market(market, symbols, job):
                 if 'USDT' in j:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止损3:{alert_m[j][3]}')
+                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈:{alert_m[j][2]}\n止损:{alert_m[j][3]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈1.5:{alert_m[j][2]}\n止损3:{alert_m[j][3]}')
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n止盈:{alert_m[j][2]}\n止损:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}{len(alert)}===\n' + '\n-------\n'.join(alert_final)}
