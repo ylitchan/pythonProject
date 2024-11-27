@@ -76,10 +76,10 @@ def rzq_token(symbol, alert, success):
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
-        zf_m = statistics.mean([round((k[4] / k[1] - 1) * 100, 2) for k in kline[-5:]])
+        zf_m = statistics.mean([round((k[4] / k[1] - 1) * 100, 2) for k in kline[-5:-1]])
         price_zy = round(price_vol + price_vol * zf_m / 100, max_decimal)
         price_zs = round(price_vol - price_vol * zf_m / 100, max_decimal)
-        zf = round((price_zy / price_close - 1) * 100, 2)
+        zf = round((price_zy / kline[-2][1] - 1) * 100, 2)
         success.add(symbol)
         if price_zy > price_close and price_close > max([k[1] for k in kline[-2:-1]]) and is_golden_cross(
                 kline_close):
