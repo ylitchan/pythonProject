@@ -75,7 +75,7 @@ def rzq_token(symbol, alert, success):
         kline_close = [k[4] for k in kline]
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
         price_close = kline[-1][4]
-        price_vol = kline[-2][1]
+        price_vol = kline[-2][4]
         zf = round((kline[-3][4] / kline[-5][1] - 1) * 100, 2)
         zf_m = statistics.mean([round((k[4] / k[1] - 1) * 100, 2) for k in kline[-5:-1]])
         price_zy = round(price_vol + price_vol * zf_m / 100, max_decimal)
