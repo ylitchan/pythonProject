@@ -94,6 +94,7 @@ def rzq_market(market, symbols, job):
         alert.clear()
     success = set()
     alert_m = {}
+    alert_final = []
     thread_pool = ThreadPoolExecutor(max_workers=100)
     futures = [thread_pool.submit(job, symbol, alert, success) for symbol in symbols if symbol not in alert]
     for future in as_completed(futures):
@@ -104,7 +105,6 @@ def rzq_market(market, symbols, job):
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
             alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][1], reverse=True))
-            alert_final = []
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
@@ -132,7 +132,7 @@ def rzq_market(market, symbols, job):
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
                 json=json_msg)
     finally:
-        print(datetime.datetime.now(), f'{market}任务结束', alert_m, alert)
+        print(datetime.datetime.now(), f'{market}任务结束', alert_final, alert)
         gc.collect()
 
 
