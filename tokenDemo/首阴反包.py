@@ -77,7 +77,7 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline[-2][1]
         zf = round((kline[-3][4] / kline[-5][1] - 1) * 100, 2)
-        zf_m = statistics.median([round((k[4] / k[1] - 1) * 100, 2) for k in kline[-5:-2]])
+        zf_m = statistics.mean([round((k[4] / k[1] - 1) * 100, 2) for k in kline[-5:-1]])
         price_zy = round(price_vol + price_vol * zf_m / 100, max_decimal)
         price_zs = round(price_vol - price_vol * zf_m / 100, max_decimal)
         success.add(symbol)
