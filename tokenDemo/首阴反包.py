@@ -41,12 +41,11 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     mid_ma = statistics.mean(data[-mid_window:])
     long_ma = statistics.mean(data[-long_window:])
     # 判定是否满足多头排列条件
-    return data[-2] <= data[-3] and not list(filter(
+    return not list(filter(
         lambda x: statistics.mean(data[x[0] + 1 - short_window:x[0] + 1]) > x[-1] if len(data) - 1 > x[0] > len(
-            data) - 1 - short_window else False, enumerate(data)))
-    #     and len(list(filter(
-    # lambda x: x[-1] <= data[x[0] - 1] if len(data) - 1 > x[0] > len(data) - 1 - short_window else False,
-    # enumerate(data)))) >= 1
+            data) - 1 - short_window else False, enumerate(data))) and len(list(filter(
+        lambda x: x[-1] <= data[x[0] - 1] if len(data) - 1 > x[0] > len(data) - 1 - short_window else False,
+        enumerate(data)))) == 1 and data[-2] <= data[-3]
 
 
 def get_kline(symbol, t: str):
@@ -81,11 +80,7 @@ def rzq_token(symbol, alert, success):
         price_zy = round(price_close + price_vol * 0.011, max_decimal)
         price_zs = round(price_close - price_vol * 0.03, max_decimal)
         success.add(symbol)
-        if price_f := [k[2] for k in kline[-5:-1] if k[4] <= k[1]]:
-            price_f = max(price_f)
-        else:
-            return
-        if zf >= 0 and price_close > price_f and is_golden_cross(kline_close):
+        if zf >= 0 and price_close > max([k[1] for k in kline[-2:-1]]) and is_golden_cross(kline_close):
             alert.update({symbol: (price_close, zf, price_zy, price_zs)})
             return {symbol: (price_close, zf, price_zy, price_zs)}
     except:
