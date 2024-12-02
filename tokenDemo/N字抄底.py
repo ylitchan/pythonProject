@@ -33,6 +33,34 @@ def klines_a(symbol):
     return data_list
 
 
+def find_continuous_decreasing_subsequences(nums):
+    result = []
+    n = len(nums)
+
+    # 如果数组长度小于2，则没有连续递减的子序列
+    if n < 2:
+        return result
+
+    # 临时存储当前递减的子序列
+    current_subseq = []
+
+    for i in range(n):
+        # 如果当前子序列为空或递减
+        if not current_subseq or nums[i] <= current_subseq[-1]:
+            current_subseq.append(nums[i])
+        else:
+            # 一旦递减序列结束，将其加入结果
+            if len(current_subseq) > 1:
+                result.append(current_subseq)
+            # 重启新的递减序列
+            current_subseq = [nums[i]]
+
+    # 最后一个递减序列结束时也需要检查并添加
+    if len(current_subseq) > 1:
+        result.append(current_subseq)
+    return result
+
+
 # 判断多头排列
 def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     if len(data) < long_window:
@@ -43,9 +71,8 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     # 判定是否满足多头排列条件
     return not list(filter(
         lambda x: statistics.mean(data[x[0] + 1 - short_window:x[0] + 1]) > x[-1] if len(data) - 1 > x[0] > len(
-            data) - 1 - short_window else False, enumerate(data))) and len(list(filter(
-        lambda x: x[-1] <= data[x[0] - 1] if len(data) - 1 > x[0] > len(data) - 1 - short_window else False,
-        enumerate(data)))) == 1 and data[-2] <= data[-3]
+            data) - 1 - short_window else False, enumerate(data))) and len(
+        find_continuous_decreasing_subsequences(data[-short_window:])) == 1 and data[-2] <= data[-3]
 
 
 def get_kline(symbol, t: str):
