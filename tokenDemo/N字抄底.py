@@ -72,7 +72,8 @@ def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
     return not list(filter(
         lambda x: statistics.mean(data[x[0] + 1 - short_window:x[0] + 1]) > x[-1] if len(data) - 1 > x[0] > len(
             data) - 1 - short_window else False, enumerate(data))) and len(
-        find_continuous_decreasing_subsequences(data[-short_window:])) == 1 and data[-2] <= data[-3]
+        find_continuous_decreasing_subsequences(data[-short_window:])) == 1 and data[-2] <= data[-3] and data[-5] > \
+        data[-6]
 
 
 def get_kline(symbol, t: str):
@@ -133,7 +134,7 @@ def rzq_market(market, symbols, job):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][2], reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][1], reverse=True))
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
