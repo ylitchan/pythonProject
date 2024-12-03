@@ -33,47 +33,27 @@ def klines_a(symbol):
     return data_list
 
 
-def find_continuous_decreasing_subsequences(nums):
-    result = []
+def find_continuous_subsequences(nums, direction):
     n = len(nums)
-
-    # 如果数组长度小于2，则没有连续递减的子序列
-    if n < 2:
-        return result
-
     # 临时存储当前递减的子序列
     current_subseq = []
-
-    for i in range(n):
-        # 如果当前子序列为空或递减
-        if not current_subseq or nums[i] <= current_subseq[-1]:
-            current_subseq.append(nums[i])
-        else:
-            # 一旦递减序列结束，将其加入结果
-            if len(current_subseq) > 1:
-                result.append(current_subseq)
-            # 重启新的递减序列
-            current_subseq = [nums[i]]
-
-    # 最后一个递减序列结束时也需要检查并添加
-    if len(current_subseq) > 1:
-        result.append(current_subseq)
-    return result
-
-
-# 判断多头排列
-def is_golden_cross(data, short_window=5, mid_window=10, long_window=20):
-    if len(data) < long_window:
-        return None
-    short_ma = statistics.mean(data[-short_window:])
-    mid_ma = statistics.mean(data[-mid_window:])
-    long_ma = statistics.mean(data[-long_window:])
-    # 判定是否满足多头排列条件
-    return not list(filter(
-        lambda x: statistics.mean(data[x[0] + 1 - short_window:x[0] + 1]) > x[-1] if len(data) - 1 > x[0] > len(
-            data) - 1 - short_window else False, enumerate(data))) and len(
-        find_continuous_decreasing_subsequences(data[-short_window:])) == 1 and data[-2] <= data[-3] and data[-5] > \
-        data[-6]
+    if direction:
+        for i in range(n):
+            # 如果当前子序列为空或递减
+            if not current_subseq or nums[i] > current_subseq[-1]:
+                current_subseq.append(nums[i])
+            else:
+                ii, kk = find_continuous_subsequences(nums[i:], 0)
+                return n - 1 - ii - i, kk[::-1]
+        return 0, []
+    else:
+        for i in range(n):
+            # 如果当前子序列为空或递减
+            if nums[i] >= statistics.mean(nums[i:i + 5]):
+                current_subseq.append(nums[i])
+            else:
+                return i, current_subseq
+        return n - 1, current_subseq
 
 
 def get_kline(symbol, t: str):
@@ -101,16 +81,20 @@ def rzq_token(symbol, alert, success):
     try:
         kline = get_kline(symbol, "1Dutc")
         kline_close = [k[4] for k in kline]
+        if kline[-2][4] > kline[-2][1] or kline[-2][4] < statistics.mean(kline_close[-11:-1]):
+            return
+        index, kline_close_asc = find_continuous_subsequences(kline_close[::-1][1:], 1)
+        if not kline_close_asc:
+            return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
         price_close = kline[-1][4]
-        price_vol = kline[-2][4]
-        zf = round((price_vol / kline[-5][1] - 1) * 100, 2)
-        zf_m = statistics.mean([round((k[4] / k[1] - 1) * 100, 2) for k in kline[-5:-1] if k[4] > k[1]])
-        price_zy = round(price_vol + price_vol * zf_m / 100, max_decimal)
+        price_vol = kline_close_asc[-1]
+        zf = round((price_vol / kline[index][1] - 1) * 100, 2)
+        zf_m = zf / len(kline_close_asc)
+        price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
         success.add(symbol)
-        if price_zy > price_close and price_close > max([k[1] for k in kline[-2:-1]]) and is_golden_cross(
-                kline_close):
+        if price_zy > price_close and price_close > max([k[1] for k in kline[-2:-1]]):
             alert.update({symbol: (price_close, zf, expectation, price_zy)})
             return {symbol: (price_close, zf, expectation, price_zy)}
     except:
