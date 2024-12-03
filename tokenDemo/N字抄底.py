@@ -52,7 +52,7 @@ def find_continuous_subsequences(nums, direction):
             if nums[i] >= statistics.mean(nums[i:i + 5]):
                 current_subseq.append(nums[i])
             else:
-                return i, current_subseq
+                return i - 1, current_subseq
         return n - 1, current_subseq
 
 
@@ -94,7 +94,7 @@ def rzq_token(symbol, alert, success):
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
         success.add(symbol)
-        if price_zy > price_close and price_close > max([k[1] for k in kline[-2:-1]]):
+        if price_zy > price_close > max([k[1] for k in kline[-2:-1]]):
             alert.update({symbol: (price_close, zf, expectation, price_zy)})
             return {symbol: (price_close, zf, expectation, price_zy)}
     except:
