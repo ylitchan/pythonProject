@@ -104,7 +104,7 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline[-2][4]
         zf = round((price_vol / kline[-5][1] - 1) * 100, 2)
-        zf_m = statistics.mean([round((k[4] / k[1] - 1) * 100, 2) for k in kline[-5:-1]])
+        zf_m = statistics.mean([round((k[4] / k[1] - 1) * 100, 2) for k in kline[-5:-1] if k[4] > k[1]])
         price_zy = round(price_vol + price_vol * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
         success.add(symbol)
@@ -133,7 +133,7 @@ def rzq_market(market, symbols, job):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][1], reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][2], reverse=True))
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
