@@ -43,7 +43,7 @@ def find_continuous_subsequences(nums, direction):
             if not current_subseq or nums[i] > current_subseq[-1]:
                 current_subseq.append(nums[i])
             else:
-                ii, kk = find_continuous_subsequences(nums[i:], 0)
+                ii, kk = find_continuous_subsequences(nums[i - 1:], 0)
                 return n - 1 - ii - i, kk[::-1]
         return 0, []
     else:
@@ -84,6 +84,8 @@ def rzq_token(symbol, alert, success):
         if kline[-2][4] > kline[-2][1] or kline[-2][4] < statistics.mean(kline_close[-11:-1]):
             return
         index, kline_close_asc = find_continuous_subsequences(kline_close[::-1][1:], 1)
+        if 'FTMUSDT' in symbol:
+            pass
         if not kline_close_asc:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
@@ -118,7 +120,7 @@ def rzq_market(market, symbols, job):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][1], reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][2] / alert[x][1], reverse=True))
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
