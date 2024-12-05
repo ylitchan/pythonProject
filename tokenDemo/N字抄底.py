@@ -97,7 +97,7 @@ def rzq_token(symbol, alert, success):
         q = round(min([i for i in [kline[-2][4] / statistics.mean(kline_close[-6:-1]) - 1,
                                    kline[-2][4] / statistics.mean(kline_close[-11:-1]) - 1] if i >= 0]) * 100, 2)
         if price_zy > price_close > max([k[1] for k in kline[-2:-1]]):
-            alert.update({symbol: (price_close, zf, expectation, price_zy)})
+            alert.update({symbol: (price_close, zf, expectation, q, price_zy)})
             return {symbol: (price_close, zf, expectation, q, price_zy)}
     except:
         return
