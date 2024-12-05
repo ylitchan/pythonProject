@@ -95,8 +95,8 @@ def rzq_token(symbol, alert, success):
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
         zs = round(expectation / round(min([i for i in [kline[-2][4] / statistics.mean(kline_close[-6:-1]) - 1,
-                                                       kline[-2][4] / statistics.mean(kline_close[-11:-1]) - 1] if
-                                           i >= 0]) * 100, 2), 2)
+                                                        kline[-2][4] / statistics.mean(kline_close[-11:-1]) - 1] if
+                                            i >= 0]) * 100, 2), 2)
         if price_zy > price_close > max([k[1] for k in kline[-2:-1]]):
             alert.update({symbol: (price_close, zf, expectation, zs, price_zy)})
             return {symbol: (price_close, zf, expectation, zs, price_zy)}
@@ -131,7 +131,7 @@ def rzq_market(market, symbols, job):
                         f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n指数:{alert_m[j][3]}\n止盈:{alert_m[j][4]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n指数:{alert_m[j][3]}\n止盈:{alert_m[j][3]}')
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n指数:{alert_m[j][3]}\n止盈:{alert_m[j][4]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}{len(alert)}===\n' + '\n-------\n'.join(alert_final)}
