@@ -81,11 +81,10 @@ def rzq_token(symbol, alert, success):
     try:
         kline = get_kline(symbol, "1Dutc")
         kline_close = [k[4] for k in kline]
+        success.add(symbol)
         if kline[-2][4] > kline[-2][1] or kline[-2][4] < statistics.mean(kline_close[-11:-1]):
             return
         index, kline_close_asc = find_continuous_subsequences(kline_close[::-1][1:], 1)
-        if 'FTMUSDT' in symbol:
-            pass
         if not kline_close_asc:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
@@ -95,8 +94,8 @@ def rzq_token(symbol, alert, success):
         zf_m = zf / len(kline_close_asc)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
-        q = round(zf / expectation, 2)
-        success.add(symbol)
+        q = round(min([i for i in [kline[-2][4] / statistics.mean(kline_close[-6:-1]) - 1,
+                                   kline[-2][4] / statistics.mean(kline_close[-11:-1]) - 1] if i >= 0]) * 100, 2)
         if price_zy > price_close > max([k[1] for k in kline[-2:-1]]):
             alert.update({symbol: (price_close, zf, expectation, price_zy)})
             return {symbol: (price_close, zf, expectation, q, price_zy)}
@@ -121,7 +120,7 @@ def rzq_market(market, symbols, job):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][2] / alert[x][1], reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][3]))
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
