@@ -44,8 +44,8 @@ def find_continuous_subsequences(nums, direction):
                 current_subseq.append(nums[i])
             else:
                 ii, kk = find_continuous_subsequences(nums[i - 1:], 0)
-                return n - 1 - ii - i, kk[::-1]
-        return 0, []
+                return n - 1 - ii - i, n - 1 - i, kk[::-1]
+        return 0, n - 1, []
     else:
         for i in range(n):
             # 如果当前子序列为空或递减
@@ -84,19 +84,20 @@ def rzq_token(symbol, alert, success):
         success.add(symbol)
         if kline[-2][4] > kline[-2][1] or kline[-2][4] < statistics.mean(kline_close[-11:-1]):
             return
-        index, kline_close_asc = find_continuous_subsequences(kline_close[::-1][1:], 1)
+        index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][1:], 1)
         if len(kline_close_asc) < 3:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
         price_close = kline[-1][4]
         price_vol = kline_close_asc[-1]
-        zf = round((price_vol / kline[index][1] - 1) * 100, 2)
+        zf = round((price_vol / kline[index_s][1] - 1) * 100, 2)
         zf_m = zf / len(kline_close_asc)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
         zs = round(expectation / round(min([i for i in [kline[-2][4] / statistics.mean(kline_close[-6:-1]) - 1,
                                                         kline[-2][4] / statistics.mean(kline_close[-11:-1]) - 1] if
-                                            i >= 0]) * 100, 2), 2)
+                                            i >= 0]) * 100, 2), 2) * len(list(
+            filter(lambda x: x[4] > x[1], kline[index_s:index_e + 1]))) / len(kline_close_asc)
         if price_zy > price_close > max([k[1] for k in kline[-2:-1]]):
             alert.update({symbol: (price_close, zf, expectation, zs, price_zy)})
             return {symbol: (price_close, zf, expectation, zs, price_zy)}
