@@ -44,12 +44,13 @@ def find_continuous_subsequences(nums, direction):
                 current_subseq.append(nums[i])
             else:
                 ii, kk = find_continuous_subsequences(nums[i - 1:], 0)
-                return n - 1 - ii - i, n - 1 - i, kk[::-1]
+                return n - ii - i, n - i, kk[::-1]
         return 0, n - 1, []
     else:
         for i in range(n):
             # 如果当前子序列为空或递减
-            if nums[i] >= statistics.mean(nums[i:i + 5]) and nums[i] < nums[i - 1] if i > 0 else nums[i] > nums[i - 1]:
+            if nums[i] >= statistics.mean(nums[i:i + 5]) and (
+                    nums[i] < nums[i - 1] if i > 0 else nums[i] > nums[i - 1]):
                 current_subseq.append(nums[i])
             else:
                 return i - 1, current_subseq
