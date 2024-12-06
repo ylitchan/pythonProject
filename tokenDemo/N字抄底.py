@@ -139,7 +139,7 @@ def rzq_market(market, symbols, job):
                 "text": {'content': f'==={market}{len(alert)}===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
                 json=json_msg)
         elif not success and symbols:
             alert_final = [f"""{len(success)}/{len(symbols)}"""]
@@ -148,7 +148,7 @@ def rzq_market(market, symbols, job):
                 "text": {'content': f'==={market}{len(alert)}===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=4499f04a-88cf-4100-aef3-7528b2a94d67',
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
                 json=json_msg)
     finally:
         print(datetime.datetime.now(), f'{market}任务结束', alert_final, alert)
