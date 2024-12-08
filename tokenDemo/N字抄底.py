@@ -83,6 +83,8 @@ def rzq_token(symbol, alert, success):
         kline = get_kline(symbol, "1Dutc")
         kline_close = [k[4] for k in kline]
         success.add(symbol)
+        if kline[-2][4] > kline[-2][1]:
+            return
         index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][1:], 1)
         if len(kline_close_asc) < 3 if kline[index_s][4] > kline[index_s][1] else len(kline_close_asc) < 4:
             return
