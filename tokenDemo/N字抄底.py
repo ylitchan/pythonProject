@@ -83,8 +83,6 @@ def rzq_token(symbol, alert, success):
         kline = get_kline(symbol, "1Dutc")
         kline_close = [k[4] for k in kline]
         success.add(symbol)
-        if kline[-2][4] > kline[-2][1] or kline[-2][4] < statistics.mean(kline_close[-11:-1]):
-            return
         index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][1:], 1)
         if len(kline_close_asc) < 3 if kline[index_s][4] > kline[index_s][1] else len(kline_close_asc) < 4:
             return
@@ -92,16 +90,12 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline_close_asc[-1]
         zf = round((price_vol / kline[index_s][1] - 1) * 100, 2)
-        zf_m = zf / len(kline_close_asc)
+        zf_m = round((price_close / kline[index_s][1] - 1) * 100 / (len(kline_close) - index_s), 2)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
-        zs = round(expectation / round(min([i for i in [kline[-2][4] / statistics.mean(kline_close[-6:-1]) - 1,
-                                                        kline[-2][4] / statistics.mean(kline_close[-11:-1]) - 1] if
-                                            i >= 0]) * 100, 2) * len(list(
-            filter(lambda x: x[4] > x[1], kline[index_s:index_e + 1]))) / len(kline_close_asc), 2)
         if price_zy > price_close > max([k[1] for k in kline[-2:-1]]):
-            alert.update({symbol: (price_close, zf, expectation, zs, price_zy)})
-            return {symbol: (price_close, zf, expectation, zs, price_zy)}
+            alert.update({symbol: (price_close, zf, expectation, price_zy)})
+            return {symbol: (price_close, zf, expectation, price_zy)}
     except:
         return
 
@@ -123,17 +117,17 @@ def rzq_market(market, symbols, job):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][3], reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][2], reverse=True))
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
                 if 'USDT' in j:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n指数:{alert_m[j][3]}\n止盈:{alert_m[j][4]}')
+                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n指数:{alert_m[j][3]}\n止盈:{alert_m[j][4]}')
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}{len(alert)}===\n' + '\n-------\n'.join(alert_final)}
