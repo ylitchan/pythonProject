@@ -92,7 +92,7 @@ def rzq_token(symbol, alert, success):
         price_close = kline[-1][4]
         price_vol = kline_close_asc[-1]
         zf = round((price_vol / kline[index_s][1] - 1) * 100, 2)
-        zf_m = round((kline[-2][1] / kline[index_s][1] - 1) * 100 / (len(kline_close) - 1 - index_s), 2)
+        zf_m = round((kline[-2][4] / kline[index_s][1] - 1) * 100 / (len(kline_close) - 1 - index_s), 2)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
         if price_zy > price_close > max([k[1] for k in kline[-2:-1]]):
