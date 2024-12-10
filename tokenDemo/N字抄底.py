@@ -90,7 +90,8 @@ def rzq_token(symbol, alert, success):
         if kline[index_s][4] <= kline[index_s][1]:
             index_s += 1
             kline_close_asc = kline_close_asc[1:]
-        if len(kline_close_asc) < 3:
+        if len(kline_close_asc) < 3 or max([k[2] for k in kline[index_e + 1:-1]]) >= max(
+                [k[2] for k in kline[index_s:-1]]):
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
         price_close = kline[-1][4]
