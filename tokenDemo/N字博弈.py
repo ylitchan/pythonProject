@@ -90,17 +90,17 @@ def rzq_token(symbol, alert, success):
         if kline[index_s][4] <= kline[index_s][1]:
             index_s += 1
             kline_close_asc = kline_close_asc[1:]
-        if len(kline_close_asc) < 3 or max([k[2] for k in kline[index_e + 1:-1]]) >= max(
-                [k[2] for k in kline[index_s:-1]]):
+        price_close = kline[-1][4]
+        price_close_d = max([k[2] for k in kline[index_e + 1:-1]])
+        if len(kline_close_asc) < 3 or price_close_d > price_close:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
-        price_close = kline[-1][4]
         price_vol = kline_close_asc[-1]
         zf = round((price_vol / kline[index_s][1] - 1) * 100, 2)
-        zf_m = round((kline[-2][4] / kline[index_s][1] - 1) * 100 / (len(kline_close) - 1 - index_s), 2)
+        zf_m = zf / len(kline_close_asc)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
-        expectation = round((price_zy / kline[-2][1] - 1) * 100, 2)
-        if price_zy > kline[-1][2] >= price_close > max([k[1] for k in kline[-2:-1]]):
+        expectation = round((price_zy / price_close_d - 1) * 100, 2)
+        if price_zy > kline[-1][2]:
             alert.update({symbol: (price_close, zf, expectation, price_zy)})
             return {symbol: (price_close, zf, expectation, price_zy)}
     except:
