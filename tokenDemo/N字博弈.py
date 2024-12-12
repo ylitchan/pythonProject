@@ -44,7 +44,7 @@ def find_continuous_subsequences(nums, direction):
                 current_subseq.append(nums[i])
             else:
                 ii, kk = find_continuous_subsequences(nums[i - 1:], 0)
-                kk_asc = kk[::-1][:max(5 - len(current_subseq), 0)]
+                kk_asc = kk[:max(6 - len(current_subseq), 0)][::-1]
                 return n - ii - i + len(kk) - len(kk_asc), n - i, kk_asc
         return 0, n - 1, []
     else:
