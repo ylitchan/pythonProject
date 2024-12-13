@@ -82,17 +82,24 @@ def rzq_token(symbol, alert, success):
         return
     try:
         kline = get_kline(symbol, "1Dutc")
-        kline_close = [k[4] for k in kline]
         success.add(symbol)
-        if kline[-2][4] > kline[-2][1]:
+        if kline[-1][4] <= kline[-1][1]:
             return
-        index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][1:], 1)
+        index_d = 0
+        for i, k in enumerate(kline[::-1]):
+            if k[4] <= k[1]:
+                index_d = i
+                break
+        if not index_d:
+            return
+        kline_close = [k[4] for k in kline]
+        index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
         if kline[index_s][4] <= kline[index_s][1]:
             index_s += 1
             kline_close_asc = kline_close_asc[1:]
         price_close = kline[-1][4]
-        price_high = max([k[2] for k in kline[index_e + 1:-1]])
-        if len(kline_close_asc) < 3 or price_high > price_close:
+        price_high = max([k[2] for k in kline[index_e + 1:-index_d]])
+        if len(kline_close_asc) < 3 or price_high > price_close or kline[-2][4] >= price_high:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
         price_vol = kline_close_asc[-1]
