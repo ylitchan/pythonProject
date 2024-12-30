@@ -7,7 +7,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import baostock as bs
-bs.q
 import okx.MarketData as MarketData
 import okx.PublicData as PublicData
 import requests
