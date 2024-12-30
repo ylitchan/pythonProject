@@ -7,6 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import baostock as bs
+bs.q
 import okx.MarketData as MarketData
 import okx.PublicData as PublicData
 import requests
@@ -107,7 +108,7 @@ def rzq_token(symbol, alert, success):
         zf = round((price_vol / kline[index_s][1] - 1) * 100, 2)
         zf_m = zf / len(kline_close_asc)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
-        expectation = round((price_zy / price_high - 1) * 100, 2)
+        expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if 1 or price_zy > kline[-1][2]:
             alert.update({symbol: (price_close, zf, expectation, price_zy)})
             return {symbol: (price_close, zf, expectation, price_zy)}
