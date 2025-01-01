@@ -51,7 +51,7 @@ def find_continuous_subsequences(nums, direction):
         for i in range(n):
             # 如果当前子序列为空或递减
             if nums[i] >= statistics.mean(nums[i:i + 7]) and (
-                    nums[i] < nums[i - 1] if i > 0 else nums[i] > nums[i - 1]):
+                    nums[i] < nums[i - 1] if i > 0 else True):
                 current_subseq.append(nums[i])
             else:
                 return i - 1, current_subseq
@@ -98,14 +98,14 @@ def rzq_token(symbol, alert, success):
             index_s += 1
             kline_close_asc = kline_close_asc[1:]
         price_close = kline[-1][4]
-        price_high = max([k[2] for k in kline[index_e + 1:-index_d]])
-        if index_e != len(kline) - 3 or len(kline_close_asc) < 3 or kline[-2][
+        price_low = min([k[4] for k in kline[index_e + 1:-index_d]])
+        if kline[index_e][5] < kline[index_e + 1][5] * 2 or price_low < kline[index_e][1] or kline[-2][
             2] > price_close:  # price_high > price_close or kline[-2][4] >= price_high:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
-        price_vol = kline_close_asc[-1]
+        price_vol = kline[-index_d - 1][4]
         zf = round((price_vol / kline[index_s][1] - 1) * 100, 2)
-        zf_m = zf / len(kline_close_asc)
+        zf_m = zf / (19 - index_s)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if 1 or price_zy > kline[-1][2]:
