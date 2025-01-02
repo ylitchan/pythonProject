@@ -104,8 +104,8 @@ def rzq_token(symbol, alert, success):
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
         price_vol = kline[-index_d - 1][4]
-        zf = round((price_vol / kline[index_s][1] - 1) * 100, 2)
-        zf_m = zf / (19 - index_s)
+        zf = round((kline[-2][4] / kline[index_s][1] - 1) * 100, 2)
+        zf_m = zf / (len(kline) - 1 - index_s)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if 1 or price_zy > kline[-1][2]:
