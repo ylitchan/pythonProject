@@ -109,7 +109,7 @@ def rzq_token(symbol, alert, success):
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if expectation < 0:
-            price_zy = round(kline[-2][2] + kline[-2][2] * expectation / 100, max_decimal)
+            price_zy = round(kline[-2][2] + kline[-2][2] * abs(expectation) / 100, max_decimal)
         if 1 or price_zy > kline[-1][2]:
             alert.update({symbol: (price_close, zf, expectation, price_zy)})
             return {symbol: (price_close, zf, expectation, price_zy)}
