@@ -1,8 +1,10 @@
 import requests
 from flask import Flask, request
+from flask_cors import CORS
 from lxml import etree
 
 app = Flask(__name__)
+CORS(app, supports_credentials=True)
 requests.packages.urllib3.disable_warnings()
 session = requests.Session()
 session.verify = False
