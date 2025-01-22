@@ -54,8 +54,6 @@ def job():
             alert.append((symbol, voter, bribe, voter + bribe))
         else:
             alert0.append((symbol, voter, bribe, voter + bribe))
-    print(alert)
-    return
     alert_sort = sorted(alert, key=lambda x: x[-1], reverse=True)[:3]
     alert0_sort = sorted(alert0, key=lambda x: x[-1], reverse=True)[:3]
     alert_final = []
