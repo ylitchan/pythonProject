@@ -12,13 +12,32 @@ session.headers = {'Content-Type': 'application/json',
 co = ChromiumOptions().set_browser_path(r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe')
 
 
+def connect_browser():
+    try:
+        page = ChromiumPage(addr_or_opts=co)
+        return page
+    except Exception as e:
+        print("连接失败，重试中...")
+        return connect_browser()
+
+
+page = connect_browser()
+
+
 def job():
     # 用该配置创建页面对象
-    page = ChromiumPage(addr_or_opts=co)
-    page.get('https://equilibria.fi/vote')
-    page.wait.ele_displayed('.css-1dveyv5', timeout=300)
-    html_data = page.html
-    page.quit()
+    # page = ChromiumPage(addr_or_opts=co)
+    try:
+        page.get('https://equilibria.fi/vote')
+        page.wait.ele_loaded('.css-1dveyv5', timeout=30)
+        html_data = page.html
+    except:
+        page = connect_browser()
+        page.get('https://equilibria.fi/vote')
+        page.wait.ele_loaded('.css-1dveyv5', timeout=30)
+        html_data = page.html
+    print('等待结束')
+    # page.quit()
     alert = []
     alert0 = []
     print("Received HTML content:")
@@ -35,6 +54,8 @@ def job():
             alert.append((symbol, voter, bribe, voter + bribe))
         else:
             alert0.append((symbol, voter, bribe, voter + bribe))
+    print(alert)
+    return
     alert_sort = sorted(alert, key=lambda x: x[-1], reverse=True)[:3]
     alert0_sort = sorted(alert0, key=lambda x: x[-1], reverse=True)[:3]
     alert_final = []
@@ -63,7 +84,7 @@ def job():
         json=json_msg)
 
 
-# job()
+job()
 scheduler = BlockingScheduler()
 scheduler.add_job(job, 'cron', day_of_week='wed', hour=17, minute='25-55/10')
 # 启动调度器
