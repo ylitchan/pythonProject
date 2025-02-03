@@ -1,6 +1,5 @@
 import datetime
 import gc
-import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,8 +10,6 @@ import okx.PublicData as PublicData
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from binance.spot import Spot
-from jsonpath_ng import parse
-from lxml import etree
 
 
 def klines_a(symbol):
@@ -84,7 +81,7 @@ def rzq_token(symbol, alert, success):
         success.add(symbol)
         if symbol == 'ETHUSDT' and kline[-1][4] <= 3000:
             alert.update({symbol: (kline[-1][4], 0, 100, 3000)})
-            return {symbol: (kline[-1][4], 0, 100, 3000)}
+            # return {symbol: (kline[-1][4], 0, 100, 3000)}
         if kline[-1][4] <= kline[-1][1]:
             return
         index_d = 0
@@ -174,10 +171,14 @@ def main():
     symbols_okx = []
     for i in range(10):
         try:
-            res = session.get('https://www.binance.com/zh-CN/markets/overview?p=1')
-            data = json.loads(etree.HTML(res.text).xpath('//*[@id="__APP_DATA"]//text()')[0])
-            symbols_bn = [item['symbol'] for item in parse('$..productMap').find(data)[0].value.values() if
-                          item.get('quoteAsset') == 'USDT']
+            # 获取所有交易对信息
+            exchange_info = client.exchange_info()
+            # 提取所有交易对
+            symbols_bn = [symbol['symbol'] for symbol in exchange_info['symbols']]
+            # res = session.get('https://www.binance.com/zh-CN/markets/overview?p=1')
+            # data = json.loads(etree.HTML(res.text).xpath('//*[@id="__APP_DATA"]//text()')[0])
+            # symbols_bn = [item['symbol'] for item in parse('$..productMap').find(data)[0].value.values() if
+            #               item.get('quoteAsset') == 'USDT']
             symbols_okx = [item['instId'] for item in publicDataAPI.get_instruments(
                 instType="SPOT"
             ).get('data') if item.get('quoteCcy') == 'USDT']
@@ -204,7 +205,8 @@ if __name__ == "__main__":
     session.verify = False
     session.headers = {'Content-Type': 'application/json',
                        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-                       'Cookie': "theme=dark; bnc-uuid=6d9f05ed-c1fb-4c36-a14e-f7b2cbbfd719; source=referral; campaign=www.binance.com; BNC_FV_KEY=33a30f78e2f0a7edae1b1049555413b76766234f; se_gd=hsNGlAhBbQGEAoVMECw4gZZUBA1IbBWW1sUdYUEV1FWUAUlNWUBR1; se_gsd=fycgLB1hNSUkCSABJQgiChArDhQRDgFSU1lFUFRSUlFQElNT1; BNC-Location=BINANCE; pl-id=491077510; OptanonAlertBoxClosed=2024-03-13T06:32:22.156Z; userPreferredCurrency=USD_USD; fiat-prefer-currency=CNY; sensorsdata2015jssdkcross=%7B%22distinct_id%22%3A%22491077510%22%2C%22first_id%22%3A%2218e31a6fe0b1294-09171b521a4468-7e56547f-1327104-18e31a6fe0c1a89%22%2C%22props%22%3A%7B%22%24latest_traffic_source_type%22%3A%22%E7%9B%B4%E6%8E%A5%E6%B5%81%E9%87%8F%22%2C%22%24latest_search_keyword%22%3A%22%E6%9C%AA%E5%8F%96%E5%88%B0%E5%80%BC_%E7%9B%B4%E6%8E%A5%E6%89%93%E5%BC%80%22%2C%22%24latest_referrer%22%3A%22%22%7D%2C%22identities%22%3A%22eyIkaWRlbnRpdHlfY29va2llX2lkIjoiMThlMzFhNmZlMGIxMjk0LTA5MTcxYjUyMWE0NDY4LTdlNTY1NDdmLTEzMjcxMDQtMThlMzFhNmZlMGMxYTg5IiwiJGlkZW50aXR5X2xvZ2luX2lkIjoiNDkxMDc3NTEwIn0%3D%22%2C%22history_login_id%22%3A%7B%22name%22%3A%22%24identity_login_id%22%2C%22value%22%3A%22491077510%22%7D%2C%22%24device_id%22%3A%2218e31a6fe0b1294-09171b521a4468-7e56547f-1327104-18e31a6fe0c1a89%22%7D; changeBasisTimeZone=0; futures-layout=pro; OptanonConsent=isGpcEnabled=0&datestamp=Tue+Apr+23+2024+15%3A29%3A39+GMT%2B0800+(%E4%B8%AD%E5%9B%BD%E6%A0%87%E5%87%86%E6%97%B6%E9%97%B4)&version=202402.1.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=0440cd45-f4e5-4c30-a2b9-85508e54fa53&interactionCount=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0003%3A1%2CC0004%3A1%2CC0002%3A1&geolocation=SG%3B&AwaitingReconsent=false&isAnonUser=1; __BNC_USER_DEVICE_ID__={\"635f2d77fe06ed3429c74e15eb59b4f8\":{\"date\":1710221906481,\"value\":\"\"},\"35b482dd09d535d8e6833d6f24a1f3ac\":{\"date\":1717117581497,\"value\":\"1717117609552IMLGoQqQn8b9ukD8ADM\"}}; lang=zh-cn; aws-waf-token=4f277a12-33c3-47b0-b891-3b1c994598a3:AQoAk90IensBAAAA:zstdi0kpdQTK1eAueTZM0Hh4ZylfGhcOfSkRTZMcriiyQ0d77q8T5XvBzmFHgXU5fPgsb4HPRGqXQwX5c2kkCTPc9g8JmKQ4Yy6WIWLVqzfx4CqXHzl4oshnHIrrIMFIHg6uvmt2UYkguCqdRsg1z5Ga2qhyohgDoal4d/E4X6dfp2k4iLp2JZ9Fl5bH7agDKhY=; BNC_FV_KEY_T=101-in4lG9WWi4xeKzQz%2BLe%2F2XPAqJRI%2BXwxzJehyL8H8pFrd%2FNAvyxdNoKwkCJef%2Fgd56WYX7YT19PKfm%2BAlWQnFg%3D%3D-NgpRY2KdsXgrnjMyYAaFug%3D%3D-e4; BNC_FV_KEY_EXPIRE=1736752649829"}
+                       'Cookie': "theme=dark; bnc-uuid=864a564f-ccf6-4f85-9d4b-81101eee187b; sajssdk_2015_cross_new_user=1; sensorsdata2015jssdkcross=%7B%22distinct_id%22%3A%22194cc29591f959-089aa74ba4228e-3e3c730c-2359296-194cc295920b51%22%2C%22first_id%22%3A%22%22%2C%22props%22%3A%7B%22%24latest_traffic_source_type%22%3A%22%E7%9B%B4%E6%8E%A5%E6%B5%81%E9%87%8F%22%2C%22%24latest_search_keyword%22%3A%22%E6%9C%AA%E5%8F%96%E5%88%B0%E5%80%BC_%E7%9B%B4%E6%8E%A5%E6%89%93%E5%BC%80%22%2C%22%24latest_referrer%22%3A%22%22%7D%2C%22identities%22%3A%22eyIkaWRlbnRpdHlfY29va2llX2lkIjoiMTk0Y2MyOTU5MWY5NTktMDg5YWE3NGJhNDIyOGUtM2UzYzczMGMtMjM1OTI5Ni0xOTRjYzI5NTkyMGI1MSJ9%22%2C%22history_login_id%22%3A%7B%22name%22%3A%22%22%2C%22value%22%3A%22%22%7D%7D; OptanonAlertBoxClosed=2025-02-03T14:14:13.381Z; BNC_FV_KEY=33d482edf8e0a2b7a317d792ab8a5a79da3b672c; BNC_FV_KEY_T=101-lG%2F8JaMW%2F08tiozMmqbAnQ6H%2Fg7a4nWIUoYF%2BJszn2KMVlOA7Q4hlvgnMYSB7%2FKxKxvsktk%2FpcV0CI%2BxGdr6ag%3D%3D-nOdqJuQ0TfGh96V4oxln%2Bw%3D%3D-f5; BNC_FV_KEY_EXPIRE=1738613653411; _gid=GA1.2.1723640189.1738592055; aws-waf-token=5af9f84f-93be-4e1d-ace7-82b501a292fb:AQoAfLBkBx0NAAAA:Pcju4WtH/yKaqK2hXsRRjKzLSK0ieQoDiZTXc1bZ31t16xqV4vKMWhf3/v6VMwLen/iPAj21QBZ/nMfSytJXbhR2beNiDYv+6tgEawlaidIA3lHn5+cuMl52DBGDc559yARJA/B/hcPUkR9v7LtxEhevaz8rdXJoysOPs2vYtRUTa/4/F1MWy0OhBZHy5/4/YsJhV3VPIafh8TTa5d7pGzaz; OptanonConsent=isGpcEnabled=0&datestamp=Mon+Feb+03+2025+22%3A16%3A28+GMT%2B0800+(%E4%B8%AD%E5%9B%BD%E6%A0%87%E5%87%86%E6%97%B6%E9%97%B4)&version=202411.2.0&browserGpcFlag=0&isIABGlobal=false&hosts=&consentId=a832b7ee-2adf-4c9f-899d-28d15dbbb663&interactionCount=1&isAnonUser=1&landingPath=NotLandingPage&groups=C0001%3A1%2CC0003%3A1%2CC0004%3A1%2CC0002%3A1&intType=1&geolocation=JP%3B27&AwaitingReconsent=false; _ga_3WP50LGEEC=GS1.1.1738592056.1.1.1738592190.52.0.0; _ga=GA1.1.1073516655.1738592055"
+                       }
     # 创建BlockingScheduler对象
     scheduler = BlockingScheduler()
     bs.login()
