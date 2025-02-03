@@ -174,7 +174,7 @@ def main():
             # 获取所有交易对信息
             exchange_info = client.exchange_info()
             # 提取所有交易对
-            symbols_bn = [symbol['symbol'] for symbol in exchange_info['symbols']]
+            symbols_bn = [symbol['symbol'] for symbol in exchange_info['symbols'] if 'USDT' in symbol['symbol']]
             # res = session.get('https://www.binance.com/zh-CN/markets/overview?p=1')
             # data = json.loads(etree.HTML(res.text).xpath('//*[@id="__APP_DATA"]//text()')[0])
             # symbols_bn = [item['symbol'] for item in parse('$..productMap').find(data)[0].value.values() if
