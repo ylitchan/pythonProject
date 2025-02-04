@@ -1,5 +1,6 @@
 import datetime
 import gc
+import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -161,6 +162,8 @@ def rzq_market(market, symbols, job):
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
                 json=json_msg)
     finally:
+        with open('symbol.json', 'w') as f:
+            json.dump(alert, f, indent=4, ensure_ascii=False)
         print(datetime.datetime.now(), f'{market}任务结束', alert_final, alert)
         gc.collect()
 
@@ -175,7 +178,7 @@ def main():
             exchange_info = client.exchange_info()
             # 提取所有交易对
             symbols_bn = [symbol['symbol'] for symbol in exchange_info['symbols'] if
-                          'USDT' in symbol['symbol'] and 'TRADING' in symbol['status']]
+                          'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']]
             # res = session.get('https://www.binance.com/zh-CN/markets/overview?p=1')
             # data = json.loads(etree.HTML(res.text).xpath('//*[@id="__APP_DATA"]//text()')[0])
             # symbols_bn = [item['symbol'] for item in parse('$..productMap').find(data)[0].value.values() if

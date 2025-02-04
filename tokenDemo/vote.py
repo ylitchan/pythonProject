@@ -67,7 +67,7 @@ def receive_html():
 
 
 if __name__ == '__main__':
-    html_data=''
+    html_data = ''
     alert = []
     alert0 = []
     print("Received HTML content:")
