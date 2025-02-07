@@ -5,9 +5,11 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import akshare as ak
 import baostock as bs
 import okx.MarketData as MarketData
 import okx.PublicData as PublicData
+import pandas as pd
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from binance.spot import Spot
@@ -58,10 +60,10 @@ def find_continuous_subsequences(nums, direction):
 def get_kline(symbol, t: str):
     if "-USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
-                 marketDataAPI.get_candlesticks(instId=symbol, bar=t, limit=20).get('data')[::-1]]
+                 marketDataOKX.get_candlesticks(instId=symbol, bar=t, limit=20).get('data')[::-1]]
     elif "USDT" in symbol:
         kline = [list(map(float, sublist)) for sublist in
-                 client.klines(symbol=symbol, interval=t[:2].lower(), limit=20)]
+                 spotBN.klines(symbol=symbol, interval=t[:2].lower(), limit=20)]
     else:
         kline = [list(map(float, sublist)) for sublist in klines_a(symbol)]
     return kline
@@ -110,7 +112,8 @@ def rzq_token(symbol, alert, success):
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if expectation < 0:
             price_zy = round(kline[-2][2] + kline[-2][2] * abs(expectation) / 100, max_decimal)
-        if 1 or price_zy > kline[-1][2]:
+            return
+        if price_zy > kline[-1][2]:
             alert.update({symbol: (price_close, zf, expectation, price_zy)})
             return {symbol: (price_close, zf, expectation, price_zy)}
     except:
@@ -168,6 +171,105 @@ def rzq_market(market, symbols, job):
         gc.collect()
 
 
+# 辅助函数：获取股票涨停价
+def get_upper_limit(code, stock_info):
+    name = stock_info['名称'].values[0]
+    prev_close = stock_info['昨收'].values[0]
+    if 'ST' in name or '*ST' in name:
+        return round(prev_close * 1.05, 2)  # ST股涨停5%
+    elif code.startswith(('300', '688')):  # 创业板和科创板涨停20%
+        return round(prev_close * 1.2, 2)
+    else:  # 其他股票涨停10%
+        return round(prev_close * 1.1, 2)
+
+
+def get_last_three_trading_days(days=3):
+    # 获取最近的交易日列表
+    trade_dates = ak.tool_trade_date_hist_sina()
+    trade_dates = pd.to_datetime(trade_dates["trade_date"])  # 转换为 datetime
+
+    # 找到最近的三个交易日
+    today = datetime.datetime.today()
+    recent_trading_days = trade_dates[trade_dates <= today].sort_values(ascending=False).iloc[:days]
+    start_date = recent_trading_days.min().strftime("%Y%m%d")
+    end_date = recent_trading_days.max().strftime("%Y%m%d")
+    return start_date, end_date
+
+
+# 步骤1：获取昨日涨停股票列表
+def get_yesterday_zt_stocks():
+    # 获取最近交易日（这里假设昨日是20231009，实际应自动获取）
+    start_date, end_date = get_last_three_trading_days()
+    zt_df = ak.stock_zt_pool_em(date=start_date)
+    if zt_df.empty:
+        print(f"没有在 {start_date} 找到涨停股票。")
+        return []
+    return zt_df[['代码', '名称']].values.tolist()
+
+
+# 步骤2：筛选符合条件的股票
+def filter_stocks(stock_codes):
+    # 获取最近的交易日列表
+    trade_dates = ak.tool_trade_date_hist_sina()
+    trade_dates = pd.to_datetime(trade_dates["trade_date"])  # 转换为 datetime
+
+    # 找到最近的三个交易日
+    today = datetime.datetime.today()
+    recent_trading_days = trade_dates[trade_dates <= today].sort_values(ascending=False).iloc[:3]
+    start_date = recent_trading_days.min().strftime("%Y%m%d")
+    end_date = recent_trading_days.max().strftime("%Y%m%d")
+    selected = []
+    # spot_df = ak.stock_zh_a_spot()
+    for code in stock_codes:
+        # 获取历史数据（昨日量能）
+        hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
+                                  adjust="qfq")
+        if len(hist) < 3: continue
+        yesterday_vol = hist.iloc[-2]['成交量']
+        yesterday_yesterday_vol = hist.iloc[-3]['成交量']
+        yesterday_pct = hist.iloc[-2]['涨跌幅']
+        # 获取今日实时数据
+        # spot_data = spot_df[spot_df['代码'].str.contains(code)]
+        # if spot_data.empty: continue
+
+        # today_vol = spot_data['成交量'].values[0]
+        # today_pct = spot_data['涨跌幅'].values[0]
+
+        if yesterday_vol <= yesterday_yesterday_vol and yesterday_pct <= 0:
+            selected.append(''.join(code))
+    return selected
+
+
+# 步骤3：实时监控
+def monitor_stocks():
+    zt_stocks = get_yesterday_zt_stocks()
+    print(f"昨日涨停股：{zt_stocks}")
+    filtered = filter_stocks(zt_stocks)
+    print(f"符合量能条件的股票：{filtered}")
+    json_msg = {
+        "msgtype": "text",
+        "text": {'content': f'===A{len(filtered)}===\n' + '\n-------\n'.join(filtered)}
+    }
+    session.post(
+        url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+        json=json_msg)
+    # alert_set = set()
+    # while True:
+    #     spot_df = ak.stock_zh_a_spot()
+    #     for code in selected_stocks:
+    #         stock_info = spot_df[spot_df['代码'].str.contains(code)]
+    #         if not stock_info.empty:
+    #             current_pct = stock_info['涨跌幅'].values[0]
+    #             upper_limit = get_upper_limit(code, stock_info)
+    #             prev_close = stock_info['昨收'].values[0]
+    #             half_pct = (upper_limit - prev_close) / prev_close * 100 / 2
+    #
+    #             if current_pct >= half_pct and code not in alert_set:
+    #                 alert_set.add(code)
+    #                 print(f"[预警] {code} 涨幅达{current_pct:.2f}%，触发条件（{half_pct:.2f}%）")
+    #     time.sleep(60)
+
+
 def main():
     # symbols_a = [c[0] for c in bs.query_all_stock().data if 'ST' not in c[-1]]
     symbols_bn = []
@@ -175,7 +277,7 @@ def main():
     for i in range(10):
         try:
             # 获取所有交易对信息
-            exchange_info = client.exchange_info()
+            exchange_info = spotBN.exchange_info()
             # 提取所有交易对
             symbols_bn = [symbol['symbol'] for symbol in exchange_info['symbols'] if
                           'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']]
@@ -183,7 +285,7 @@ def main():
             # data = json.loads(etree.HTML(res.text).xpath('//*[@id="__APP_DATA"]//text()')[0])
             # symbols_bn = [item['symbol'] for item in parse('$..productMap').find(data)[0].value.values() if
             #               item.get('quoteAsset') == 'USDT']
-            symbols_okx = [item['instId'] for item in publicDataAPI.get_instruments(
+            symbols_okx = [item['instId'] for item in publicDataOKX.get_instruments(
                 instType="SPOT"
             ).get('data') if item.get('quoteCcy') == 'USDT']
             break
@@ -195,6 +297,8 @@ def main():
     # 设置任务调度
     # scheduler.add_job(rzq_market, 'cron', hour='9-15', minute='*/5', second='00', day_of_week='mon-fri',
     #                   timezone='Asia/Shanghai', args=['A', symbols_a, rzq_token])
+    scheduler.add_job(monitor_stocks, 'cron', hour='9', minute='30', second='00', day_of_week='mon-fri',
+                      timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
                       args=['BN', symbols_bn, rzq_token])
     # scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/15', second='00', timezone='Asia/Shanghai',
@@ -215,8 +319,8 @@ if __name__ == "__main__":
     scheduler = BlockingScheduler()
     bs.login()
     bs.logout()
-    client = Spot()
-    marketDataAPI = MarketData.MarketAPI(flag='0', debug=False)
-    publicDataAPI = PublicData.PublicAPI(flag='0', debug=False)
+    spotBN = Spot()
+    marketDataOKX = MarketData.MarketAPI(flag='0', debug=False)
+    publicDataOKX = PublicData.PublicAPI(flag='0', debug=False)
     alert_all = {'BN': {}, 'OKX': {}, 'A': {}}
     main()
