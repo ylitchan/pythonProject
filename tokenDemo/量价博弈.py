@@ -110,9 +110,9 @@ def rzq_token(symbol, alert, success):
         zf_m = zf / (len(kline) - 1 - index_s)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
-        # if expectation < 0:
-        #     price_zy = round(kline[-2][2] + kline[-2][2] * abs(expectation) / 100, max_decimal)
-        #     return
+        if expectation < 0:
+            price_zy = round(kline[-2][2] + kline[-2][2] * abs(expectation) / 100, max_decimal)
+            return
         if price_zy > kline[-1][2]:
             alert.update({symbol: (price_close, zf, expectation, price_zy)})
             return {symbol: (price_close, zf, expectation, price_zy)}
@@ -144,13 +144,13 @@ def rzq_market(market, symbols, job):
                 if 'USDT' in j:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n{"做多" if alert_m[j][2] >= 0 else "做空"}:{alert_m[j][3]}')
+                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n{"做多" if alert_m[j][2] >= 0 else "做空"}:{alert_m[j][3]}')
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}')
             json_msg = {
                 "msgtype": "text",
-                "text": {'content': f'==={market}{len(alert)}多空===\n' + '\n-------\n'.join(alert_final)}
+                "text": {'content': f'==={market}{len(alert)}做多===\n' + '\n-------\n'.join(alert_final)}
             }
             session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
