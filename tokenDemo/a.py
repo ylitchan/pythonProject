@@ -80,7 +80,7 @@ def a():
         print(f"符合量能条件的股票：{filtered}")
         json_msg = {
             "msgtype": "text",
-            "text": {'content': f'===A{len(filtered)}===\n' + '\n-------\n'.join(filtered)}
+            "text": {'content': f'===A{len(filtered)}打板===\n' + '\n-------\n'.join(filtered)}
         }
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
