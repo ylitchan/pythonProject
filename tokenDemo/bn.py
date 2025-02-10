@@ -79,7 +79,7 @@ def bn():
             success.add(symbol)
             if symbol == 'ETHUSDT' and kline[-1][4] <= 3000:
                 alert.update({symbol: (kline[-1][4], 0, 100, 3000)})
-                # return {symbol: (kline[-1][4], 0, 100, 3000)}
+                return {symbol: (kline[-1][4], 0, 0, 3000)}
             if kline[-1][4] <= kline[-1][1]:
                 return
             index_d = 0
