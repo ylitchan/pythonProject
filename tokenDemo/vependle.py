@@ -35,7 +35,7 @@ def vependle():
                     df['VoterAPR_rank'].astype(int) +
                     df['Fees_rank'].astype(int)
             )
-            df.sort_values(by='total', ascending=False, inplace=True)
+            df.sort_values(by='total', ascending=True, inplace=True)
             # 将DataFrame转换为CSV内存文件
             excel_buffer = BytesIO()
             df.to_excel(excel_buffer, index=True)  # utf-8-sig解决中文乱码
