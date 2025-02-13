@@ -159,7 +159,7 @@ def bn():
                     url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
                     json=json_msg)
         finally:
-            with open('symbol.json', 'w') as f:
+            with open('../tokenDemo/symbol.json', 'w') as f:
                 json.dump(alert, f, indent=4, ensure_ascii=False)
             print(datetime.datetime.now(), f'{market}任务结束', alert_final, alert)
             gc.collect()

@@ -67,7 +67,7 @@ def show_screener():
     numeric_cols = ['最新价', '24H涨跌', '成交量', '成交额', '最高价', '最低价']
     full_df[numeric_cols] = full_df[numeric_cols].apply(pd.to_numeric, errors='coerce')
     # 转换为DataFrame
-    with open('symbol.json', 'r') as f:
+    with open('../tokenDemo/symbol.json', 'r') as f:
         alert = json.load(f)
         alert = [[k] + v for k, v in alert.items()]
     alert_df = pd.DataFrame(alert, columns=[
