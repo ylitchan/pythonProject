@@ -83,8 +83,9 @@ def rzq_token(symbol, alert, success):
         kline = get_kline(symbol, "1Dutc")
         success.add(symbol)
         if symbol == 'ETHUSDT' and kline[-1][4] <= 3000:
-            alert.update({symbol: (kline[-1][4], 0, 100, 3000)})
-            return {symbol: (kline[-1][4], 0, 0, 3000)}
+            data = {symbol: (kline[-1][4], 0, 100, 3000, 3000)}
+            alert.update(data)
+            return data
         if kline[-1][4] <= kline[-1][1]:
             return
         index_d = 0
@@ -114,8 +115,10 @@ def rzq_token(symbol, alert, success):
             price_zy = round(kline[-2][2] + kline[-2][2] * abs(expectation) / 100, max_decimal)
             return
         if price_zy > kline[-1][2]:
-            alert.update({symbol: (price_close, zf, expectation, price_zy)})
-            return {symbol: (price_close, zf, expectation, price_zy)}
+            price_zs = kline[index_e][3]
+            data = {symbol: (price_close, zf, expectation, price_zy, price_zs)}
+            alert.update(data)
+            return data
     except:
         return
 
@@ -144,10 +147,10 @@ def rzq_market(market, symbols, job):
                 if 'USDT' in j:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}')
+                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
                 else:
                     alert_final.append(
-                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}')
+                        f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}{len(alert)}做多===\n' + '\n-------\n'.join(alert_final)}
