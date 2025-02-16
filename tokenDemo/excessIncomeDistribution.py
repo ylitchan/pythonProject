@@ -63,10 +63,10 @@ def send_transaction(steth_amount):
     tx = contract_lybra.functions.excessIncomeDistribution(
         steth_amount  # 单位：wei
     ).build_transaction({
-        'chainId': w3.eth.chain_id,
-        'from': ACCOUNT.address,
-        'nonce': w3.eth.get_transaction_count(ACCOUNT.address),
-        'gasPrice': int((w3.eth.gas_price / 10e8 + 1) * 10e8),
+        'chainId': chainId,
+        'from': WALLET_ADDRESS,
+        'nonce': nonce,
+        'gasPrice': gasPrice,
         # 'gasPrice': w3.to_wei(int((w3.eth.gas_price / 10e8 + 1) * 10e8), 'gwei'),
         # 'maxPriorityFeePerGas': w3.eth.max_priority_fee,
         'gas': 1000000
@@ -90,9 +90,9 @@ if __name__ == "__main__":
     # 配置连接（使用Infura）
     # NODE_URL = 'https://eth-mainnet.g.alchemy.com/v2/r8aq919e-3HfTzAPXTYPZxRBLu_kZw-A'
     # NODE_URL = 'https://virtual.mainnet.rpc.tenderly.co/0bd09288-f95c-4d59-9d0c-8172952140f3'
-    NODE_URL = 'https://mainnet.infura.io/v3/42d116ef28d84f0c99f9873f4eb0d7c0'
+    # NODE_URL = 'https://mainnet.infura.io/v3/42d116ef28d84f0c99f9873f4eb0d7c0'
     # NODE_URL = 'https://rpc.tenderly.co/fork/90dc85bc-f2f6-4816-adab-0e44465ec873'
-    # NODE_URL = 'https://mainnet.gateway.tenderly.co/7aTTDUXsphVy5fWhOnfor1'
+    NODE_URL = 'https://mainnet.gateway.tenderly.co/7aTTDUXsphVy5fWhOnfor1'
     w3 = Web3(Web3.HTTPProvider(NODE_URL))
     # 合约地址配置
     LYBRA_CONTRACT_ADDRESS = '0xa980d4c0C2E48d305b582AA439a3575e3de06f0E'  # ← 你的ERC20合约地址
@@ -169,20 +169,24 @@ if __name__ == "__main__":
         address=Web3.to_checksum_address(EUSD_CONTRACT_ADDRESS),
         abi=EUSD_ABI
     )
-    WALLET_ADDRESS = '0x802d78fd3045b64bf2680aaa9a5ae0f4f5241836'  # 要修改的钱包地址
+    # WALLET_ADDRESS = '0x802d78fd3045b64bf2680aaa9a5ae0f4f5241836'  # 要修改的钱包地址
     with open('PRIVATE_MNEMONIC', 'r') as f:
         PRIVATE_MNEMONIC = f.read()
     w3.eth.account.enable_unaudited_hdwallet_features()
     ACCOUNT = w3.eth.account.from_mnemonic(PRIVATE_MNEMONIC)  # .from_key(PRIVATE_KEY)
+    WALLET_ADDRESS = ACCOUNT.address
     # approve_eusd(Web3.to_checksum_address(LYBRA_CONTRACT_ADDRESS), 999)
     decimals_steth = contract_steth.functions.decimals().call()
+    gasPrice = int((w3.eth.gas_price / 10e8 + 1) * 10e8)
+    nonce = w3.eth.get_transaction_count(ACCOUNT.address)
+    chainId = w3.eth.chain_id
     while 1:
         now = datetime.now()
         if now.hour != 20 or now.minute < 19:
             print(now)
             continue
         excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
-        if excessAmount:
+        if excessAmount > 30000000000000000:
             send_transaction(excessAmount)
-            print(now, '完成')
+            print(now, excessAmount, '完成')
             break
