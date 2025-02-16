@@ -1,3 +1,4 @@
+from apscheduler.schedulers.blocking import BlockingScheduler
 from pydantic.schema import datetime
 from web3 import Web3
 
@@ -180,13 +181,18 @@ if __name__ == "__main__":
     gasPrice = int((w3.eth.gas_price / 10e8 + 1) * 10e8)
     nonce = w3.eth.get_transaction_count(ACCOUNT.address)
     chainId = w3.eth.chain_id
-    while 1:
-        now = datetime.now()
-        if now.hour != 20 or now.minute < 19:
-            print(now)
-            continue
-        excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
-        if excessAmount > 30000000000000000:
-            send_transaction(excessAmount)
-            print(now, excessAmount, '完成')
-            break
+
+
+    def job():
+        while 1:
+            excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
+            if excessAmount > 30000000000000000:
+                send_transaction(excessAmount)
+                print(datetime.now(), excessAmount, '完成')
+                break
+
+
+    scheduler = BlockingScheduler()
+    scheduler.add_job(job, 'cron', hour=20, minute=19)
+    # 启动调度器
+    scheduler.start()
