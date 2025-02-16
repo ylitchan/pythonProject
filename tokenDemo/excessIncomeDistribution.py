@@ -178,7 +178,7 @@ if __name__ == "__main__":
     decimals_steth = contract_steth.functions.decimals().call()
     while 1:
         now = datetime.now()
-        if now.hour != 20 or now.minute < 29:
+        if now.hour != 20 or now.minute < 30:
             print(now)
             continue
         excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
