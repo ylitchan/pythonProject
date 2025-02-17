@@ -1,3 +1,5 @@
+import traceback
+
 from apscheduler.schedulers.blocking import BlockingScheduler
 from pydantic.schema import datetime
 from web3 import Web3
@@ -193,6 +195,7 @@ if __name__ == "__main__":
                     print(datetime.now(), excessAmount, '完成')
                     break
             except:
+                traceback.print_exc()
                 continue
 
 
