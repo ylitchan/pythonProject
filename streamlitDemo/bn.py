@@ -110,7 +110,9 @@ def bn():
                 return
             if price_zy > kline[-1][2]:
                 price_zs = kline[index_e][3]
-                data = {symbol: (price_close, zf, expectation, price_zy, price_zs)}
+                risk = round((price_zs / kline[-2][2] - 1) * 100, 2)
+                ratio = round(expectation / risk * 100, 2)
+                data = {symbol: (price_close, zf, expectation, price_zy, risk, price_zs, ratio)}
                 alert.update(data)
                 return data
         except:
@@ -133,17 +135,17 @@ def bn():
         try:
             print(market, f"""{len(success)}/{len(symbols)}""")
             if alert_m:
-                alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][2], reverse=True))
+                alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][-1], reverse=True))
                 for i, j in alert_sort:
                     if j not in alert_m:
                         continue
                     if 'USDT' in j:
                         alert_final.append(
                             f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                            f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
+                            f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n风险:{alert_m[j][4]}\n止损:{alert_m[j][5]}\n比值:{alert_m[j][6]}')
                     else:
                         alert_final.append(
-                            f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
+                            f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n风险:{alert_m[j][4]}\n止损:{alert_m[j][5]}\n比值:{alert_m[j][6]}')
                 json_msg = {
                     "msgtype": "text",
                     "text": {'content': f'==={market}{len(alert)}做多===\n' + '\n-------\n'.join(alert_final)}
