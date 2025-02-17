@@ -69,7 +69,7 @@ def send_transaction(steth_amount):
         'chainId': chainId,
         'from': WALLET_ADDRESS,
         'nonce': nonce,
-        'gasPrice': gasPrice,
+        'gasPrice': int((w3.eth.gas_price / 10e8 + 1) * 10e8),
         # 'gasPrice': w3.to_wei(int((w3.eth.gas_price / 10e8 + 1) * 10e8), 'gwei'),
         # 'maxPriorityFeePerGas': w3.eth.max_priority_fee,
         'gas': 1000000
@@ -81,11 +81,11 @@ def send_transaction(steth_amount):
     signed_tx = ACCOUNT.sign_transaction(tx)
     # 发送交易
     tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-    print(f"Transaction sent: {tx_hash.hex()}")
+    print(datetime.now(), f"Transaction sent: {tx_hash.hex()}")
     if tx_hash:
         # 等待确认
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-        print(f"Transaction confirmed in block {receipt['blockNumber']}")
+        print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
 
 
 # 查询你的合约持有的stETH余额
@@ -180,7 +180,6 @@ if __name__ == "__main__":
     WALLET_ADDRESS = ACCOUNT.address
     # approve_eusd(Web3.to_checksum_address(LYBRA_CONTRACT_ADDRESS), 999)
     decimals_steth = contract_steth.functions.decimals().call()
-    gasPrice = int((w3.eth.gas_price / 10e8 + 1) * 10e8)
     nonce = w3.eth.get_transaction_count(ACCOUNT.address)
     chainId = w3.eth.chain_id
 
