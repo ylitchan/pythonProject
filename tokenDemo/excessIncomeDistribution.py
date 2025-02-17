@@ -190,7 +190,7 @@ if __name__ == "__main__":
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
                 if excessAmount >= 30000000000000000 and (
-                        gas_price := int((w3.eth.gas_price / 10e8 + 1) * 10e8)) <= 15000000000:
+                        gas_price := int((w3.eth.gas_price / 10e8 + 1) * 10e8)) <= 20000000000:
                     send_transaction(excessAmount, nonce, gas_price)
                     print(datetime.now(), excessAmount, '完成')
                     break
@@ -199,7 +199,7 @@ if __name__ == "__main__":
                 continue
 
 
-    # job()
+    job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
