@@ -184,6 +184,7 @@ if __name__ == "__main__":
 
 
     def job():
+        print(datetime.now(), '开始')
         while 1:
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
