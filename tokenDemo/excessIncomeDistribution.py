@@ -61,7 +61,7 @@ def approve_eusd(spender_address, amount_eusd):
     print(f"已授权额度: {allowance / decimals} EUSD")
 
 
-def send_transaction(steth_amount):
+def send_transaction(steth_amount, nonce):
     # 构造交易
     tx = contract_lybra.functions.excessIncomeDistribution(
         steth_amount  # 单位：wei
@@ -180,17 +180,17 @@ if __name__ == "__main__":
     WALLET_ADDRESS = ACCOUNT.address
     # approve_eusd(Web3.to_checksum_address(LYBRA_CONTRACT_ADDRESS), 999)
     decimals_steth = contract_steth.functions.decimals().call()
-    nonce = w3.eth.get_transaction_count(ACCOUNT.address)
     chainId = w3.eth.chain_id
 
 
     def job():
         print(datetime.now(), '开始')
+        nonce = w3.eth.get_transaction_count(ACCOUNT.address)
         while 1:
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
                 if excessAmount > 30000000000000000:
-                    send_transaction(excessAmount)
+                    send_transaction(excessAmount, nonce)
                     print(datetime.now(), excessAmount, '完成')
                     break
             except:
@@ -198,6 +198,7 @@ if __name__ == "__main__":
                 continue
 
 
+    # job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
