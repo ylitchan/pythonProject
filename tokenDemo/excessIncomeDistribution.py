@@ -61,7 +61,7 @@ def approve_eusd(spender_address, amount_eusd):
     print(f"已授权额度: {allowance / decimals} EUSD")
 
 
-def send_transaction(steth_amount, nonce):
+def send_transaction(steth_amount, nonce, gas_price):
     # 构造交易
     tx = contract_lybra.functions.excessIncomeDistribution(
         steth_amount  # 单位：wei
@@ -69,7 +69,7 @@ def send_transaction(steth_amount, nonce):
         'chainId': chainId,
         'from': WALLET_ADDRESS,
         'nonce': nonce,
-        'gasPrice': int((w3.eth.gas_price / 10e8 + 1) * 10e8),
+        'gasPrice': gas_price,
         # 'gasPrice': w3.to_wei(int((w3.eth.gas_price / 10e8 + 1) * 10e8), 'gwei'),
         # 'maxPriorityFeePerGas': w3.eth.max_priority_fee,
         'gas': 1000000
@@ -189,8 +189,9 @@ if __name__ == "__main__":
         while 1:
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
-                if excessAmount > 30000000000000000:
-                    send_transaction(excessAmount, nonce)
+                if excessAmount >= 30000000000000000 and (
+                        gas_price := int((w3.eth.gas_price / 10e8 + 1) * 10e8)) <= 15000000000:
+                    send_transaction(excessAmount, nonce, gas_price)
                     print(datetime.now(), excessAmount, '完成')
                     break
             except:
