@@ -77,9 +77,6 @@ def bn():
         try:
             kline = get_kline(symbol, "1Dutc")
             success.add(symbol)
-            if symbol == 'ETHUSDT' and kline[-1][4] <= 3000:
-                data = {symbol: (kline[-1][4], 0, 100, 3000, 3000)}
-                alert.update(data)
             if kline[-1][4] <= kline[-1][1]:
                 return
             index_d = 0
