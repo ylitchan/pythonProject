@@ -117,7 +117,7 @@ def rzq_token(symbol, alert, success):
         if price_zy > kline[-1][2]:
             price_zs = kline[index_e][3]
             risk = round((price_zs / kline[-2][2] - 1) * 100, 2)
-            ratio = round(reward / abs(risk) * 100, 2)
+            ratio = round(reward / abs(risk), 2)
             data = {symbol: (price_close, zf, reward, price_zy, risk, price_zs, ratio)}
             alert.update(data)
             return data
