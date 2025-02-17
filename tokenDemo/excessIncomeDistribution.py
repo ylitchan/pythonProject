@@ -185,11 +185,14 @@ if __name__ == "__main__":
 
     def job():
         while 1:
-            excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
-            if excessAmount > 30000000000000000:
-                send_transaction(excessAmount)
-                print(datetime.now(), excessAmount, '完成')
-                break
+            try:
+                excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
+                if excessAmount > 30000000000000000:
+                    send_transaction(excessAmount)
+                    print(datetime.now(), excessAmount, '完成')
+                    break
+            except:
+                continue
 
 
     scheduler = BlockingScheduler()
