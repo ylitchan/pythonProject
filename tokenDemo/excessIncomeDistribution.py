@@ -181,6 +181,7 @@ if __name__ == "__main__":
     # approve_eusd(Web3.to_checksum_address(LYBRA_CONTRACT_ADDRESS), 999)
     decimals_steth = contract_steth.functions.decimals().call()
     chainId = w3.eth.chain_id
+    print('准备完成')
 
 
     def job():
@@ -199,7 +200,7 @@ if __name__ == "__main__":
                 continue
 
 
-    job()
+    # job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
