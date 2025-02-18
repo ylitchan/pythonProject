@@ -97,6 +97,8 @@ def rzq_token(symbol, alert, success):
             return
         kline_close = [k[4] for k in kline]
         index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
+        if index_e + 1 - len(kline) != index_d:
+            return
         if kline[index_s][4] <= kline[index_s][1]:
             index_s += 1
             kline_close_asc = kline_close_asc[1:]
@@ -224,9 +226,12 @@ def filter_stocks(stock_codes):
     selected = []
     # spot_df = ak.stock_zh_a_spot()
     for code in stock_codes:
-        # 获取历史数据（昨日量能）
-        hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
-                                  adjust="qfq")
+        try:
+            # 获取历史数据（昨日量能）
+            hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
+                                      adjust="qfq")
+        except:
+            continue
         if len(hist) < 3: continue
         yesterday_vol = hist.iloc[-2]['成交量']
         yesterday_yesterday_vol = hist.iloc[-3]['成交量']

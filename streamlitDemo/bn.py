@@ -91,6 +91,8 @@ def bn():
                 return
             kline_close = [k[4] for k in kline]
             index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
+            if index_e + 1 - len(kline) != index_d:
+                return
             if kline[index_s][4] <= kline[index_s][1]:
                 index_s += 1
                 kline_close_asc = kline_close_asc[1:]
