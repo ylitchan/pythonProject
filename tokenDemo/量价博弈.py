@@ -82,10 +82,10 @@ def rzq_token(symbol, alert, success):
     try:
         kline = get_kline(symbol, "1Dutc")
         success.add(symbol)
-        if symbol == 'ETHUSDT' and kline[-1][4] <= 3000:
-            data = {symbol: (kline[-1][4], 0, 100, 3000, 3000)}
-            alert.update(data)
-            return data
+        # if symbol == 'ETHUSDT' and kline[-1][4] <= 3000:
+        #     data = {symbol: (kline[-1][4], 0, 100, 3000, 3000)}
+        #     alert.update(data)
+        #     return data
         if kline[-1][4] <= kline[-1][1]:
             return
         index_d = 0
@@ -97,24 +97,20 @@ def rzq_token(symbol, alert, success):
             return
         kline_close = [k[4] for k in kline]
         index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
-        if index_e + 1 - len(kline) != index_d:
+        if len(kline) - 2 - index_e != index_d:
             return
         if kline[index_s][4] <= kline[index_s][1]:
             index_s += 1
-            kline_close_asc = kline_close_asc[1:]
         price_close = kline[-1][4]
-        price_low = min([k[4] for k in kline[index_e + 1:-index_d]])
         if kline[index_e][5] < kline[index_e + 1][5] * 2 or kline[-2][
-            2] > price_close:  # or price_low < kline[index_e][1] or price_high > price_close or kline[-2][4] >= price_high:
+            2] > price_close:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
-        price_vol = kline[-index_d - 1][4]
         zf = round((kline[-2][4] / kline[index_s][1] - 1) * 100, 2)
         zf_m = zf / (len(kline) - 1 - index_s)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if expectation < 0:
-            price_zy = round(kline[-2][2] + kline[-2][2] * abs(expectation) / 100, max_decimal)
             return
         if price_zy > kline[-1][2]:
             price_zs = kline[index_e][3]
