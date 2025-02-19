@@ -1,4 +1,5 @@
 import traceback
+from threading import Thread
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 from pydantic.schema import datetime
@@ -81,7 +82,7 @@ def send_transaction(steth_amount, nonce, gas_price):
     signed_tx = ACCOUNT.sign_transaction(tx)
     # 发送交易
     tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-    print(datetime.now(), f"Transaction sent: {tx_hash.hex()}")
+    print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
     if tx_hash:
         # 等待确认
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -185,28 +186,44 @@ if __name__ == "__main__":
 
 
     def job():
-        print(datetime.now(), '开始')
         nonce = w3.eth.get_transaction_count(ACCOUNT.address)
+        print(datetime.now(), '开始', nonce)
+
+        def job2():
+            print('监听线程开始', nonce)
+            gas_price = 0
+            while datetime.now().minute <= 30:
+                try:
+                    for tx in w3.eth.filter('pending').get_new_entries():
+                        tx = w3.eth.get_transaction(tx)
+                        print(tx)
+                        if tx[
+                            'input'] == '0x6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009' and (
+                                excessAmount := get_excess_amount(STETH_CONTRACT_ADDRESS,
+                                                                  LYBRA_CONTRACT_ADDRESS) - 11) >= 30000000000000000:
+                            gas_price = tx['gasPrice'] + int(1 * 10e8)
+                            send_transaction(excessAmount, nonce, gas_price)
+                            break
+                except:
+                    traceback.print_exc()
+                    continue
+                if gas_price:
+                    print('gas修改重新交易')
+                    break
+
+        Thread(target=job2).start()
         while 1:
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
                 if excessAmount >= 30000000000000000:
                     send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000))
                     print(datetime.now(), excessAmount, '完成')
-                    while datetime.now().minute < 30:
-                        for tx in w3.eth.filter('pending').get_new_entries():
-                            tx = w3.eth.get_transaction(tx)
-                            if tx[
-                                'input'] == '0x6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009':
-                                gas_price = tx['gasPrice'] + int(1 * 10e8)
-                                send_transaction(excessAmount, nonce, gas_price)
-                                break
             except:
                 traceback.print_exc()
                 continue
 
 
-    # job()
+    job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
