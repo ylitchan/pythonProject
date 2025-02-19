@@ -91,11 +91,11 @@ def send_transaction(steth_amount, nonce, gas_price):
 # 查询你的合约持有的stETH余额
 if __name__ == "__main__":
     # 配置连接（使用Infura）
-    # NODE_URL = 'https://eth-mainnet.g.alchemy.com/v2/r8aq919e-3HfTzAPXTYPZxRBLu_kZw-A'
+    NODE_URL = 'https://eth-mainnet.g.alchemy.com/v2/r8aq919e-3HfTzAPXTYPZxRBLu_kZw-A'
     # NODE_URL = 'https://virtual.mainnet.rpc.tenderly.co/0bd09288-f95c-4d59-9d0c-8172952140f3'
     # NODE_URL = 'https://mainnet.infura.io/v3/42d116ef28d84f0c99f9873f4eb0d7c0'
     # NODE_URL = 'https://rpc.tenderly.co/fork/90dc85bc-f2f6-4816-adab-0e44465ec873'
-    NODE_URL = 'https://mainnet.gateway.tenderly.co/7aTTDUXsphVy5fWhOnfor1'
+    # NODE_URL = 'https://mainnet.gateway.tenderly.co/7aTTDUXsphVy5fWhOnfor1'
     w3 = Web3(Web3.HTTPProvider(NODE_URL))
     # 合约地址配置
     LYBRA_CONTRACT_ADDRESS = '0xa980d4c0C2E48d305b582AA439a3575e3de06f0E'  # ← 你的ERC20合约地址
@@ -189,12 +189,18 @@ if __name__ == "__main__":
         nonce = w3.eth.get_transaction_count(ACCOUNT.address)
         while 1:
             try:
-                excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS)
-                if excessAmount >= 30000000000000000 and (
-                        gas_price := int((w3.eth.gas_price / 10e8 + 1) * 10e8)) <= 20000000000:
-                    send_transaction(excessAmount, nonce, gas_price)
+                excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
+                if excessAmount >= 30000000000000000:
+                    send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000))
                     print(datetime.now(), excessAmount, '完成')
-                    break
+                    while datetime.now().minute < 30:
+                        for tx in w3.eth.filter('pending').get_new_entries():
+                            tx = w3.eth.get_transaction(tx)
+                            if tx[
+                                'input'] == '0x6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009':
+                                gas_price = tx['gasPrice'] + int(1 * 10e8)
+                                send_transaction(excessAmount, nonce, gas_price)
+                                break
             except:
                 traceback.print_exc()
                 continue
