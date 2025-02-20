@@ -216,7 +216,6 @@ if __name__ == "__main__":
                     continue
                 if gas_price:
                     print(datetime.now(), 'gas修改抢跑', gas_price)
-                    break
 
         Thread(target=job2).start()
         while 1:
