@@ -1,4 +1,3 @@
-import random
 import traceback
 from datetime import datetime
 from threading import Thread
@@ -192,7 +191,6 @@ if __name__ == "__main__":
     def job():
         nonce = w3.eth.get_transaction_count(ACCOUNT.address)
         print(datetime.now(), '开始', nonce)
-        excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
 
         def job2():
             print('监听线程开始', nonce)
@@ -200,15 +198,11 @@ if __name__ == "__main__":
             while datetime.now().minute <= 30:
                 try:
                     for tx in w3.eth.filter('pending').get_new_entries():
-                        if excessAmount < 30000000000000000:
-                            break
                         tx = w3.eth.get_transaction(tx)
-                        # condition = tx['from'] != WALLET_ADDRESS and tx[
-                        #     'input'].hex() == '6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009'
-                        if tx['from'] != WALLET_ADDRESS and tx[
-                            'input'].hex() == '6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009':  # and (not block or w3.eth.get_block('pending')['number'] == block):
-                            gas_price = tx['gasPrice'] + random.randint(700000000, 1000000000)
-                            send_transaction(excessAmount, nonce, gas_price)
+                        if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
+                            'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
+                            gas_price = tx['gasPrice'] + 1000000000
+                            send_transaction(int(tx['input'][11:], 16), nonce, gas_price)
                             print(tx)
                             break
                 except:
@@ -222,7 +216,7 @@ if __name__ == "__main__":
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
                 if not block and excessAmount >= 30000000000000000:
-                    send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000))
+                    send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000) + 9000000000)
                     print(datetime.now(), excessAmount, '完成')
             except:
                 traceback.print_exc()
