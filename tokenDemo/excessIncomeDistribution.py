@@ -1,8 +1,9 @@
+import random
 import traceback
+from datetime import datetime
 from threading import Thread
 
 from apscheduler.schedulers.blocking import BlockingScheduler
-from pydantic.schema import datetime
 from web3 import Web3
 
 
@@ -82,6 +83,8 @@ def send_transaction(steth_amount, nonce, gas_price):
     signed_tx = ACCOUNT.sign_transaction(tx)
     # 发送交易
     tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    global block
+    block = w3.eth.get_block('pending')['number']
     print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
     if tx_hash:
         # 等待确认
@@ -183,11 +186,13 @@ if __name__ == "__main__":
     decimals_steth = contract_steth.functions.decimals().call()
     chainId = w3.eth.chain_id
     print('准备完成')
+    block = 0
 
 
     def job():
         nonce = w3.eth.get_transaction_count(ACCOUNT.address)
         print(datetime.now(), '开始', nonce)
+        excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
 
         def job2():
             print('监听线程开始', nonce)
@@ -196,26 +201,25 @@ if __name__ == "__main__":
                 try:
                     for tx in w3.eth.filter('pending').get_new_entries():
                         tx = w3.eth.get_transaction(tx)
-                        print(tx)
-                        if tx[
-                            'input'] == '0x6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009' and (
-                                excessAmount := get_excess_amount(STETH_CONTRACT_ADDRESS,
-                                                                  LYBRA_CONTRACT_ADDRESS) - 11) >= 30000000000000000:
-                            gas_price = tx['gasPrice'] + int(1 * 10e8)
+                        condition = excessAmount >= 30000000000000000 and tx['from'] != WALLET_ADDRESS and tx[
+                            'input'].hex() == '6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009'
+                        if condition and (not block or w3.eth.get_block('pending')['number'] == block):
+                            gas_price = tx['gasPrice'] + random.randint(700000000, 1000000000)
                             send_transaction(excessAmount, nonce, gas_price)
+                            print(tx)
                             break
                 except:
                     traceback.print_exc()
                     continue
                 if gas_price:
-                    print('gas修改重新交易')
+                    print(datetime.now(), 'gas修改重新交易', gas_price)
                     break
 
         Thread(target=job2).start()
         while 1:
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
-                if excessAmount >= 30000000000000000:
+                if not block and excessAmount >= 30000000000000000:
                     send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000))
                     print(datetime.now(), excessAmount, '完成')
             except:
