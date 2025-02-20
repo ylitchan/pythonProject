@@ -271,9 +271,6 @@ def monitor_stocks():
     #     time.sleep(60)
 
 
-monitor_stocks()
-
-
 def main():
     # symbols_a = [c[0] for c in bs.query_all_stock().data if 'ST' not in c[-1]]
     symbols_bn = []
