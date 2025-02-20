@@ -212,7 +212,7 @@ if __name__ == "__main__":
                     traceback.print_exc()
                     continue
                 if gas_price:
-                    print(datetime.now(), 'gas修改重新交易', gas_price)
+                    print(datetime.now(), 'gas修改抢跑', gas_price)
                     break
 
         Thread(target=job2).start()
