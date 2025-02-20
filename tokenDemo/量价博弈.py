@@ -97,9 +97,8 @@ def rzq_token(symbol, alert, success):
             return
         kline_close = [k[4] for k in kline]
         index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
-        kline_a = kline[-index_d - 1:]
-        if len(kline) - 2 - index_e != index_d or list(
-                filter(lambda x: x[1][2] < kline_a[x[0] - 1][2] if x[0] > 0 else False, enumerate(kline_a))):
+        kline_a = kline[index_e + 1:]
+        if list(filter(lambda x: x[1][2] < kline_a[x[0] - 1][2] if x[0] > 0 else False, enumerate(kline_a))):
             return
         if kline[index_s][4] <= kline[index_s][1]:
             index_s += 1
