@@ -200,10 +200,13 @@ if __name__ == "__main__":
             while datetime.now().minute <= 30:
                 try:
                     for tx in w3.eth.filter('pending').get_new_entries():
+                        if excessAmount < 30000000000000000:
+                            break
                         tx = w3.eth.get_transaction(tx)
-                        condition = excessAmount >= 30000000000000000 and tx['from'] != WALLET_ADDRESS and tx[
-                            'input'].hex() == '6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009'
-                        if condition and (not block or w3.eth.get_block('pending')['number'] == block):
+                        # condition = tx['from'] != WALLET_ADDRESS and tx[
+                        #     'input'].hex() == '6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009'
+                        if tx['from'] != WALLET_ADDRESS and tx[
+                            'input'].hex() == '6bef22ee00000000000000000000000000000000000000000000000003853b90f1114009':  # and (not block or w3.eth.get_block('pending')['number'] == block):
                             gas_price = tx['gasPrice'] + random.randint(700000000, 1000000000)
                             send_transaction(excessAmount, nonce, gas_price)
                             print(tx)
