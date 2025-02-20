@@ -97,13 +97,10 @@ def rzq_token(symbol, alert, success):
             return
         kline_close = [k[4] for k in kline]
         index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
-        kline_a = kline[index_e + 1:]
-        if list(filter(lambda x: x[1][2] < kline_a[x[0] - 1][2] if x[0] > 0 else False, enumerate(kline_a))):
-            return
         if kline[index_s][4] <= kline[index_s][1]:
             index_s += 1
         price_close = kline[-1][4]
-        if kline[index_e][5] < kline[index_e + 1][5] * 2 or kline[-2][
+        if kline[index_e][5] < max([k[5] for k in kline[:index_e]]) * 2 or kline[-2][
             2] > price_close:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
@@ -230,8 +227,7 @@ def filter_stocks(stock_codes):
         except:
             continue
         if len(hist) < 3: continue
-        yesterday_vol = hist.iloc[-2]['成交量']
-        yesterday_yesterday_vol = hist.iloc[-3]['成交量']
+        yesterday_yesterday_pct = hist.iloc[-3]['涨跌幅']
         yesterday_pct = hist.iloc[-2]['涨跌幅']
         # 获取今日实时数据
         # spot_data = spot_df[spot_df['代码'].str.contains(code)]
@@ -240,7 +236,7 @@ def filter_stocks(stock_codes):
         # today_vol = spot_data['成交量'].values[0]
         # today_pct = spot_data['涨跌幅'].values[0]
 
-        if yesterday_vol <= yesterday_yesterday_vol and yesterday_pct <= 0:
+        if yesterday_pct <= -yesterday_yesterday_pct / 2:
             selected.append(''.join(code))
     return selected
 
@@ -273,6 +269,9 @@ def monitor_stocks():
     #                 alert_set.add(code)
     #                 print(f"[预警] {code} 涨幅达{current_pct:.2f}%，触发条件（{half_pct:.2f}%）")
     #     time.sleep(60)
+
+
+monitor_stocks()
 
 
 def main():

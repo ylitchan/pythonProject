@@ -58,8 +58,7 @@ def a():
             hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
                                       adjust="qfq")
             if len(hist) < 3: continue
-            yesterday_vol = hist.iloc[-2]['成交量']
-            yesterday_yesterday_vol = hist.iloc[-3]['成交量']
+            yesterday_yesterday_pct = hist.iloc[-3]['涨跌幅']
             yesterday_pct = hist.iloc[-2]['涨跌幅']
             # 获取今日实时数据
             # spot_data = spot_df[spot_df['代码'].str.contains(code)]
@@ -68,9 +67,8 @@ def a():
             # today_vol = spot_data['成交量'].values[0]
             # today_pct = spot_data['涨跌幅'].values[0]
 
-            if yesterday_vol <= yesterday_yesterday_vol and yesterday_pct <= 0:
+            if yesterday_pct <= -yesterday_yesterday_pct / 2:
                 selected.append(''.join(code))
-        return selected
 
     # 步骤3：实时监控
     def monitor_stocks():

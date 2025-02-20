@@ -88,13 +88,10 @@ def bn():
                 return
             kline_close = [k[4] for k in kline]
             index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
-            kline_a = kline[index_e + 1:]
-            if list(filter(lambda x: x[1][2] < kline_a[x[0] - 1][2] if x[0] > 0 else False, enumerate(kline_a))):
-                return
             if kline[index_s][4] <= kline[index_s][1]:
                 index_s += 1
             price_close = kline[-1][4]
-            if kline[index_e][5] < kline[index_e + 1][5] * 2 or kline[-2][
+            if kline[index_e][5] < max([k[5] for k in kline[:index_e]]) * 2 or kline[-2][
                 2] > price_close:
                 return
             max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
