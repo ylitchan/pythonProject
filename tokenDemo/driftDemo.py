@@ -42,16 +42,18 @@ async def main():
 
     def liquidation_callback(event: WrappedEvent):
         """处理清算事件"""
-        if event.event_type not in ["LiquidationRecord", "FundingPaymentRecord"]:
+        if event.event_type not in ["LiquidationRecord", "FundingPaymentRecord","FundingRateRecord"]:
             return
         print(event, '\n')
+        if event.event_type not in ["LiquidationRecord"]:
+            print(event)
         # 检查是否是自己的账户被清算
-        if event.data.user == user_public_key:
-            print(f"我的仓位被强平！清算详情: {event.data}")
-            # 提取更多信息，例如清算的市场和数量
-            market_index = event.data.market_index
-            liquidated_amount = event.data.base_asset_amount / 1e9  # 转换为可读单位
-            print(f"市场索引: {market_index}, 清算数量: {liquidated_amount}")
+        # if event.data.user == user_public_key:
+        #     print(f"我的仓位被强平！清算详情: {event.data}")
+        #     # 提取更多信息，例如清算的市场和数量
+        #     market_index = event.data.market_index
+        #     liquidated_amount = event.data.base_asset_amount / 1e9  # 转换为可读单位
+        #     print(f"市场索引: {market_index}, 清算数量: {liquidated_amount}")
 
     event_subscriber.event_emitter.new_event += liquidation_callback
     while True:
