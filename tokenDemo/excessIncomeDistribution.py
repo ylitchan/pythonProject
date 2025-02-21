@@ -3,6 +3,7 @@ from datetime import datetime
 from threading import Thread
 
 from apscheduler.schedulers.blocking import BlockingScheduler
+from sqlalchemy.sql.functions import random
 from web3 import Web3
 
 
@@ -201,7 +202,7 @@ if __name__ == "__main__":
                         tx = w3.eth.get_transaction(tx)
                         if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
                             'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
-                            gas_price = tx['gasPrice'] + 1000000000
+                            gas_price = tx['gasPrice'] + random.randint(700000000, 1300000000)
                             send_transaction(int(tx['input'][11:], 16), nonce, gas_price)
                             print(tx)
                             break

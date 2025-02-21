@@ -1,15 +1,15 @@
 import asyncio
 import traceback
-from driftpy.constants import perp_markets,spot_markets
+
 from anchorpy import Wallet
 from driftpy.constants.numeric_constants import BASE_PRECISION
 from driftpy.drift_client import DriftClient
-from driftpy.drift_user import DriftUser
-from driftpy.types import PositionDirection, OrderParams, OrderType, MarketType  ,MakerInfo# 新增 MarketType 导入
+from driftpy.events.event_subscriber import EventSubscriber
+from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
+from driftpy.events.types import WrappedEvent
+from driftpy.types import PositionDirection, OrderParams, OrderType, MarketType  # 新增 MarketType 导入
 from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
-from solders.pubkey import Pubkey
-from spl.token.async_client import AsyncToken
 
 
 async def main():
@@ -22,6 +22,40 @@ async def main():
     # print(tx_sig)
     # 4. 订阅账户数据
     await drift_client.subscribe()
+    # 获取当前用户账户
+    drift_user = drift_client.get_user()
+    # 配置事件订阅
+    options = EventSubscriptionOptions(
+        # event_types=('OrderActionRecord',),
+        max_tx=4096,
+        max_events_per_type=4096,
+        order_by="blockchain",
+        order_dir="asc",
+        log_provider_config=WebsocketLogProviderConfig()
+    )
+
+    event_subscriber = EventSubscriber(connection, drift_client.program, options)
+    event_subscriber.subscribe()
+
+    # 获取用户公钥
+    user_public_key = drift_user.user_public_key
+
+    def liquidation_callback(event: WrappedEvent):
+        """处理清算事件"""
+        if event.event_type not in ["LiquidationRecord", "FundingPaymentRecord"]:
+            return
+        print(event, '\n')
+        # 检查是否是自己的账户被清算
+        if event.data.user == user_public_key:
+            print(f"我的仓位被强平！清算详情: {event.data}")
+            # 提取更多信息，例如清算的市场和数量
+            market_index = event.data.market_index
+            liquidated_amount = event.data.base_asset_amount / 1e9  # 转换为可读单位
+            print(f"市场索引: {market_index}, 清算数量: {liquidated_amount}")
+
+    event_subscriber.event_emitter.new_event += liquidation_callback
+    while True:
+        await asyncio.sleep(1)
 
     async def deposit_usdc(drift_client, amount_usdc):
         try:
@@ -75,6 +109,7 @@ async def main():
         except Exception as e:
             traceback.print_exc()
             print(f"转换失败: {str(e)}")
+
     # 5. 存款 1 SOL 到 Drift
     # await deposit_sol_to_drift(drift_client, 1, connection, wallet)
     # 6. 将 0.5 SOL 转换为 USDC
