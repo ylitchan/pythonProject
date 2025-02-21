@@ -194,7 +194,6 @@ if __name__ == "__main__":
 
         def job2():
             print('监听线程开始', nonce)
-            gas_price = 0
             while datetime.now().minute <= 30:
                 try:
                     for tx in w3.eth.filter('pending').get_new_entries():
@@ -203,20 +202,18 @@ if __name__ == "__main__":
                             'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
                             gas_price = tx['gasPrice'] + w3.eth.gas_price
                             send_transaction(int(tx['input'][11:], 16), nonce, gas_price)
-                            print(tx)
+                            print(datetime.now(), 'gas修改抢跑', gas_price, tx)
                             break
                 except:
                     traceback.print_exc()
                     continue
-                if gas_price:
-                    print(datetime.now(), 'gas修改抢跑', gas_price)
 
         Thread(target=job2).start()
         while 1:
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
                 if not block and excessAmount >= 30000000000000000:
-                    send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000) + 9000000000)
+                    send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000))
                     print(datetime.now(), excessAmount, '完成')
             except:
                 traceback.print_exc()
