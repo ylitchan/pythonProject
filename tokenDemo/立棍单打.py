@@ -24,7 +24,7 @@ def trade(symbol, price, stopPrice):
             "symbol": symbol,
             "side": "BUY",
             "type": "MARKET",
-            "quoteOrderQty": spotBN.user_asset(asset='USDT')[0]['free']
+            "quoteOrderQty": min(spotBN.user_asset(asset='USDT')[0]['free'] / 2, 5)
         }
         spotBN.new_order(**params)
         params = {

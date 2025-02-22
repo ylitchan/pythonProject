@@ -1,5 +1,6 @@
 import asyncio
 import traceback
+from datetime import datetime
 
 from anchorpy import Wallet
 from driftpy.constants.numeric_constants import BASE_PRECISION
@@ -15,6 +16,7 @@ from solders.keypair import Keypair
 
 perp_market_indexes = [i.market_index for i in devnet_perp_market_configs]
 print()
+
 
 async def main():
     url = 'https://api.mainnet-beta.solana.com'  # replace w/ any rpc
@@ -51,7 +53,7 @@ async def main():
         """处理清算事件"""
         if event.event_type not in ["LiquidationRecord", "FundingPaymentRecord", "FundingRateRecord"]:
             return
-        print(event, '\n')
+        print(datetime.now(), event, '\n')
         if event.event_type not in ["LiquidationRecord"]:
             print(event)
         # 检查是否是自己的账户被清算
