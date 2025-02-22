@@ -152,6 +152,7 @@ def rzq_market(market, symbols, job):
     POSITIONS = alert_all.get("POSITIONS", {})
     if datetime.datetime.now().hour == 8 and datetime.datetime.now().minute < 2:
         alert.clear()
+        POSITIONS.clear()
     success = set()
     alert_m = {}
     alert_final = []

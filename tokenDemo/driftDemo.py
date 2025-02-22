@@ -3,25 +3,31 @@ import traceback
 
 from anchorpy import Wallet
 from driftpy.constants.numeric_constants import BASE_PRECISION
+from driftpy.constants.perp_markets import devnet_perp_market_configs
 from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
 from driftpy.events.types import WrappedEvent
-from driftpy.types import PositionDirection, OrderParams, OrderType, MarketType  # 新增 MarketType 导入
+from driftpy.types import MarketType
+from driftpy.types import PositionDirection, OrderParams, OrderType  # 新增 MarketType 导入
 from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
 
+perp_market_indexes = [i.market_index for i in devnet_perp_market_configs]
+print()
 
 async def main():
     url = 'https://api.mainnet-beta.solana.com'  # replace w/ any rpc
     connection = AsyncClient(url)
-    with open('PRIVATE_KEY','r') as f:
-        PRIVATE_KEY=f.read()
+    with open('PRIVATE_KEY', 'r') as f:
+        PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
-    drift_client = DriftClient(connection, wallet, "mainnet")
+    # wallet= Wallet(Keypair.from_base58_string('26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
+    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=perp_market_indexes[:1])
     # tx_sig = await drift_client.initialize_user(sub_account_id=0, name=None)
     # print(tx_sig)
     # 4. 订阅账户数据
+    await drift_client.unsubscribe()
     await drift_client.subscribe()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
@@ -43,7 +49,7 @@ async def main():
 
     def liquidation_callback(event: WrappedEvent):
         """处理清算事件"""
-        if event.event_type not in ["LiquidationRecord", "FundingPaymentRecord","FundingRateRecord"]:
+        if event.event_type not in ["LiquidationRecord", "FundingPaymentRecord", "FundingRateRecord"]:
             return
         print(event, '\n')
         if event.event_type not in ["LiquidationRecord"]:
