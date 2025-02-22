@@ -3,6 +3,7 @@ import gc
 import json
 import re
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import akshare as ak
@@ -13,6 +14,31 @@ import pandas as pd
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from binance.spot import Spot
+
+
+def trade(symbol, price, stopPrice):
+    try:
+        if spotBN.user_asset(asset='USDT')[0]['free'] < 5:
+            return
+        params = {
+            "symbol": symbol,
+            "side": "BUY",
+            "type": "MARKET",
+            "quoteOrderQty": spotBN.user_asset(asset='USDT')[0]['free']
+        }
+        spotBN.new_order(**params)
+        params = {
+            "symbol": symbol,
+            "side": "SELL",
+            "quantity": spotBN.user_asset(asset=symbol)[0]['free'],
+            "price": price,
+            "stopPrice": stopPrice
+        }
+        spotBN.new_oco_order(**params)
+        return symbol
+    except:
+        traceback.print_exc()
+        return
 
 
 def klines_a(symbol):
@@ -116,12 +142,14 @@ def rzq_token(symbol, alert, success):
             alert.update(data)
             return data
     except:
+        traceback.print_exc()
         return
 
 
 def rzq_market(market, symbols, job):
     print(datetime.datetime.now(), f'{market}任务开始', len(symbols))
     alert = alert_all.get(market, {})
+    POSITIONS = alert_all.get("POSITIONS", {})
     if datetime.datetime.now().hour == 8 and datetime.datetime.now().minute < 2:
         alert.clear()
     success = set()
@@ -140,10 +168,18 @@ def rzq_market(market, symbols, job):
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
+                if j not in POSITIONS:
+                    if trade(symbol=j, price=alert_m[j][3], stopPrice=alert_m[j][4]):
+                        POSITIONS.update({j: alert_m[j]})
                 if 'USDT' in j:
-                    alert_final.append(
-                        f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
+                    if j in POSITIONS:
+                        alert_final.append(
+                            f'开仓{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
+                            f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
+                    else:
+                        alert_final.append(
+                            f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
+                            f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
                 else:
                     alert_final.append(
                         f'{i + 1}.{j}\n现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
@@ -225,6 +261,7 @@ def filter_stocks(stock_codes):
             hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
                                       adjust="qfq")
         except:
+            traceback.print_exc()
             continue
         if len(hist) < 3: continue
         yesterday_yesterday_pct = hist.iloc[-3]['涨跌幅']
@@ -290,7 +327,8 @@ def main():
                 instType="SPOT"
             ).get('data') if item.get('quoteCcy') == 'USDT']
             break
-        except Exception:
+        except:
+            traceback.print_exc()
             time.sleep(2)
     # rzq_market('A', symbols_a, rzq_token)
     rzq_market('BN', symbols_bn, rzq_token)
@@ -320,8 +358,10 @@ if __name__ == "__main__":
     scheduler = BlockingScheduler()
     bs.login()
     bs.logout()
-    spotBN = Spot()
+    with open('bn.json', 'r') as f:
+        bn_api = json.load(f)
+    spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
     marketDataOKX = MarketData.MarketAPI(flag='0', debug=False)
     publicDataOKX = PublicData.PublicAPI(flag='0', debug=False)
-    alert_all = {'BN': {}, 'OKX': {}, 'A': {}}
+    alert_all = {'BN': {}, 'OKX': {}, 'A': {}, 'POSITIONS': {}}
     main()
