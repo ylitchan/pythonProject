@@ -14,7 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from binance.spot import Spot
 
 
-def trade(symbol, price, stopPrice):
+def trade(symbol, price, stopPrice, sq):
     try:
         if spotBN.user_asset(asset='USDT')[0]['free'] < 5:
             return
@@ -22,7 +22,7 @@ def trade(symbol, price, stopPrice):
             "symbol": symbol,
             "side": "BUY",
             "type": "MARKET",
-            "quoteOrderQty": max(spotBN.user_asset(asset='USDT')[0]['free'] / 2, 5)
+            "quoteOrderQty": max(round(spotBN.user_asset(asset='USDT')[0]['free'] / 2, sq.get(symbol)), 5)
         }
         spotBN.new_order(**params)
         params = {
@@ -134,8 +134,9 @@ async def rzq_market(market):
             # 获取所有交易对信息
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             # 提取所有交易对
-            symbols = [symbol['symbol'] for symbol in exchange_info['symbols'] if
-                       'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']]
+            sq = {symbol['symbol']: symbol['quotePrecision'] for symbol in exchange_info['symbols'] if
+                  'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
+            symbols = list(sq.keys())
             break
         except:
             traceback.print_exc()
@@ -164,7 +165,7 @@ async def rzq_market(market):
                 if j not in alert_m:
                     continue
                 if j not in POSITIONS:
-                    if trade(symbol=j, price=alert_m[j][3], stopPrice=alert_m[j][4]):
+                    if trade(symbol=j, price=alert_m[j][3], stopPrice=alert_m[j][4], sq=sq):
                         POSITIONS.update({j: alert_m[j]})
                 if j in POSITIONS:
                     alert_final.append(
@@ -290,7 +291,7 @@ async def main():
     scheduler.add_job(monitor_stocks, 'cron', hour='9', minute='30', second='00', day_of_week='mon-fri',
                       timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
-                      args=('BN'))
+                      args=('BN',))
     # 启动调度器
     scheduler.start()
     stop_event = asyncio.Event()
