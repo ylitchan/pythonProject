@@ -4,7 +4,8 @@ from datetime import datetime
 
 from anchorpy import Wallet
 from driftpy.constants.numeric_constants import BASE_PRECISION
-from driftpy.constants.perp_markets import devnet_perp_market_configs
+from driftpy.constants.perp_markets import mainnet_perp_market_configs
+from driftpy.constants.spot_markets import mainnet_spot_market_configs
 from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
@@ -14,18 +15,22 @@ from driftpy.types import PositionDirection, OrderParams, OrderType  # 新增 Ma
 from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
 
-perp_market_indexes = [i.market_index for i in devnet_perp_market_configs]
+perp_market_indexes = [i.market_index for i in mainnet_perp_market_configs]
+spot_market_indexes = [i.market_index for i in mainnet_spot_market_configs]
 print(perp_market_indexes)
 
 
 async def main():
-    url = 'https://api.devnet.solana.com'  # replace w/ any rpc
+    url = 'https://mainnet.helius-rpc.com/?api-key=346cd7c9-73a9-4916-a150-4157181b99dc'  # replace w/ any rpc
     connection = AsyncClient(url)
     with open('PRIVATE_KEY', 'r') as f:
         PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
-    wallet= Wallet(Keypair.from_base58_string('26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
-    drift_client = DriftClient(connection, wallet, "devnet", perp_market_indexes=perp_market_indexes[:1])
+    # wallet = Wallet(Keypair.from_base58_string(
+    #     '26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
+    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[2],
+                               spot_market_indexes=[0])
+
     # tx_sig = await drift_client.initialize_user(sub_account_id=0, name=None)
     # print(tx_sig)
     # 4. 订阅账户数据
@@ -33,6 +38,26 @@ async def main():
     await drift_client.subscribe()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
+    account_subscriber = drift_client.account_subscriber
+    for market_index in {i.market_index for i in drift_user.get_user_account().spot_positions}:
+        await account_subscriber.subscribe_to_perp_market(market_index)
+    drift_user.get_free_collateral()
+    position = drift_user.get_perp_position(2)
+    order_params = OrderParams(
+        order_type=OrderType.Market(),
+        market_index=2,
+        base_asset_amount=abs(int(position.base_asset_amount)),
+        direction=(
+            PositionDirection.Long()
+            if position.base_asset_amount < 0
+            else PositionDirection.Short()
+        ),
+        price=0,
+        reduce_only=True,
+    )
+    await drift_client.place_perp_order(order_params)
+    await drift_client.close_position(2)
+
     # 配置事件订阅
     options = EventSubscriptionOptions(
         # event_types=('OrderActionRecord',),

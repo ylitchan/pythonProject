@@ -200,7 +200,7 @@ if __name__ == "__main__":
                         tx = w3.eth.get_transaction(tx)
                         if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
                             'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
-                            gas_price = min(tx['gasPrice'] + int(w3.eth.gas_price * 0.1), 20000000000)
+                            gas_price = tx['gasPrice'] + int(w3.eth.gas_price * 0.1)
                             send_transaction(int(tx['input'][11:], 16), nonce, gas_price)
                             print(datetime.now(), 'gas修改抢跑', gas_price, tx)
                             break
@@ -220,7 +220,7 @@ if __name__ == "__main__":
                 continue
 
 
-    # job()
+    job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
