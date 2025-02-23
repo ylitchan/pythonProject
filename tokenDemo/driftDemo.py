@@ -15,17 +15,17 @@ from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
 
 perp_market_indexes = [i.market_index for i in devnet_perp_market_configs]
-print()
+print(perp_market_indexes)
 
 
 async def main():
-    url = 'https://api.mainnet-beta.solana.com'  # replace w/ any rpc
+    url = 'https://api.devnet.solana.com'  # replace w/ any rpc
     connection = AsyncClient(url)
     with open('PRIVATE_KEY', 'r') as f:
         PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
-    # wallet= Wallet(Keypair.from_base58_string('26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
-    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=perp_market_indexes[:1])
+    wallet= Wallet(Keypair.from_base58_string('26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
+    drift_client = DriftClient(connection, wallet, "devnet", perp_market_indexes=perp_market_indexes[:1])
     # tx_sig = await drift_client.initialize_user(sub_account_id=0, name=None)
     # print(tx_sig)
     # 4. 订阅账户数据
