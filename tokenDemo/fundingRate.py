@@ -63,7 +63,7 @@ async def main():
     def get_amount():
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / 10e5
-        balance = min(balance_bn, balance_drift)
+        balance = max(min(balance_bn, balance_drift), 5)
         markPrice = max(float(um_futures_client.mark_price('ETHUSDT')['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=2).price)
