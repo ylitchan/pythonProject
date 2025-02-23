@@ -140,7 +140,8 @@ async def main():
 
     def message_handler(_, message):
         print(datetime.now(), message, '\n')
-        if 'autoclose' in message.get('o',{}).get('c',''):
+        message = json.loads(message)
+        if 'autoclose' in message.get('o', {}).get('c', ''):
             asyncio.run(close_drift_position())
 
     my_client = UMFuturesWebsocketClient(on_message=message_handler)
