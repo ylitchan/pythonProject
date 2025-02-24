@@ -153,8 +153,9 @@ async def main():
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             close_bn_position()
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
-            positions = drift_user.get_perp_position(market_index)
             funding_rate = event.data.funding_rate
+            send_msg(f'{symbol}费率更新:{funding_rate}')
+            positions = drift_user.get_perp_position(market_index)
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
             elif positions and positions.base_asset_amount:
