@@ -75,7 +75,7 @@ def get_max_decimal_places(price_s):
     return 0
 
 
-async def rzq_token(semaphore, symbol, alert, success):
+async def rzq_token(semaphore, symbol, alert, success, alert_m):
     if symbol in alert:
         success.add(symbol)
         return
@@ -114,6 +114,7 @@ async def rzq_token(semaphore, symbol, alert, success):
             price_zs = kline[index_e][3]
             data = {symbol: (price_close, zf, expectation, price_zy, price_zs)}
             alert.update(data)
+            alert_m.update(data)
             return data
     except:
         traceback.print_exc()
@@ -146,11 +147,8 @@ async def rzq_market(market):
     success = set()
     alert_m = {}
     alert_final = []
-    tasks = [rzq_token(semaphore, symbol, alert, success) for symbol in symbols if symbol not in alert]
-    futures = await asyncio.gather(*tasks)
-    for future in futures:
-        if future:
-            alert_m.update(future)
+    tasks = [rzq_token(semaphore, symbol, alert, success, alert_m) for symbol in symbols if symbol not in alert]
+    await asyncio.gather(*tasks)
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
