@@ -149,13 +149,13 @@ async def main():
         print(datetime.now(), event, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             close_bn_position()
-        elif event.event_type == "FundingRateRecord":
+        elif event.event_type == "FundingRateRecord" and event.data.market_index == 2:
             positions = drift_user.get_perp_position(2)
             funding_rate = event.data.funding_rate
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
             elif positions and positions.base_asset_amount:
-                asyncio.run(close_drift_position(positions.base_asset_amount))
+                asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
                 close_bn_position()
             amount = get_amount()
             if funding_rate > 0:

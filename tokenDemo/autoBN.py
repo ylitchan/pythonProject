@@ -26,7 +26,7 @@ def trade(symbol, price, stopPrice, sq):
         params = {
             "symbol": symbol,
             "side": "SELL",
-            "quantity": float(spotBN.user_asset(asset=symbol)[0]['free']),
+            "quantity": round(float(spotBN.user_asset(asset=symbol[:-4])[0]['free']), 1),
             "price": price,
             "stopPrice": stopPrice
         }
