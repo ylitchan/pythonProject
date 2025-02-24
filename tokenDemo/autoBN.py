@@ -14,13 +14,13 @@ from binance.spot import Spot
 
 def trade(symbol, price, stopPrice, sq):
     try:
-        if (user_asset := float(spotBN.user_asset(asset='USDT')[0]['free'])) < 5:
+        if (user_asset := float(spotBN.user_asset(asset='USDT')[0]['free'])) / 2 < 6:
             return
         params = {
             "symbol": symbol,
             "side": "BUY",
             "type": "MARKET",
-            "quoteOrderQty": max(round(user_asset / 2, sq.get(symbol)), 5)
+            "quoteOrderQty": round(user_asset, sq.get(symbol))
         }
         spotBN.new_order(**params)
         params = {
