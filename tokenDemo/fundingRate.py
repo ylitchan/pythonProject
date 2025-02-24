@@ -179,7 +179,7 @@ async def main():
         client.renew_listen_key(listenKey=listenKey)
         message = json.loads(message)
         # asyncio.ensure_future(open_drift_position('LONG', 0.001), loop=loop)
-        if 'forceOrder' in message.get('e', ''):
+        if 'autoclose' in message.get('o', {}).get('c', ''):
             base_asset_amount = drift_user.get_perp_position(2).base_asset_amount
             asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
 
