@@ -14,7 +14,7 @@ from binance.spot import Spot
 
 def trade(symbol, price, stopPrice, sq):
     try:
-        if spotBN.user_asset(asset='USDT')[0]['free'] < 5:
+        if float(spotBN.user_asset(asset='USDT')[0]['free']) < 5:
             return
         params = {
             "symbol": symbol,
@@ -64,12 +64,8 @@ def find_continuous_subsequences(nums, direction):
 
 async def get_kline(semaphore, symbol, t: str):
     async with semaphore:
-        if "-USDT" in symbol:
-            kline = await asyncio.to_thread(marketDataOKX.get_candlesticks, instId=symbol, bar=t, limit=20)
-            kline = [list(map(float, sublist)) for sublist in kline.get('data')[::-1]]
-        else:
-            kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
-            kline = [list(map(float, sublist)) for sublist in kline]
+        kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
+        kline = [list(map(float, sublist)) for sublist in kline]
         return kline
 
 
