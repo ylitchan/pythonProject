@@ -98,7 +98,7 @@ async def main():
             positionSide=positionSide,
         )
         msg = f'bn开仓成功，交易数量:{response.json().get("origQty", 0)}'
-        send_msg(msg)
+        return msg
 
     def close_bn_position():
         position = um_futures_client.get_position_risk()[0]
@@ -112,7 +112,7 @@ async def main():
             positionSide=positionSide,
         )
         msg = f'bn平仓成功，交易数量:{response.json().get("origQty", 0)}'
-        send_msg(msg)
+        return msg
 
     async def close_drift_position(base_asset_amount):
         order_params = OrderParams(
@@ -130,7 +130,7 @@ async def main():
         )
         tx_sig = await drift_client.place_perp_order(order_params)
         msg = f"drift平仓成功，交易签名:{tx_sig}"
-        send_msg(msg)
+        return msg
 
     async def open_drift_position(positionSide, amount):
         if positionSide == "LONG":
@@ -147,14 +147,18 @@ async def main():
         )
         tx_sig = await drift_client.place_perp_order(order_params)
         msg = f"drift开仓成功，交易签名:{tx_sig}"
-        send_msg(msg)
+        return msg
 
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
         print(datetime.now(), event, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
-            close_bn_position()
+            try:
+                msg = close_bn_position()
+                send_msg(msg)
+            except:
+                send_msg('平对手仓bn失败')
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
             send_msg(f'{symbol}费率更新:{funding_rate}')
@@ -162,21 +166,51 @@ async def main():
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
             elif positions and positions.base_asset_amount:
-                close_bn_position()
-                task = asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
-                loop.run_until_complete(task)
+                try:
+                    msg = close_bn_position()
+                    send_msg(msg)
+                except:
+                    send_msg(f'bn平仓失败')
+                    return
+                try:
+                    task = asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
+                    msg = loop.run_until_complete(task)
+                    send_msg(msg)
+                except:
+                    send_msg(f'drift平仓失败')
+                    return
             amount = get_amount()
             if amount == 0:
                 return
             if funding_rate > 0:
-                open_bn_position("LONG", amount)
-                task = asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
-                loop.run_until_complete(task)
+                try:
+                    msg = open_bn_position("LONG", amount)
+                    send_msg(msg)
+                except:
+                    send_msg(f'bn开仓失败')
+                    return
+                try:
+                    task = asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
+                    msg = loop.run_until_complete(task)
+                    send_msg(msg)
+                except:
+                    send_msg(f"drift开仓失败")
+                    return
             elif funding_rate < 0:
-                open_bn_position("SHORT", amount)
-                task = asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
-                loop.run_until_complete(task)
-        # 检查是否是自己的账户被清算
+                try:
+                    msg = open_bn_position("SHORT", amount)
+                    send_msg(msg)
+                except:
+                    send_msg(f'bn开仓失败')
+                    return
+                try:
+                    task = asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
+                    msg = loop.run_until_complete(task)
+                    send_msg(msg)
+                except:
+                    send_msg(f"drift开仓失败")
+                    return
+                    # 检查是否是自己的账户被清算
         # if event.data.user == user_public_key:
         #     print(f"我的仓位被强平！清算详情: {event.data}")
         #     # 提取更多信息，例如清算的市场和数量
@@ -193,9 +227,13 @@ async def main():
         # asyncio.ensure_future(open_drift_position('LONG', 0.001), loop=loop)
         if 'autoclose' in message.get('o', {}).get('c', ''):
             send_msg(f'bn清算{symbol}')
-            base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
-            task = asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
-            loop.run_until_complete(task)
+            try:
+                base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
+                task = asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
+                msg = loop.run_until_complete(task)
+                send_msg(msg)
+            except:
+                send_msg('平对手仓drift失败')
 
     loop = asyncio.get_running_loop()
     my_client = UMFuturesWebsocketClient(on_message=message_handler)
