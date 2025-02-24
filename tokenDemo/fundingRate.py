@@ -22,6 +22,7 @@ from solders.keypair import Keypair
 
 
 async def main():
+    symbol='ETHUSDT'
     leverage = 20
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
@@ -75,18 +76,18 @@ async def main():
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / 10e5
         balance = max(min(balance_bn, balance_drift), 6)
-        markPrice = max(float(um_futures_client.mark_price('ETHUSDT')['markPrice']),
+        markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=2).price / 10e5)
-        amount = round(balance / markPrice, sp.get('ETHUSDT'))
+        amount = round(balance / markPrice, sp.get(symbol))
         if amount == 0:
             send_msg('账户余额不足')
         return amount * leverage
 
     def open_bn_position(positionSide, amount):
-        um_futures_client.change_leverage(symbol='ETHUSDT', leverage=leverage)
+        um_futures_client.change_leverage(symbol=symbol, leverage=leverage)
         response = um_futures_client.new_order(
-            symbol="ETHUSDT",
+            symbol=symbol,
             side=open_map.get(positionSide),
             type="MARKET",
             quantity=amount,
@@ -100,7 +101,7 @@ async def main():
         positionSide = position['positionSide']
         positionAmt = position['positionAmt']
         response = um_futures_client.new_order(
-            symbol="USDCUSDT",
+            symbol=symbol,
             side=close_map.get(positionSide),
             type="MARKET",
             quantity=abs(float(positionAmt)),
