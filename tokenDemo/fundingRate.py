@@ -15,7 +15,7 @@ from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
 from driftpy.events.types import WrappedEvent
-from driftpy.types import OrderParams, OrderType
+from driftpy.types import OrderParams, OrderType, MarketType
 from driftpy.types import PositionDirection
 from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
@@ -76,9 +76,9 @@ async def main():
         balance = max(min(balance_bn, balance_drift), 6)
         markPrice = max(float(um_futures_client.mark_price('ETHUSDT')['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
-                            market_index=2).price)
+                            market_index=2).price / 10e5)
         amount = round(balance / markPrice, sp.get('ETHUSDT'))
-        if not amount:
+        if amount == 0:
             send_msg('账户余额不足')
         return amount * 5
 
@@ -131,6 +131,7 @@ async def main():
         else:
             positionSide = PositionDirection.Short()
         order_params = OrderParams(
+            market_type=MarketType.Perp(),
             order_type=OrderType.Market(),
             direction=positionSide,
             market_index=2,
