@@ -14,7 +14,7 @@ from binance.spot import Spot
 
 def trade(symbol, price, stopPrice, sq):
     try:
-        if user_asset := float(spotBN.user_asset(asset='USDT')[0]['free']) < 5:
+        if (user_asset := float(spotBN.user_asset(asset='USDT')[0]['free'])) < 5:
             return
         params = {
             "symbol": symbol,
@@ -26,7 +26,7 @@ def trade(symbol, price, stopPrice, sq):
         params = {
             "symbol": symbol,
             "side": "SELL",
-            "quantity": spotBN.user_asset(asset=symbol)[0]['free'],
+            "quantity": float(spotBN.user_asset(asset=symbol)[0]['free']),
             "price": price,
             "stopPrice": stopPrice
         }
