@@ -23,6 +23,7 @@ from solders.keypair import Keypair
 
 async def main():
     symbol = 'ETHUSDT'
+    market_index = 2
     leverage = 20
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
@@ -42,7 +43,8 @@ async def main():
         PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
     # wallet= Wallet(Keypair.from_base58_string('26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
-    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[0, 2], spot_market_indexes=[0])
+    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[0, market_index],
+                               spot_market_indexes=[0])
     # 4. 订阅账户数据
     await drift_client.unsubscribe()
     await drift_client.subscribe()
@@ -78,7 +80,7 @@ async def main():
         balance = max(min(balance_bn, balance_drift), 6)
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
-                            market_index=2).price / 10e5)
+                            market_index=market_index).price / 10e5)
         amount = round(balance / markPrice, sp.get(symbol))
         if amount == 0:
             send_msg('账户余额不足')
@@ -114,7 +116,7 @@ async def main():
         order_params = OrderParams(
             market_type=MarketType.Perp(),
             order_type=OrderType.Market(),
-            market_index=2,
+            market_index=market_index,
             base_asset_amount=abs(base_asset_amount),
             direction=(
                 PositionDirection.Long()
@@ -137,7 +139,7 @@ async def main():
             market_type=MarketType.Perp(),
             order_type=OrderType.Market(),
             direction=positionSide,
-            market_index=2,
+            market_index=market_index,
             base_asset_amount=int(amount * BASE_PRECISION),
             price=0,
         )
@@ -150,8 +152,8 @@ async def main():
         print(datetime.now(), event, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             close_bn_position()
-        elif event.event_type == "FundingRateRecord" and event.data.market_index == 2:
-            positions = drift_user.get_perp_position(2)
+        elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
+            positions = drift_user.get_perp_position(market_index)
             funding_rate = event.data.funding_rate
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
@@ -181,7 +183,7 @@ async def main():
         message = json.loads(message)
         # asyncio.ensure_future(open_drift_position('LONG', 0.001), loop=loop)
         if 'autoclose' in message.get('o', {}).get('c', ''):
-            base_asset_amount = drift_user.get_perp_position(2).base_asset_amount
+            base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
             asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
 
     loop = asyncio.get_running_loop()
