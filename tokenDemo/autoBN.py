@@ -6,8 +6,6 @@ import re
 import traceback
 
 import akshare as ak
-import okx.MarketData as MarketData
-import okx.PublicData as PublicData
 import pandas as pd
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -307,6 +305,4 @@ if __name__ == "__main__":
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
     spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
-    marketDataOKX = MarketData.MarketAPI(flag='0', debug=False)
-    publicDataOKX = PublicData.PublicAPI(flag='0', debug=False)
     asyncio.run(main())
