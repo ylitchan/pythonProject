@@ -121,13 +121,14 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
 async def rzq_market(market):
     now = datetime.datetime.now()
     symbols = []
+    alert = alert_all.get(market, {})
     for i in range(10):
         try:
             # 获取所有交易对信息
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             # 提取所有交易对
             sq = {symbol['symbol']: symbol['quotePrecision'] for symbol in exchange_info['symbols'] if
-                  'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
+                  symbol not in alert and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
             symbols = list(sq.keys())
             break
         except:
@@ -135,7 +136,6 @@ async def rzq_market(market):
             await asyncio.sleep(2)
     semaphore = asyncio.Semaphore(10)  # 限制 2 个并发
     print(now, f'{market}任务开始', len(symbols))
-    alert = alert_all.get(market, {})
     POSITIONS = alert_all.get("POSITIONS", {})
     if now.hour == 8 and now.minute < 2:
         alert.clear()
@@ -143,7 +143,7 @@ async def rzq_market(market):
     success = set()
     alert_m = {}
     alert_final = []
-    tasks = [rzq_token(semaphore, symbol, alert, success, alert_m) for symbol in symbols if symbol not in alert]
+    tasks = [rzq_token(semaphore, symbol, alert, success, alert_m) for symbol in symbols]
     await asyncio.gather(*tasks)
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
