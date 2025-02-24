@@ -50,7 +50,6 @@ async def main():
     await drift_client.subscribe()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
-    account_subscriber = drift_client.account_subscriber
     # 配置事件订阅
     options = EventSubscriptionOptions(
         event_types=('FundingRateRecord', 'LiquidationRecord'),
