@@ -210,13 +210,6 @@ async def main():
                 except:
                     send_msg(f"drift开仓失败")
                     return
-                    # 检查是否是自己的账户被清算
-        # if event.data.user == user_public_key:
-        #     print(f"我的仓位被强平！清算详情: {event.data}")
-        #     # 提取更多信息，例如清算的市场和数量
-        #     market_index = event.data.market_index
-        #     liquidated_amount = event.data.base_asset_amount / 1e9  # 转换为可读单位
-        #     print(f"市场索引: {market_index}, 清算数量: {liquidated_amount}")
 
     event_subscriber.event_emitter.new_event += drift_callback
 
