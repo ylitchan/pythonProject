@@ -136,7 +136,6 @@ async def rzq_market(market):
         except:
             traceback.print_exc()
             await asyncio.sleep(2)
-    alert_all = {'BN': {}, 'OKX': {}, 'POSITIONS': {}}
     semaphore = asyncio.Semaphore(10)  # 限制 2 个并发
     print(now, f'{market}任务开始', len(symbols))
     alert = alert_all.get(market, {})
@@ -299,4 +298,5 @@ if __name__ == "__main__":
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
     spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
+    alert_all = {'BN': {}, 'POSITIONS': {}}
     asyncio.run(main())
