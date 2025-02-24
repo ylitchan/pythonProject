@@ -28,7 +28,7 @@ async def main():
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
     # wallet = Wallet(Keypair.from_base58_string(
     #     '26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
-    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[2],
+    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[0, 2],
                                spot_market_indexes=[0])
 
     # tx_sig = await drift_client.initialize_user(sub_account_id=0, name=None)
@@ -38,25 +38,23 @@ async def main():
     await drift_client.subscribe()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
-    account_subscriber = drift_client.account_subscriber
-    for market_index in {i.market_index for i in drift_user.get_user_account().spot_positions}:
-        await account_subscriber.subscribe_to_perp_market(market_index)
-    drift_user.get_free_collateral()
-    position = drift_user.get_perp_position(2)
-    order_params = OrderParams(
-        order_type=OrderType.Market(),
-        market_index=2,
-        base_asset_amount=abs(int(position.base_asset_amount)),
-        direction=(
-            PositionDirection.Long()
-            if position.base_asset_amount < 0
-            else PositionDirection.Short()
-        ),
-        price=0,
-        reduce_only=True,
-    )
-    await drift_client.place_perp_order(order_params)
-    await drift_client.close_position(2)
+    free_collateral = drift_user.get_free_collateral()
+    print(free_collateral)
+    # position = drift_user.get_perp_position(2)
+    # order_params = OrderParams(
+    #     order_type=OrderType.Market(),
+    #     market_index=2,
+    #     base_asset_amount=abs(int(position.base_asset_amount)),
+    #     direction=(
+    #         PositionDirection.Long()
+    #         if position.base_asset_amount < 0
+    #         else PositionDirection.Short()
+    #     ),
+    #     price=0,
+    #     reduce_only=True,
+    # )
+    # await drift_client.place_perp_order(order_params)
+    # await drift_client.close_position(2)
 
     # 配置事件订阅
     options = EventSubscriptionOptions(
@@ -76,9 +74,9 @@ async def main():
 
     def liquidation_callback(event: WrappedEvent):
         """处理清算事件"""
+        print(datetime.now(), event, '\n')
         if event.event_type not in ["LiquidationRecord", "FundingPaymentRecord", "FundingRateRecord"]:
             return
-        print(datetime.now(), event, '\n')
         if event.event_type not in ["LiquidationRecord"]:
             print(event)
         # 检查是否是自己的账户被清算
@@ -90,8 +88,8 @@ async def main():
         #     print(f"市场索引: {market_index}, 清算数量: {liquidated_amount}")
 
     event_subscriber.event_emitter.new_event += liquidation_callback
-    while True:
-        await asyncio.sleep(1)
+    stop_event = asyncio.Event()
+    await stop_event.wait()  # 等待事件触发
 
     async def deposit_usdc(drift_client, amount_usdc):
         try:

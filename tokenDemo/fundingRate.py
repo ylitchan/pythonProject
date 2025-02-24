@@ -157,6 +157,7 @@ async def main():
 
     def message_handler(_, message):
         print(datetime.now(), message, '\n')
+        client.renew_listen_key(listenKey=listenKey)
         message = json.loads(message)
         # asyncio.ensure_future(open_drift_position('LONG', 0.001), loop=loop)
         if 'autoclose' in message.get('o', {}).get('c', ''):
@@ -166,9 +167,8 @@ async def main():
     loop = asyncio.get_running_loop()
     my_client = UMFuturesWebsocketClient(on_message=message_handler)
     my_client.user_data(listen_key=listenKey)
-    while 1:
-        await asyncio.sleep(1)
-        # client.renew_listen_key(listenKey=listenKey)
+    stop_event = asyncio.Event()
+    await stop_event.wait()  # 等待事件触发
     my_client.stop()
     logging.debug("closing ws connection")
 
