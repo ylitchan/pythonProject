@@ -78,11 +78,12 @@ async def main():
         balance_drift = drift_user.get_free_collateral() / 10e5
         balance = min(balance_bn, balance_drift)
         if balance < 6:
-            return 0
-        markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
-                        drift_client.get_oracle_price_data_for_perp_market(
-                            market_index=market_index).price / 10e5)
-        amount = round(balance / markPrice, sp.get(symbol))
+            amount = 0
+        else:
+            markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
+                            drift_client.get_oracle_price_data_for_perp_market(
+                                market_index=market_index).price / 10e5)
+            amount = round(balance / markPrice, sp.get(symbol))
         if amount == 0:
             send_msg('账户余额不足')
         return amount * leverage
