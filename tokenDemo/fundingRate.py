@@ -95,7 +95,7 @@ async def main():
             quantity=amount,
             positionSide=positionSide,
         )
-        msg = f'币安开仓成功，{response}'
+        msg = f'bn开仓成功，交易数量:{response.json().get("origQty", 0)}'
         send_msg(msg)
 
     def close_bn_position():
@@ -109,7 +109,7 @@ async def main():
             quantity=abs(float(positionAmt)),
             positionSide=positionSide,
         )
-        msg = f'币安平仓成功，{response}'
+        msg = f'bn平仓成功，交易数量:{response.json().get("origQty", 0)}'
         send_msg(msg)
 
     async def close_drift_position(base_asset_amount):
@@ -127,7 +127,7 @@ async def main():
             reduce_only=True,
         )
         tx_sig = await drift_client.place_perp_order(order_params)
-        msg = f"drift平仓成功，交易签名: {tx_sig}"
+        msg = f"drift平仓成功，交易签名:{tx_sig}"
         send_msg(msg)
 
     async def open_drift_position(positionSide, amount):
@@ -144,7 +144,7 @@ async def main():
             price=0,
         )
         tx_sig = await drift_client.place_perp_order(order_params)
-        msg = f"drift开仓成功，交易签名: {tx_sig}"
+        msg = f"drift开仓成功，交易签名:{tx_sig}"
         send_msg(msg)
 
     def drift_callback(event: WrappedEvent):
