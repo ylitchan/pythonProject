@@ -151,6 +151,7 @@ async def main():
         """处理清算事件"""
         print(datetime.now(), event, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
+            send_msg(f'drift清算{symbol}')
             close_bn_position()
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
@@ -187,6 +188,7 @@ async def main():
         message = json.loads(message)
         # asyncio.ensure_future(open_drift_position('LONG', 0.001), loop=loop)
         if 'autoclose' in message.get('o', {}).get('c', ''):
+            send_msg(f'bn清算{symbol}')
             base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
             task = asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
             loop.run_until_complete(task)
