@@ -22,7 +22,7 @@ from solders.keypair import Keypair
 
 
 async def main():
-    symbol='ETHUSDT'
+    symbol = 'ETHUSDT'
     leverage = 20
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
