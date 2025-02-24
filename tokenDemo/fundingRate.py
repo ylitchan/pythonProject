@@ -76,7 +76,9 @@ async def main():
     def get_amount():
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / 10e5
-        balance = max(min(balance_bn, balance_drift), 6)
+        balance = min(balance_bn, balance_drift)
+        if balance < 6:
+            return 0
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=market_index).price / 10e5)
@@ -163,6 +165,8 @@ async def main():
                 task = asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
                 loop.run_until_complete(task)
             amount = get_amount()
+            if amount == 0:
+                return
             if funding_rate > 0:
                 open_bn_position("LONG", amount)
                 task = asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
