@@ -110,6 +110,7 @@ async def main():
 
     async def close_drift_position(base_asset_amount):
         order_params = OrderParams(
+            market_type=MarketType.Perp(),
             order_type=OrderType.Market(),
             market_index=2,
             base_asset_amount=abs(base_asset_amount),
