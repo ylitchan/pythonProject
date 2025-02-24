@@ -128,7 +128,7 @@ async def rzq_market(market):
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             # 提取所有交易对
             sq = {symbol['symbol']: symbol['quotePrecision'] for symbol in exchange_info['symbols'] if
-                  symbol not in alert and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
+                  symbol['symbol'] not in alert and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
             symbols = list(sq.keys())
             break
         except:
