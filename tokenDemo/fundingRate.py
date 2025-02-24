@@ -158,15 +158,18 @@ async def main():
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
             elif positions and positions.base_asset_amount:
-                asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
                 close_bn_position()
+                task = asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
+                loop.run_until_complete(task)
             amount = get_amount()
             if funding_rate > 0:
                 open_bn_position("LONG", amount)
-                asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
+                task = asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
+                loop.run_until_complete(task)
             elif funding_rate < 0:
                 open_bn_position("SHORT", amount)
-                asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
+                task = asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
+                loop.run_until_complete(task)
         # 检查是否是自己的账户被清算
         # if event.data.user == user_public_key:
         #     print(f"我的仓位被强平！清算详情: {event.data}")
@@ -184,7 +187,8 @@ async def main():
         # asyncio.ensure_future(open_drift_position('LONG', 0.001), loop=loop)
         if 'autoclose' in message.get('o', {}).get('c', ''):
             base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
-            asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
+            task = asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
+            loop.run_until_complete(task)
 
     loop = asyncio.get_running_loop()
     my_client = UMFuturesWebsocketClient(on_message=message_handler)
