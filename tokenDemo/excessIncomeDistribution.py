@@ -197,7 +197,11 @@ if __name__ == "__main__":
             while datetime.now().minute <= 30:
                 try:
                     for tx in w3.eth.filter('pending').get_new_entries():
-                        tx = w3.eth.get_transaction(tx)
+                        try:
+                            tx = w3.eth.get_transaction(tx)
+                        except:
+                            print('没找到交易，继续读取', tx)
+                            continue
                         if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
                             'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
                             gas_price = tx['gasPrice'] + int(w3.eth.gas_price * 0.1)
