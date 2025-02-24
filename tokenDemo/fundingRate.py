@@ -224,7 +224,6 @@ async def main():
         print(datetime.now(), message, '\n')
         client.renew_listen_key(listenKey=listenKey)
         message = json.loads(message)
-        # asyncio.ensure_future(open_drift_position('LONG', 0.001), loop=loop)
         if 'autoclose' in message.get('o', {}).get('c', ''):
             send_msg(f'bn清算{symbol}')
             try:
