@@ -76,9 +76,6 @@ def get_max_decimal_places(price_s):
 
 
 async def rzq_token(semaphore, symbol, alert, success, alert_m):
-    if symbol in alert:
-        success.add(symbol)
-        return
     try:
         kline = await get_kline(semaphore, symbol, "1Dutc")
         success.add(symbol)
@@ -104,7 +101,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             2] > price_close:
             return
         max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
-        zf = round((kline[-2][4] / kline[index_s][1] - 1) * 100, 2)
+        zf = round(sum(map(lambda k: k[4] / k[1] - 1, kline)) * 100, 2)
         zf_m = zf / (len(kline) - 1 - index_s)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
