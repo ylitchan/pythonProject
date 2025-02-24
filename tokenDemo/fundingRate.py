@@ -22,6 +22,7 @@ from solders.keypair import Keypair
 
 
 async def main():
+    leverage = 20
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -80,10 +81,10 @@ async def main():
         amount = round(balance / markPrice, sp.get('ETHUSDT'))
         if amount == 0:
             send_msg('账户余额不足')
-        return amount * 5
+        return amount * leverage
 
     def open_bn_position(positionSide, amount):
-        um_futures_client.change_leverage(symbol='ETHUSDT', leverage=5)
+        um_futures_client.change_leverage(symbol='ETHUSDT', leverage=leverage)
         response = um_futures_client.new_order(
             symbol="ETHUSDT",
             side=open_map.get(positionSide),
