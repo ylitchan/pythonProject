@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import datetime
 
+import requests
 from anchorpy import Wallet
 from binance.lib.utils import config_logging
 from binance.um_futures import UMFutures
@@ -24,11 +25,13 @@ async def main():
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
-    with open(r'D:\PycharmProjects\pythonProject\tokenDemo\bn.json', 'r') as f:
+    with open(r'bn.json', 'r') as f:
         bn_api = json.load(f)
     client = UMFutures(bn_api.get('api_key'))
     listenKey = client.new_listen_key()["listenKey"]
     logging.info("Listen key : {}".format(listenKey))
+    session = requests.Session()
+    session.headers = {'Content-Type': 'application/json'}
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
     sp = {i['symbol']: i['quantityPrecision'] for i in um_futures_client.exchange_info()['symbols']}
     url = 'https://mainnet.helius-rpc.com/?api-key=346cd7c9-73a9-4916-a150-4157181b99dc'  # replace w/ any rpc
@@ -37,15 +40,13 @@ async def main():
         PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
     # wallet= Wallet(Keypair.from_base58_string('26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
-    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[2], spot_market_indexes=[0])
+    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[0, 2], spot_market_indexes=[0])
     # 4. 订阅账户数据
     await drift_client.unsubscribe()
     await drift_client.subscribe()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
     account_subscriber = drift_client.account_subscriber
-    for market_index in {i.market_index for i in drift_user.get_user_account().spot_positions}:
-        await account_subscriber.subscribe_to_perp_market(market_index)
     # 配置事件订阅
     options = EventSubscriptionOptions(
         event_types=('FundingRateRecord', 'LiquidationRecord'),
@@ -55,10 +56,19 @@ async def main():
         order_dir="asc",
         log_provider_config=WebsocketLogProviderConfig()
     )
-
     event_subscriber = EventSubscriber(connection, drift_client.program, options)
     event_subscriber.unsubscribe()
     event_subscriber.subscribe()
+
+    def send_msg(msg):
+        print(msg)
+        json_msg = {
+            "msgtype": "text",
+            "text": {'content': msg}
+        }
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            json=json_msg)
 
     def get_amount():
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
@@ -68,6 +78,8 @@ async def main():
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=2).price)
         amount = round(balance / markPrice, sp.get('ETHUSDT'))
+        if not amount:
+            send_msg('账户余额不足')
         return amount * 5
 
     def open_bn_position(positionSide, amount):
@@ -79,7 +91,8 @@ async def main():
             quantity=amount,
             positionSide=positionSide,
         )
-        logging.info(f'币安开仓成功，{response}')
+        msg = f'币安开仓成功，{response}'
+        send_msg(msg)
 
     def close_bn_position():
         position = um_futures_client.get_position_risk()[0]
@@ -92,7 +105,8 @@ async def main():
             quantity=abs(float(positionAmt)),
             positionSide=positionSide,
         )
-        logging.info(f'币安平仓成功，{response}')
+        msg = f'币安平仓成功，{response}'
+        send_msg(msg)
 
     async def close_drift_position(base_asset_amount):
         order_params = OrderParams(
@@ -108,7 +122,8 @@ async def main():
             reduce_only=True,
         )
         tx_sig = await drift_client.place_perp_order(order_params)
-        print(f"drift平仓成功，交易签名: {tx_sig}")
+        msg = f"drift平仓成功，交易签名: {tx_sig}"
+        send_msg(msg)
 
     async def open_drift_position(positionSide, amount):
         if positionSide == "LONG":
@@ -123,7 +138,8 @@ async def main():
             price=0,
         )
         tx_sig = await drift_client.place_perp_order(order_params)
-        print(f"drift开仓成功，交易签名: {tx_sig}")
+        msg = f"drift开仓成功，交易签名: {tx_sig}"
+        send_msg(msg)
 
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
