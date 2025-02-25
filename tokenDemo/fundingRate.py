@@ -175,7 +175,7 @@ async def main():
 
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
-        print(datetime.now(), event, '\n')
+        print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
             try:
@@ -207,7 +207,7 @@ async def main():
     event_subscriber.event_emitter.new_event += drift_callback
 
     def message_handler(_, message):
-        print(datetime.now(), message, '\n')
+        print(datetime.now(), 'bn事件', message, '\n')
         client.renew_listen_key(listenKey=listenKey)
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', ''):
