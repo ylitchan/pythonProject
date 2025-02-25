@@ -209,6 +209,7 @@ async def main():
 
     def message_handler(_, message):
         print(datetime.now(), message, '\n')
+        client.renew_listen_key(listenKey=listenKey)
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', ''):
             send_msg(f'bn清算{symbol}')
@@ -220,7 +221,7 @@ async def main():
                 send_msg(f'{symbol}平对手仓drift失败')
 
     loop = asyncio.get_running_loop()
-    my_client = UMFuturesWebsocketClient(on_message=message_handler, is_combined=True)
+    my_client = UMFuturesWebsocketClient(on_message=message_handler)
     my_client.user_data(listen_key=listenKey)
 
     def keep_listen():
@@ -229,7 +230,7 @@ async def main():
             print(datetime.now(), f'renew listen key:{listenKey}')
             time.sleep(1800)
 
-    await asyncio.to_thread(keep_listen)
+    # await asyncio.to_thread(keep_listen)
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发
     my_client.stop()
