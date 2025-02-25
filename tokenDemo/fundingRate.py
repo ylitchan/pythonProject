@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 
 import requests
@@ -74,19 +75,23 @@ async def main():
             json=json_msg)
 
     def get_amount():
+        quantityPrecision = sp.get(symbol)
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / 10e5
         balance = min(balance_bn, balance_drift)
         if balance < 6:
-            amount = 0
+            amout_round = 0
         else:
             markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                             drift_client.get_oracle_price_data_for_perp_market(
                                 market_index=market_index).price / 10e5)
-            amount = round(balance / markPrice, sp.get(symbol))
-        if amount == 0:
+            amout = balance / markPrice
+            amout_round = round(amout, sp.get(symbol))
+            if amout_round > amout:
+                amout_round = amout_round - 10 ** -quantityPrecision
+        if amout_round == 0:
             send_msg('账户余额不足')
-        return amount * leverage
+        return amout_round * leverage
 
     def open_bn_position(positionSide, amount):
         try:
@@ -98,7 +103,7 @@ async def main():
                 quantity=amount,
                 positionSide=positionSide,
             )
-            msg = f'bn开仓{symbol}成功，交易数量:{response.json().get("origQty", 0)}'
+            msg = f'bn开仓{symbol}成功，交易数量:{response.get("origQty", 0)}'
             send_msg(msg)
         except:
             msg = f'bn开仓{symbol}失败'
@@ -117,7 +122,7 @@ async def main():
                 quantity=abs(float(positionAmt)),
                 positionSide=positionSide,
             )
-            msg = f'bn平仓{symbol}成功，交易数量:{response.json().get("origQty", 0)}'
+            msg = f'bn平仓{symbol}成功，交易数量:{response.get("origQty", 0)}'
             send_msg(msg)
         except:
             msg = f'bn平仓{symbol}失败'
@@ -204,7 +209,6 @@ async def main():
 
     def message_handler(_, message):
         print(datetime.now(), message, '\n')
-        client.renew_listen_key(listenKey=listenKey)
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', ''):
             send_msg(f'bn清算{symbol}')
@@ -218,6 +222,14 @@ async def main():
     loop = asyncio.get_running_loop()
     my_client = UMFuturesWebsocketClient(on_message=message_handler)
     my_client.user_data(listen_key=listenKey)
+
+    def keep_listen():
+        while 1:
+            client.renew_listen_key(listenKey=listenKey)
+            print(datetime.now(), f'renew listen key:{listenKey}')
+            time.sleep(1800)
+
+    await asyncio.to_thread(keep_listen)
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发
     my_client.stop()
