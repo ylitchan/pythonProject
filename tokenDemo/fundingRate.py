@@ -5,6 +5,7 @@ import json
 import logging
 import time
 from datetime import datetime
+from decimal import ROUND_DOWN, Decimal
 
 import requests
 from anchorpy import Wallet
@@ -85,10 +86,8 @@ async def main():
             markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                             drift_client.get_oracle_price_data_for_perp_market(
                                 market_index=market_index).price / 10e5)
-            amout = balance / markPrice
-            amout_round = round(amout, sp.get(symbol))
-            if amout_round > amout:
-                amout_round = amout_round - 10 ** -quantityPrecision
+            amout = str(balance / markPrice)
+            amout_round = float(Decimal(amout).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN))
         if amout_round == 0:
             send_msg('账户余额不足')
         return amout_round * leverage

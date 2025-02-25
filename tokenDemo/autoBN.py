@@ -3,7 +3,7 @@ import datetime
 import gc
 import json
 import traceback
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 import akshare as ak
 import pandas as pd
@@ -28,10 +28,8 @@ def trade(symbol, price, stopPrice, symbols_info):
             "quoteOrderQty": round(usdt_free, quotePrecision)
         }
         spotBN.new_order(**params)
-        symbol_free = float(spotBN.user_asset(asset=symbol[:-4])[0]['free'])
-        symbol_free_round = round(symbol_free, minQty)
-        if symbol_free_round > symbol_free:
-            symbol_free_round = symbol_free_round - 10 ** -minQty
+        symbol_free = spotBN.user_asset(asset=symbol[:-4])[0]['free']
+        symbol_free_round = float(Decimal(symbol_free).quantize(Decimal(f'0.{"1" * minQty}'), rounding=ROUND_DOWN))
         params = {
             "symbol": symbol,
             "side": "SELL",
