@@ -10,23 +10,30 @@ import pandas as pd
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from binance.spot import Spot
+from jsonpath_ng import parse
 
 
-def trade(symbol, price, stopPrice, sq):
+def trade(symbol, price, stopPrice, symbols_info):
     try:
-        if (user_asset := float(spotBN.user_asset(asset='USDT')[0]['free'])) / 2 < 6:
+        if (usdt_free := float(spotBN.user_asset(asset='USDT')[0]['free'])) / 2 < 6:
             return
+        minQty = symbols_info.get(symbol).get('minQty')
+        quotePrecision = symbols_info.get(symbol).get('quotePrecision')
         params = {
             "symbol": symbol,
             "side": "BUY",
             "type": "MARKET",
-            "quoteOrderQty": round(user_asset, sq.get(symbol))
+            "quoteOrderQty": round(usdt_free, quotePrecision)
         }
         spotBN.new_order(**params)
+        symbol_free = float(spotBN.user_asset(asset=symbol[:-4])[0]['free'])
+        symbol_free_round = round(symbol_free, minQty)
+        if symbol_free_round > symbol_free:
+            symbol_free_round = symbol_free_round - 10 ** -minQty
         params = {
             "symbol": symbol,
             "side": "SELL",
-            "quantity": round(float(spotBN.user_asset(asset=symbol[:-4])[0]['free']), 1),
+            "quantity": symbol_free_round,
             "price": price,
             "stopPrice": stopPrice
         }
@@ -127,9 +134,12 @@ async def rzq_market(market):
             # 获取所有交易对信息
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             # 提取所有交易对
-            sq = {symbol['symbol']: symbol['quotePrecision'] for symbol in exchange_info['symbols'] if
-                  symbol['symbol'] not in alert and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
-            symbols = list(sq.keys())
+            symbols_info = {symbol['symbol']: {'quotePrecision': symbol['quotePrecision'], 'minQty': len(str(max(
+                map(lambda x: float(x), [y.value for y in parse('$..minQty').find(symbol)]))))} for symbol in
+                            exchange_info['symbols'] if
+                            symbol['symbol'] not in alert and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol[
+                                'status']}
+            symbols = list(symbols_info.keys())
             break
         except:
             traceback.print_exc()
@@ -153,7 +163,7 @@ async def rzq_market(market):
                 if j not in alert_m:
                     continue
                 if j not in POSITIONS:
-                    if trade(symbol=j, price=alert_m[j][3], stopPrice=alert_m[j][4], sq=sq):
+                    if trade(symbol=j, price=alert_m[j][3], stopPrice=alert_m[j][4], symbols_info=symbols_info):
                         POSITIONS.update({j: alert_m[j]})
                 if j in POSITIONS:
                     alert_final.append(

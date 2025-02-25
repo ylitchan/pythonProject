@@ -89,65 +89,85 @@ async def main():
         return amount * leverage
 
     def open_bn_position(positionSide, amount):
-        um_futures_client.change_leverage(symbol=symbol, leverage=leverage)
-        response = um_futures_client.new_order(
-            symbol=symbol,
-            side=open_map.get(positionSide),
-            type="MARKET",
-            quantity=amount,
-            positionSide=positionSide,
-        )
-        msg = f'bn开仓成功，交易数量:{response.json().get("origQty", 0)}'
-        return msg
+        try:
+            um_futures_client.change_leverage(symbol=symbol, leverage=leverage)
+            response = um_futures_client.new_order(
+                symbol=symbol,
+                side=open_map.get(positionSide),
+                type="MARKET",
+                quantity=amount,
+                positionSide=positionSide,
+            )
+            msg = f'bn开仓{symbol}成功，交易数量:{response.json().get("origQty", 0)}'
+            send_msg(msg)
+        except:
+            msg = f'bn开仓{symbol}失败'
+            send_msg(msg)
+            raise Exception(msg)
 
     def close_bn_position():
-        position = um_futures_client.get_position_risk()[0]
-        positionSide = position['positionSide']
-        positionAmt = position['positionAmt']
-        response = um_futures_client.new_order(
-            symbol=symbol,
-            side=close_map.get(positionSide),
-            type="MARKET",
-            quantity=abs(float(positionAmt)),
-            positionSide=positionSide,
-        )
-        msg = f'bn平仓成功，交易数量:{response.json().get("origQty", 0)}'
-        return msg
+        try:
+            position = um_futures_client.get_position_risk()[0]
+            positionSide = position['positionSide']
+            positionAmt = position['positionAmt']
+            response = um_futures_client.new_order(
+                symbol=symbol,
+                side=close_map.get(positionSide),
+                type="MARKET",
+                quantity=abs(float(positionAmt)),
+                positionSide=positionSide,
+            )
+            msg = f'bn平仓{symbol}成功，交易数量:{response.json().get("origQty", 0)}'
+            send_msg(msg)
+        except:
+            msg = f'bn平仓{symbol}失败'
+            send_msg(msg)
+            raise Exception(msg)
 
     async def close_drift_position(base_asset_amount):
-        order_params = OrderParams(
-            market_type=MarketType.Perp(),
-            order_type=OrderType.Market(),
-            market_index=market_index,
-            base_asset_amount=abs(base_asset_amount),
-            direction=(
-                PositionDirection.Long()
-                if base_asset_amount < 0
-                else PositionDirection.Short()
-            ),
-            price=0,
-            reduce_only=True,
-        )
-        tx_sig = await drift_client.place_perp_order(order_params)
-        msg = f"drift平仓成功，交易签名:{tx_sig}"
-        return msg
+        try:
+            order_params = OrderParams(
+                market_type=MarketType.Perp(),
+                order_type=OrderType.Market(),
+                market_index=market_index,
+                base_asset_amount=abs(base_asset_amount),
+                direction=(
+                    PositionDirection.Long()
+                    if base_asset_amount < 0
+                    else PositionDirection.Short()
+                ),
+                price=0,
+                reduce_only=True,
+            )
+            tx_sig = await drift_client.place_perp_order(order_params)
+            msg = f"drift平仓{symbol}成功，交易签名:{tx_sig}"
+            send_msg(msg)
+        except:
+            msg = f"drift平仓{symbol}失败"
+            send_msg(msg)
+            raise Exception(msg)
 
     async def open_drift_position(positionSide, amount):
-        if positionSide == "LONG":
-            positionSide = PositionDirection.Long()
-        else:
-            positionSide = PositionDirection.Short()
-        order_params = OrderParams(
-            market_type=MarketType.Perp(),
-            order_type=OrderType.Market(),
-            direction=positionSide,
-            market_index=market_index,
-            base_asset_amount=int(amount * BASE_PRECISION),
-            price=0,
-        )
-        tx_sig = await drift_client.place_perp_order(order_params)
-        msg = f"drift开仓成功，交易签名:{tx_sig}"
-        return msg
+        try:
+            if positionSide == "LONG":
+                positionSide = PositionDirection.Long()
+            else:
+                positionSide = PositionDirection.Short()
+            order_params = OrderParams(
+                market_type=MarketType.Perp(),
+                order_type=OrderType.Market(),
+                direction=positionSide,
+                market_index=market_index,
+                base_asset_amount=int(amount * BASE_PRECISION),
+                price=0,
+            )
+            tx_sig = await drift_client.place_perp_order(order_params)
+            msg = f"drift开仓{symbol}成功，交易签名:{tx_sig}"
+            send_msg(msg)
+        except:
+            msg = f"drift开仓{symbol}失败"
+            send_msg(msg)
+            raise Exception(msg)
 
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
@@ -155,10 +175,9 @@ async def main():
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
             try:
-                msg = close_bn_position()
-                send_msg(msg)
+                close_bn_position()
             except:
-                send_msg('平对手仓bn失败')
+                send_msg(f'{symbol}平对手仓bn失败')
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
             send_msg(f'{symbol}费率更新:{funding_rate}')
@@ -166,50 +185,20 @@ async def main():
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
             elif positions and positions.base_asset_amount:
-                try:
-                    msg = close_bn_position()
-                    send_msg(msg)
-                except:
-                    send_msg(f'bn平仓失败')
-                    return
-                try:
-                    task = asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
-                    msg = loop.run_until_complete(task)
-                    send_msg(msg)
-                except:
-                    send_msg(f'drift平仓失败')
-                    return
+                close_bn_position()
+                task = asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
+                loop.run_until_complete(task)
             amount = get_amount()
             if amount == 0:
                 return
             if funding_rate > 0:
-                try:
-                    msg = open_bn_position("LONG", amount)
-                    send_msg(msg)
-                except:
-                    send_msg(f'bn开仓失败')
-                    return
-                try:
-                    task = asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
-                    msg = loop.run_until_complete(task)
-                    send_msg(msg)
-                except:
-                    send_msg(f"drift开仓失败")
-                    return
+                open_bn_position("LONG", amount)
+                task = asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
+                loop.run_until_complete(task)
             elif funding_rate < 0:
-                try:
-                    msg = open_bn_position("SHORT", amount)
-                    send_msg(msg)
-                except:
-                    send_msg(f'bn开仓失败')
-                    return
-                try:
-                    task = asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
-                    msg = loop.run_until_complete(task)
-                    send_msg(msg)
-                except:
-                    send_msg(f"drift开仓失败")
-                    return
+                open_bn_position("SHORT", amount)
+                task = asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
+                loop.run_until_complete(task)
 
     event_subscriber.event_emitter.new_event += drift_callback
 
@@ -222,10 +211,9 @@ async def main():
             try:
                 base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
                 task = asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
-                msg = loop.run_until_complete(task)
-                send_msg(msg)
+                loop.run_until_complete(task)
             except:
-                send_msg('平对手仓drift失败')
+                send_msg(f'{symbol}平对手仓drift失败')
 
     loop = asyncio.get_running_loop()
     my_client = UMFuturesWebsocketClient(on_message=message_handler)
