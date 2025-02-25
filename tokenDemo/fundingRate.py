@@ -175,8 +175,6 @@ async def main():
 
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
-        if event.data.market_index != market_index:
-            return
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
