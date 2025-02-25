@@ -2,7 +2,6 @@ import asyncio
 import datetime
 import gc
 import json
-import re
 import traceback
 from decimal import Decimal
 
@@ -79,12 +78,6 @@ async def get_kline(semaphore, symbol, t: str):
         return kline
 
 
-def get_max_decimal_places(price_s):
-    if p := re.search('\.\d+', price_s):
-        return len(p.group()) - 1
-    return 0
-
-
 async def rzq_token(semaphore, symbol, alert, success, alert_m):
     try:
         kline = await get_kline(semaphore, symbol, "1Dutc")
@@ -110,7 +103,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         if kline[index_e][5] < max([k[5] for k in kline[:index_e]]) * 2 or kline[-2][
             2] > price_close:
             return
-        max_decimal = max(map(get_max_decimal_places, map(str, kline_close)))
+        max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
         zf = round(sum(map(lambda k: k[4] / k[1] - 1, kline)) * 100, 2)
         zf_m = zf / (len(kline) - 1 - index_s)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
@@ -129,10 +122,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
 
 
 def get_minQty(minQty):
-    minQty = max(map(lambda x: float(x), minQty))
-    if minQty % 1:
-        return len(str(Decimal(str(minQty))).split('.')[1])
-    return 0
+    minQty = max(map(lambda x: Decimal(x).normalize(), minQty))
+    return -minQty.as_tuple().exponent
 
 
 async def rzq_market(market):
