@@ -4,6 +4,7 @@ import gc
 import json
 import re
 import traceback
+from decimal import Decimal
 
 import akshare as ak
 import pandas as pd
@@ -127,6 +128,13 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         return
 
 
+def get_minQty(minQty):
+    minQty = max(map(lambda x: float(x), minQty))
+    if minQty % 1:
+        return len(str(Decimal(str(minQty))).split('.')[1])
+    return 0
+
+
 async def rzq_market(market):
     now = datetime.datetime.now()
     symbols = []
@@ -136,9 +144,9 @@ async def rzq_market(market):
             # 获取所有交易对信息
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             # 提取所有交易对
-            symbols_info = {symbol['symbol']: {'quotePrecision': symbol['quotePrecision'], 'minQty': len(str(max(
-                map(lambda x: float(x), [y.value for y in parse('$..minQty').find(symbol)]))))} for symbol in
-                            exchange_info['symbols'] if
+            symbols_info = {symbol['symbol']: {'quotePrecision': symbol['quotePrecision'],
+                                               'minQty': get_minQty([y.value for y in parse('$..minQty').find(symbol)])}
+                            for symbol in exchange_info['symbols'] if
                             symbol['symbol'] not in alert and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol[
                                 'status']}
             symbols = list(symbols_info.keys())
@@ -286,7 +294,7 @@ def monitor_stocks():
 
 
 async def main():
-    monitor_stocks()
+    # monitor_stocks()
     await rzq_market('BN')
     # 设置任务调度
     scheduler.add_job(monitor_stocks, 'cron', hour='9', minute='30', second='00', day_of_week='mon-fri',
