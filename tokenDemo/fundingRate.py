@@ -220,7 +220,7 @@ async def main():
                 send_msg(f'{symbol}平对手仓drift失败')
 
     loop = asyncio.get_running_loop()
-    my_client = UMFuturesWebsocketClient(on_message=message_handler)
+    my_client = UMFuturesWebsocketClient(on_message=message_handler, is_combined=True)
     my_client.user_data(listen_key=listenKey)
 
     def keep_listen():
