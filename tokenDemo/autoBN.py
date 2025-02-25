@@ -15,8 +15,10 @@ from jsonpath_ng import parse
 
 def trade(symbol, price, stopPrice, symbols_info):
     try:
-        if (usdt_free := float(spotBN.user_asset(asset='USDT')[0]['free'])) / 2 < 6:
+        if (usdt_free := float(spotBN.user_asset(asset='USDT')[0]['free'])) < 6:
             return
+        elif usdt_free >= 12:
+            usdt_free = usdt_free / 2
         minQty = symbols_info.get(symbol).get('minQty')
         quotePrecision = symbols_info.get(symbol).get('quotePrecision')
         params = {
