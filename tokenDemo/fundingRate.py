@@ -96,14 +96,14 @@ async def main():
     def open_bn_position(positionSide, amount):
         try:
             um_futures_client.change_leverage(symbol=symbol, leverage=leverage)
-            response = um_futures_client.new_order(
+            tx = um_futures_client.new_order(
                 symbol=symbol,
                 side=open_map.get(positionSide),
                 type="MARKET",
                 quantity=amount,
                 positionSide=positionSide,
             )
-            msg = f'bn开仓{symbol}成功，交易数量:{response.get("origQty", 0)}'
+            msg = f'bn开仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
             send_msg(msg)
         except:
             msg = f'bn开仓{symbol}失败'
@@ -115,14 +115,14 @@ async def main():
             position = um_futures_client.get_position_risk()[0]
             positionSide = position['positionSide']
             positionAmt = position['positionAmt']
-            response = um_futures_client.new_order(
+            tx = um_futures_client.new_order(
                 symbol=symbol,
                 side=close_map.get(positionSide),
                 type="MARKET",
                 quantity=abs(float(positionAmt)),
                 positionSide=positionSide,
             )
-            msg = f'bn平仓{symbol}成功，交易数量:{response.get("origQty", 0)}'
+            msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
             send_msg(msg)
         except:
             msg = f'bn平仓{symbol}失败'
