@@ -222,7 +222,7 @@ async def main():
         print(datetime.now(), 'bn错误', message, '\n')
         send_msg(f'bn错误{message}')
         _.create_ws_connection()
-        _.run()
+        my_client.socket_manager.start()
         my_client.user_data(listen_key=listenKey)
         send_msg(f'bn重连成功')
         um_futures_client.renew_listen_key(listenKey=listenKey)
