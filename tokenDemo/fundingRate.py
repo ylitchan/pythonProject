@@ -77,6 +77,7 @@ async def main():
         quantityPrecision = sp.get(symbol)
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / 10e5
+        send_msg(f'bn余额{balance_bn}\ndrift余额{balance_drift}')
         balance = min(balance_bn, balance_drift)
         if balance < 6:
             amout_round = 0
@@ -142,7 +143,7 @@ async def main():
                 reduce_only=True,
             )
             tx_sig = await drift_client.place_perp_order(order_params)
-            msg = f"drift平仓{symbol}成功，交易签名:{tx_sig}"
+            msg = f"drift平仓{symbol}成功，交易数量:{base_asset_amount}，交易签名:{tx_sig}"
             send_msg(msg)
         except:
             msg = f"drift平仓{symbol}失败"
@@ -164,7 +165,7 @@ async def main():
                 price=0,
             )
             tx_sig = await drift_client.place_perp_order(order_params)
-            msg = f"drift开仓{symbol}成功，交易签名:{tx_sig}"
+            msg = f"drift开仓{symbol}成功，交易数量:{amount}，交易签名:{tx_sig}"
             send_msg(msg)
         except:
             msg = f"drift开仓{symbol}失败"
@@ -203,10 +204,11 @@ async def main():
 
     def message_handler(_, message):
         print(datetime.now(), 'bn事件', message, '\n')
+        send_msg(f'bn事件{message}')
         um_futures_client.renew_listen_key(listenKey=listenKey)
         print(datetime.now(), f'renew listen key:{listenKey}')
         message = json.loads(message)
-        if 'autoclose' in message.get('o', {}).get('c', ''):
+        if 'autoclose' in message.get('o', {}).get('c', '') and message.get('0', {}).get('x') == 'NEW':
             send_msg(f'bn清算{symbol}')
             try:
                 base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
@@ -218,13 +220,17 @@ async def main():
 
     def error_handler(_, message):
         print(datetime.now(), 'bn错误', message, '\n')
+        send_msg(f'bn错误{message}')
         _.create_ws_connection()
         _.read_data()
+        _.ws.send(listenKey)
+        send_msg(f'bn重连成功')
         um_futures_client.renew_listen_key(listenKey=listenKey)
         print(datetime.now(), f'renew listen key:{listenKey}')
 
     def open_handler(_):
         print(datetime.now(), 'bn连接', '\n')
+        send_msg('bn连接成功')
         um_futures_client.renew_listen_key(listenKey=listenKey)
         print(datetime.now(), f'renew listen key:{listenKey}')
 
