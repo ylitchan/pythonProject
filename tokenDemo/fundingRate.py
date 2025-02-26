@@ -188,19 +188,16 @@ async def main():
                 return
             elif positions and positions.base_asset_amount:
                 close_bn_position()
-                task = asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
-                loop.run_until_complete(task)
+                asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
             amount = get_amount()
             if amount == 0:
                 return
             if funding_rate > 0:
                 open_bn_position("LONG", amount)
-                task = asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
-                loop.run_until_complete(task)
+                asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
             elif funding_rate < 0:
                 open_bn_position("SHORT", amount)
-                task = asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
-                loop.run_until_complete(task)
+                asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
 
     event_subscriber.event_emitter.new_event += drift_callback
 
@@ -213,8 +210,7 @@ async def main():
             send_msg(f'bn清算{symbol}')
             try:
                 base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
-                task = asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
-                loop.run_until_complete(task)
+                asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
             except:
                 send_msg(f'{symbol}平对手仓drift失败')
 
@@ -234,6 +230,9 @@ async def main():
 
     my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler, on_open=open_handler)
     my_client.user_data(listen_key=listenKey)
+    # amount = get_amount()
+    # open_bn_position("LONG", amount)
+    # asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发
 
