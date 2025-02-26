@@ -223,10 +223,16 @@ async def main():
     def error_handler(_, message):
         print(datetime.now(), 'bn错误', message, '\n')
         _.create_ws_connection()
+        _.read_data()
         um_futures_client.renew_listen_key(listenKey=listenKey)
         print(datetime.now(), f'renew listen key:{listenKey}')
 
-    my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler)
+    def open_handler(_):
+        print(datetime.now(), 'bn连接', '\n')
+        um_futures_client.renew_listen_key(listenKey=listenKey)
+        print(datetime.now(), f'renew listen key:{listenKey}')
+
+    my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler, on_open=open_handler)
     my_client.user_data(listen_key=listenKey)
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发
