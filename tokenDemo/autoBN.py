@@ -95,14 +95,14 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             return
         kline_close = [k[4] for k in kline]
         index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
-        if kline[index_s][4] <= kline[index_s][1]:
+        if kline[index_s][4] <= kline[index_s][1] or kline[index_e][3] > kline[-2][4]:
             index_s += 1
         price_close = kline[-1][4]
         if kline[index_e][5] < max([k[5] for k in kline[:index_e]]) * 2 or kline[-2][
             2] > price_close:
             return
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
-        zf = round(sum(map(lambda k: k[4] / k[1] - 1, kline)) * 100, 2)
+        zf = round(sum(map(lambda k: k[4] / k[1] - 1, kline[index_s:-1])) * 100, 2)
         zf_m = zf / (len(kline) - 1 - index_s)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)

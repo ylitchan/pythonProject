@@ -197,7 +197,7 @@ if __name__ == "__main__":
                         try:
                             tx = w3.eth.get_transaction(tx)
                         except:
-                            print('没找到交易，继续读取', tx)
+                            print('没找到交易，继续读取', tx.hex())
                             continue
                         if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
                             'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
@@ -206,7 +206,6 @@ if __name__ == "__main__":
                             print(datetime.now(), 'gas修改抢跑', gas_price, tx)
                             break
                 except:
-                    traceback.print_exc()
                     continue
 
         t = Thread(target=job2)
