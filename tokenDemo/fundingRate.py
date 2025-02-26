@@ -31,10 +31,11 @@ async def main():
     config_logging(logging, logging.INFO)
     with open(r'bn.json', 'r') as f:
         bn_api = json.load(f)
-    client = UMFutures(bn_api.get('api_key'))
     session = requests.Session()
     session.headers = {'Content-Type': 'application/json'}
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
+    listenKey = um_futures_client.new_listen_key()["listenKey"]
+    logging.info("Listen key : {}".format(listenKey))
     sp = {i['symbol']: i['quantityPrecision'] for i in um_futures_client.exchange_info()['symbols']}
     url = 'https://mainnet.helius-rpc.com/?api-key=346cd7c9-73a9-4916-a150-4157181b99dc'  # replace w/ any rpc
     connection = AsyncClient(url)
@@ -205,6 +206,8 @@ async def main():
 
     def message_handler(_, message):
         print(datetime.now(), 'bn事件', message, '\n')
+        um_futures_client.renew_listen_key(listenKey=listenKey)
+        print(datetime.now(), f'renew listen key:{listenKey}')
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', ''):
             send_msg(f'bn清算{symbol}')
@@ -217,24 +220,14 @@ async def main():
 
     loop = asyncio.get_running_loop()
 
-    # my_client = UMFuturesWebsocketClient(on_message=message_handler)
-    # my_client.user_data(listen_key=listenKey)
+    def error_handler(_, message):
+        print(datetime.now(), 'bn错误', message, '\n')
+        _.create_ws_connection()
+        um_futures_client.renew_listen_key(listenKey=listenKey)
+        print(datetime.now(), f'renew listen key:{listenKey}')
 
-    async def keep_listen():
-        while 1:
-            try:
-                listenKey = client.new_listen_key()["listenKey"]
-                logging.info("Listen key : {}".format(listenKey))
-                my_client = UMFuturesWebsocketClient(on_message=message_handler)
-                my_client.user_data(listen_key=listenKey)
-                while 1:
-                    await asyncio.sleep(1800)
-                    client.renew_listen_key(listenKey=listenKey)
-                    print(datetime.now(), f'renew listen key:{listenKey}')
-            except:
-                print(datetime.now(), f'closing ws connection')
-
-    await asyncio.ensure_future(keep_listen())
+    my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler)
+    my_client.user_data(listen_key=listenKey)
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发
 
