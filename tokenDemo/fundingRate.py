@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import time
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
 
@@ -220,20 +219,21 @@ async def main():
                 send_msg(f'{symbol}平对手仓drift失败')
 
     loop = asyncio.get_running_loop()
-    my_client = UMFuturesWebsocketClient(on_message=message_handler)
-    my_client.user_data(listen_key=listenKey)
 
-    def keep_listen():
+    # my_client = UMFuturesWebsocketClient(on_message=message_handler)
+    # my_client.user_data(listen_key=listenKey)
+
+    async def keep_listen():
         while 1:
-            client.renew_listen_key(listenKey=listenKey)
-            print(datetime.now(), f'renew listen key:{listenKey}')
-            time.sleep(1800)
+            try:
+                my_client = UMFuturesWebsocketClient(on_message=message_handler)
+                my_client.user_data(listen_key=listenKey)
+            except:
+                print(datetime.now(), f'closing ws connection and renew listen key:{listenKey}')
 
-    # await asyncio.to_thread(keep_listen)
+    await asyncio.ensure_future(keep_listen())
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发
-    my_client.stop()
-    logging.debug("closing ws connection")
 
 
 asyncio.run(main())
