@@ -32,8 +32,6 @@ async def main():
     with open(r'bn.json', 'r') as f:
         bn_api = json.load(f)
     client = UMFutures(bn_api.get('api_key'))
-    listenKey = client.new_listen_key()["listenKey"]
-    logging.info("Listen key : {}".format(listenKey))
     session = requests.Session()
     session.headers = {'Content-Type': 'application/json'}
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
@@ -207,7 +205,6 @@ async def main():
 
     def message_handler(_, message):
         print(datetime.now(), 'bn事件', message, '\n')
-        client.renew_listen_key(listenKey=listenKey)
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', ''):
             send_msg(f'bn清算{symbol}')
@@ -226,6 +223,8 @@ async def main():
     async def keep_listen():
         while 1:
             try:
+                listenKey = client.new_listen_key()["listenKey"]
+                logging.info("Listen key : {}".format(listenKey))
                 my_client = UMFuturesWebsocketClient(on_message=message_handler)
                 my_client.user_data(listen_key=listenKey)
                 while 1:
