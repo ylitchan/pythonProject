@@ -28,7 +28,7 @@ async def main():
     leverage = 20
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
-    config_logging(logging, logging.INFO)
+    config_logging(logging, logging.DEBUG)
     with open(r'bn.json', 'r') as f:
         bn_api = json.load(f)
     session = requests.Session()
