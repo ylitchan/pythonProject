@@ -228,8 +228,12 @@ async def main():
             try:
                 my_client = UMFuturesWebsocketClient(on_message=message_handler)
                 my_client.user_data(listen_key=listenKey)
+                while 1:
+                    await asyncio.sleep(1800)
+                    client.renew_listen_key(listenKey=listenKey)
+                    print(datetime.now(), f'renew listen key:{listenKey}')
             except:
-                print(datetime.now(), f'closing ws connection and renew listen key:{listenKey}')
+                print(datetime.now(), f'closing ws connection')
 
     await asyncio.ensure_future(keep_listen())
     stop_event = asyncio.Event()
