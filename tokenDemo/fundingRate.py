@@ -225,10 +225,10 @@ async def main():
                 send_msg(f'bn错误{message}')
                 my_client.socket_manager = my_client._initialize_socket(
                     stream_url="wss://fstream.binance.com/ws",
-                    on_message=None,
-                    on_open=None,
+                    on_message=message_handler,
+                    on_open=open_handler,
                     on_close=None,
-                    on_error=None,
+                    on_error=error_handler,
                     on_ping=None,
                     on_pong=None,
                     proxies=None,
