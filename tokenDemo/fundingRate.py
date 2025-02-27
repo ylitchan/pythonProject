@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import time
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
 
@@ -249,7 +248,7 @@ async def main():
     my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler, on_open=open_handler)
     my_client.user_data(listen_key=listenKey)
     while 1:
-        time.sleep(1800)
+        await asyncio.sleep(1800)
         um_futures_client.renew_listen_key(listenKey=listenKey)
         print(datetime.now(), f'renew listen key:{listenKey}')
     stop_event = asyncio.Event()
