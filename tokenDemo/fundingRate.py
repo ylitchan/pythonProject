@@ -11,7 +11,7 @@ from anchorpy import Wallet
 from binance.lib.utils import config_logging
 from binance.um_futures import UMFutures
 from binance.websocket.um_futures.websocket_client import UMFuturesWebsocketClient
-from driftpy.constants import BASE_PRECISION
+from driftpy.constants import BASE_PRECISION, FUNDING_RATE_PRECISION, PERCENTAGE_PRECISION_EXP, QUOTE_PRECISION
 from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
@@ -76,7 +76,7 @@ async def main():
     def get_amount():
         quantityPrecision = sp.get(symbol)
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
-        balance_drift = drift_user.get_free_collateral() / 10e5
+        balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn余额{balance_bn}\ndrift余额{balance_drift}')
         balance = min(balance_bn, balance_drift)
         if balance < 6:
@@ -84,7 +84,7 @@ async def main():
         else:
             markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                             drift_client.get_oracle_price_data_for_perp_market(
-                                market_index=market_index).price / 10e5)
+                                market_index=market_index).price / QUOTE_PRECISION)
             amout = str(balance / markPrice)
             amout_round = float(Decimal(amout).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN))
         if amout_round == 0:
@@ -183,7 +183,7 @@ async def main():
                 send_msg(f'{symbol}平对手仓bn失败')
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
-            send_msg(f'{symbol}费率更新:{round(funding_rate / 10e9 / 24, 6)}')
+            send_msg(f'{symbol}费率更新:{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}')
             positions = drift_user.get_perp_position(market_index)
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
