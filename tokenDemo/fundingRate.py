@@ -221,11 +221,22 @@ async def main():
     def error_handler(_, message):
         print(datetime.now(), 'bn错误', message, '\n')
         send_msg(f'bn错误{message}')
-        _.create_ws_connection()
+        my_client.socket_manager = my_client._initialize_socket(
+            stream_url="wss://fstream.binance.com",
+            on_message=None,
+            on_open=None,
+            on_close=None,
+            on_error=None,
+            on_ping=None,
+            on_pong=None,
+            proxies=None,
+        )
+
+        # start the thread
         my_client.socket_manager.start()
+        um_futures_client.renew_listen_key(listenKey=listenKey)
         my_client.user_data(listen_key=listenKey)
         send_msg(f'bn重连成功')
-        um_futures_client.renew_listen_key(listenKey=listenKey)
         print(datetime.now(), f'renew listen key:{listenKey}')
 
     def open_handler(_):
