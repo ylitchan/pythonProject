@@ -231,7 +231,6 @@ async def main():
             on_pong=None,
             proxies=None,
         )
-
         # start the thread
         my_client.socket_manager.start()
         um_futures_client.renew_listen_key(listenKey=listenKey)
