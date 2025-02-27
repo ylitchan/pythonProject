@@ -183,7 +183,7 @@ async def main():
                 send_msg(f'{symbol}平对手仓bn失败')
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
-            send_msg(f'{symbol}费率更新:{funding_rate}')
+            send_msg(f'{symbol}费率更新:{round(funding_rate / 10e9, 5)}')
             positions = drift_user.get_perp_position(market_index)
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
