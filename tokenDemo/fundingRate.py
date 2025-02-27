@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
 
@@ -206,7 +207,7 @@ async def main():
         print(datetime.now(), 'bn事件', message, '\n')
         send_msg(f'bn事件{message}')
         um_futures_client.renew_listen_key(listenKey=listenKey)
-        print(datetime.now(), f'renew listen key:{listenKey}')
+        print(datetime.now(), f'message renew listen key:{listenKey}')
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', '') and message.get('0', {}).get('x') == 'NEW':
             send_msg(f'bn清算{symbol}')
@@ -230,22 +231,27 @@ async def main():
             on_ping=None,
             on_pong=None,
             proxies=None,
+            logger=logging.getLogger(__name__)
         )
         # start the thread
         my_client.socket_manager.start()
         um_futures_client.renew_listen_key(listenKey=listenKey)
         my_client.user_data(listen_key=listenKey)
         send_msg(f'bn重连成功')
-        print(datetime.now(), f'renew listen key:{listenKey}')
+        print(datetime.now(), f'error renew listen key:{listenKey}')
 
     def open_handler(_):
         print(datetime.now(), 'bn连接', '\n')
         send_msg('bn连接成功')
         um_futures_client.renew_listen_key(listenKey=listenKey)
-        print(datetime.now(), f'renew listen key:{listenKey}')
+        print(datetime.now(), f'open renew listen key:{listenKey}')
 
     my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler, on_open=open_handler)
     my_client.user_data(listen_key=listenKey)
+    while 1:
+        time.sleep(1800)
+        um_futures_client.renew_listen_key(listenKey=listenKey)
+        print(datetime.now(), f'renew listen key:{listenKey}')
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发
 
