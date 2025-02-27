@@ -242,8 +242,6 @@ async def main():
     def open_handler(_):
         print(datetime.now(), 'bn连接', '\n')
         send_msg('bn连接成功')
-        um_futures_client.renew_listen_key(listenKey=listenKey)
-        print(datetime.now(), f'open renew listen key:{listenKey}')
 
     my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler, on_open=open_handler)
     my_client.user_data(listen_key=listenKey)
