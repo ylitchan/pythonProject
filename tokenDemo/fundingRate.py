@@ -219,25 +219,30 @@ async def main():
     loop = asyncio.get_running_loop()
 
     def error_handler(_, message):
-        print(datetime.now(), 'bn错误', message, '\n')
-        send_msg(f'bn错误{message}')
-        my_client.socket_manager = my_client._initialize_socket(
-            stream_url="wss://fstream.binance.com/ws",
-            on_message=None,
-            on_open=None,
-            on_close=None,
-            on_error=None,
-            on_ping=None,
-            on_pong=None,
-            proxies=None,
-            logger=logging.getLogger(__name__)
-        )
-        # start the thread
-        my_client.socket_manager.start()
-        um_futures_client.renew_listen_key(listenKey=listenKey)
-        my_client.user_data(listen_key=listenKey)
-        send_msg(f'bn重连成功')
-        print(datetime.now(), f'error renew listen key:{listenKey}')
+        while 1:
+            try:
+                print(datetime.now(), 'bn错误', message, '\n')
+                send_msg(f'bn错误{message}')
+                my_client.socket_manager = my_client._initialize_socket(
+                    stream_url="wss://fstream.binance.com/ws",
+                    on_message=None,
+                    on_open=None,
+                    on_close=None,
+                    on_error=None,
+                    on_ping=None,
+                    on_pong=None,
+                    proxies=None,
+                    logger=logging.getLogger(__name__)
+                )
+                # start the thread
+                my_client.socket_manager.start()
+                um_futures_client.renew_listen_key(listenKey=listenKey)
+                my_client.user_data(listen_key=listenKey)
+                send_msg(f'bn重连成功')
+                print(datetime.now(), f'error renew listen key:{listenKey}')
+                break
+            except:
+                continue
 
     def open_handler(_):
         print(datetime.now(), 'bn连接', '\n')
