@@ -341,8 +341,7 @@ async def provider():
 async def main():
     await provider()
     # 设置任务调度
-    scheduler.add_job(provider, 'cron', hour='*', minute='*/59', second='00', timezone='Asia/Shanghai',
-                      args=('BN',))
+    scheduler.add_job(provider, 'cron', hour='*', minute='*/59', second='00', timezone='Asia/Shanghai')
     # 启动调度器
     scheduler.start()
     stop_event = asyncio.Event()
