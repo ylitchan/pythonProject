@@ -1,6 +1,7 @@
 import asyncio
 import traceback
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from web3 import Web3
 
 address_borrowed = {'0x474EEEE2D36d376cDa238fF5ffc7c97A393ebC5c', '0xbF3e9A466037afB7E1937322E0e2807a89218475',
@@ -262,24 +263,27 @@ badCollateralRatio = 150000000000000000000
 eusdAmount = 1000
 
 
-async def main():
+async def provider():
     target_address_set = set()
 
     async def onBehalfOfAddress(target_address):
-        borrowed = await asyncio.to_thread(contract_lybra.functions.getBorrowedOf(target_address).call)
-        if not borrowed:
+        try:
+            borrowed = await asyncio.to_thread(contract_lybra.functions.getBorrowedOf(target_address).call)
+            if not borrowed:
+                return
+            depositedAsset = await asyncio.to_thread(contract_lybra.functions.depositedAsset(target_address).call)
+            assetValue = depositedAsset * assetPrice
+            onBehalfOfCollateralRatio = (assetValue * 100) / borrowed
+            print(target_address, onBehalfOfCollateralRatio / 10e19, assetValue / 10e35)
+            if onBehalfOfCollateralRatio >= badCollateralRatio or assetValue * 0.1 / 10e27 <= w3.eth.gas_price:
+                return
+            if superLiquidation and onBehalfOfCollateralRatio < 125 * 1e18:
+                assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset))
+            else:
+                assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset / 2))
+            target_address_set.add((target_address, assetAmount))
+        except:
             return
-        depositedAsset = await asyncio.to_thread(contract_lybra.functions.depositedAsset(target_address).call)
-        assetValue = depositedAsset * assetPrice
-        onBehalfOfCollateralRatio = (assetValue * 100) / borrowed
-        print(target_address, onBehalfOfCollateralRatio)
-        if onBehalfOfCollateralRatio >= badCollateralRatio or assetValue * 0.1 / 10e27 <= w3.eth.gas_price:
-            return
-        if superLiquidation and onBehalfOfCollateralRatio < 125 * 1e18:
-            assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset))
-        else:
-            assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset / 2))
-        target_address_set.add((target_address, assetAmount))
 
     async def keeper(arg):
         try:
@@ -315,17 +319,36 @@ async def main():
             traceback.print_exc()
 
     # address_borrowed = ['0x7E6601A0Cb2B5aE129c09661846a053ea07223Fb']
-    assetPrice = contract_lybra.functions.getAssetPrice().call()
-    totalDepositedAsset = contract_lybra.functions.totalDepositedAsset().call()
-    poolTotalCirculation = contract_lybra.functions.getPoolTotalCirculation().call()
-    overallCollateralRatio = (totalDepositedAsset * assetPrice * 100) / poolTotalCirculation
-    if overallCollateralRatio < badCollateralRatio:
-        superLiquidation = True
-    else:
-        superLiquidation = False
+    while 1:
+        try:
+            assetPrice = contract_lybra.functions.getAssetPrice().call()
+            totalDepositedAsset = contract_lybra.functions.totalDepositedAsset().call()
+            poolTotalCirculation = contract_lybra.functions.getPoolTotalCirculation().call()
+            overallCollateralRatio = (totalDepositedAsset * assetPrice * 100) / poolTotalCirculation
+            if overallCollateralRatio < badCollateralRatio:
+                superLiquidation = True
+            else:
+                superLiquidation = False
+            break
+        except:
+            await asyncio.sleep(300)
+            continue
     await asyncio.gather(*[onBehalfOfAddress(target_address) for target_address in address_borrowed])
     for a in target_address_set:
         await keeper(a)
 
 
-asyncio.run(main())
+async def main():
+    await provider()
+    # 设置任务调度
+    scheduler.add_job(provider, 'cron', hour='*', minute='*/59', second='00', timezone='Asia/Shanghai',
+                      args=('BN',))
+    # 启动调度器
+    scheduler.start()
+    stop_event = asyncio.Event()
+    await stop_event.wait()  # 等待事件触发
+
+
+if __name__ == "__main__":
+    scheduler = AsyncIOScheduler()
+    asyncio.run(main())
