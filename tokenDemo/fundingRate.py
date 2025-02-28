@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import traceback
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
 
@@ -104,6 +105,7 @@ async def main():
             msg = f'bn开仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
             send_msg(msg)
         except:
+            traceback.print_exc()
             msg = f'bn开仓{symbol}失败'
             send_msg(msg)
             raise Exception(msg)
@@ -123,6 +125,7 @@ async def main():
             msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
             send_msg(msg)
         except:
+            traceback.print_exc()
             msg = f'bn平仓{symbol}失败'
             send_msg(msg)
             raise Exception(msg)
@@ -146,6 +149,7 @@ async def main():
             msg = f"drift平仓{symbol}成功，交易数量:{base_asset_amount}，交易签名:{tx_sig}"
             send_msg(msg)
         except:
+            traceback.print_exc()
             msg = f"drift平仓{symbol}失败"
             send_msg(msg)
             raise Exception(msg)
@@ -168,6 +172,7 @@ async def main():
             msg = f"drift开仓{symbol}成功，交易数量:{amount}，交易签名:{tx_sig}"
             send_msg(msg)
         except:
+            traceback.print_exc()
             msg = f"drift开仓{symbol}失败"
             send_msg(msg)
             raise Exception(msg)
