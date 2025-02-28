@@ -197,7 +197,8 @@ if __name__ == "__main__":
                         try:
                             tx = w3.eth.get_transaction(tx)
                         except:
-                            print('没找到交易，继续读取', tx.hex())
+                            traceback.print_exc()
+                            print(datetime.now(),'没找到交易，继续读取', tx.hex())
                             continue
                         if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
                             'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
