@@ -190,8 +190,6 @@ async def main():
     # close_bn_position()
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
-        if event.data.market_index != market_index:
-            return
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
@@ -199,7 +197,7 @@ async def main():
                 close_bn_position()
             except:
                 send_msg(f'{symbol}平对手仓bn失败')
-        elif event.event_type == "FundingRateRecord":
+        elif event.event_type == "FundingRateRecord" and event.data.market_index != market_index:
             funding_rate = event.data.funding_rate
             send_msg(f'{symbol}费率更新:{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}')
             positions = drift_user.get_perp_position(market_index)
