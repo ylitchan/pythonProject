@@ -236,7 +236,7 @@ async def main():
                 my_client.socket_manager = my_client._initialize_socket(
                     stream_url="wss://fstream.binance.com/ws",
                     on_message=message_handler,
-                    on_open=open_handler,
+                    on_open=None,
                     on_close=None,
                     on_error=error_handler,
                     on_ping=None,
@@ -254,11 +254,7 @@ async def main():
             except:
                 continue
 
-    def open_handler(_):
-        print(datetime.now(), 'bn连接', '\n')
-        send_msg('bn连接成功')
-
-    my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler, on_open=open_handler)
+    my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler)
     my_client.user_data(listen_key=listenKey)
 
     def health():
