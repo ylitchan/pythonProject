@@ -12,7 +12,7 @@ from anchorpy import Wallet
 from binance.lib.utils import config_logging
 from binance.um_futures import UMFutures
 from binance.websocket.um_futures.websocket_client import UMFuturesWebsocketClient
-from driftpy.constants import BASE_PRECISION, FUNDING_RATE_PRECISION, PERCENTAGE_PRECISION_EXP, QUOTE_PRECISION
+from driftpy.constants import BASE_PRECISION, PERCENTAGE_PRECISION_EXP, QUOTE_PRECISION
 from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
@@ -198,7 +198,7 @@ async def main():
             close_bn_position()
         elif event.event_type == "FundingRateRecord" and event.data.market_index != market_index:
             funding_rate = event.data.funding_rate
-            send_msg(f'{symbol}费率更新:{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}')
+            send_msg(f'{symbol}费率更新:{round(funding_rate / 24, PERCENTAGE_PRECISION_EXP)}')
             positions = drift_user.get_perp_position(market_index)
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
