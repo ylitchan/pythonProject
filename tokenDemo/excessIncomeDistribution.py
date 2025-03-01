@@ -220,8 +220,7 @@ if __name__ == "__main__":
                             traceback.print_exc()
                             print(datetime.now(), '没找到交易，继续读取', tx)
                             continue
-                        if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
-                            'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
+                        if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx['input']:
                             gas_price = tx['gasPrice'] + int(w3.eth.gas_price * 0.1)
                             send_transaction(int(tx['input'][11:], 16), nonce, gas_price)
                             print(datetime.now(), 'gas修改抢跑', gas_price, tx)
@@ -237,7 +236,7 @@ if __name__ == "__main__":
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
                 print(datetime.now(), excessAmount)
                 if excessAmount >= 30000000000000000:
-                    send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000))
+                    send_transaction(excessAmount, nonce, int(w3.eth.gas_price * 1.3))
                     print(datetime.now(), excessAmount, '完成')
                     break
             except:
