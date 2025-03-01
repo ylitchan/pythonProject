@@ -186,8 +186,7 @@ async def main():
             send_msg(msg)
             raise Exception(msg)
 
-    amout = get_amount()
-
+    # amout = get_amount()
     # open_bn_position('SHORT',amout)
     # close_bn_position()
     def drift_callback(event: WrappedEvent):
