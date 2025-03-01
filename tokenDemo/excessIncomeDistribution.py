@@ -215,10 +215,10 @@ if __name__ == "__main__":
                     for tx in w3.eth.filter('pending').get_new_entries():
                         try:
                             tx = w3.eth.get_transaction(tx)
-                            print(datetime.now(), '找到交易', tx.hex())
+                            print(datetime.now(), '找到交易', tx)
                         except:
                             traceback.print_exc()
-                            print(datetime.now(), '没找到交易，继续读取', tx.hex())
+                            print(datetime.now(), '没找到交易，继续读取', tx)
                             continue
                         if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
                             'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
@@ -245,7 +245,7 @@ if __name__ == "__main__":
         t.join()
 
 
-    # job()
+    job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
