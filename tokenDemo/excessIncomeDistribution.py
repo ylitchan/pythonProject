@@ -231,10 +231,11 @@ if __name__ == "__main__":
                     continue
 
         t = Thread(target=job2)
-        t.start()
+        # t.start()
         while 1:
             try:
                 excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
+                print(datetime.now(), excessAmount)
                 if excessAmount >= 30000000000000000:
                     send_transaction(excessAmount, nonce, min(w3.eth.gas_price, 20000000000))
                     print(datetime.now(), excessAmount, '完成')
