@@ -278,8 +278,6 @@ contract_eusd = w3.eth.contract(address=Web3.to_checksum_address(EUSD_CONTRACT_A
 badCollateralRatio = 150000000000000000000
 session = requests.Session()
 session.headers = {'Content-Type': 'application/json'}
-decimals = contract_eusd.functions.decimals().call()
-print()
 
 
 def send_msg(msg):
