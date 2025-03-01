@@ -26,7 +26,7 @@ headers = {
     'priority': "u=0, i",
     'Cookie': "etherscan_offset_datetime=+8; etherscan_switch_token_amount_value=value; cards-currentTab=all; _ga=GA1.1.412262204.1739630033; ASP.NET_SessionId=ou5vv50ss4wvyjfhlbs3qedk; __cflb=02DiuFnsSsHWYH8WqVXcJWaecAw5gpnmem4CT7U2HnBYp; _ga_T1JC9RNQXV=GS1.1.1740740334.31.1.1740744162.58.0.0; cf_clearance=m8M4_JP72Zy8Q8cyP.Kk.QLTW1qeZA_RG6PznjEW.xc-1740744163-1.2.1.1-rsCZhLZtxDQuu3fXVkGXg2co2jwHr5Q9B2SfIc0MwnbgmJg1U4uNQlc8WGM.6bYj_pOQJrKzKHbClHfhNf2wnXFG8h0e86ahRKn0PHoOBrWO9Q8TwohlFCNRQUmsLfpxZtOqPykuGiOKuYvz3yfxSBUjZCJ5xYEDtUArAkx6VCbczthBSN8EiAQCTIouhJyFxL1YD6AnEA.eu9uTd5fCZdHgvFzG5bvkm98VFEzR6Tutvma9VPBz53Qk1bZqJgeNE3PRlMGKlYohELmRR3vj2UOojuHhb2Ir6yT3bLGKgkM"
 }
-address=set()
+address = set()
 for p in range(1, 98):
     print(p)
     while 1:
@@ -37,8 +37,9 @@ for p in range(1, 98):
             }
             response = requests.get(url, params=params, headers=headers)
             selector = etree.HTML(response.text)
-            address.update([i for i in selector.xpath('//tr[contains(.//@data-title,"Deposit")]//@data-highlight-target') if
-                       i != '0xa980d4c0C2E48d305b582AA439a3575e3de06f0E'])
+            address.update(
+                [i for i in selector.xpath('//tr[contains(.//@data-title,"Deposit")]//@data-highlight-target') if
+                 i != '0xa980d4c0C2E48d305b582AA439a3575e3de06f0E'])
             break
         except:
             continue

@@ -11,13 +11,17 @@ session.headers = {'Content-Type': 'application/json'}
 
 
 def send_msg(msg):
-    print(msg)
-    json_msg = {
-        "msgtype": "text",
-        "text": {'content': msg}
-    }
-    session.post(url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ee6e64f7-4423-47d0-9f9c-583298d7ae02',
-                 json=json_msg)
+    try:
+        print(msg)
+        json_msg = {
+            "msgtype": "text",
+            "text": {'content': msg}
+        }
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ee6e64f7-4423-47d0-9f9c-583298d7ae02',
+            json=json_msg)
+    except:
+        return
 
 
 def get_excess_amount(token_contract_address, target_address):
