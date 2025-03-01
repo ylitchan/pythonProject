@@ -5,6 +5,19 @@ from threading import Thread
 from apscheduler.schedulers.blocking import BlockingScheduler
 from web3 import Web3
 
+session = requests.Session()
+session.headers = {'Content-Type': 'application/json'}
+
+
+def send_msg(msg):
+    print(msg)
+    json_msg = {
+        "msgtype": "text",
+        "text": {'content': msg}
+    }
+    session.post(url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ee6e64f7-4423-47d0-9f9c-583298d7ae02',
+                 json=json_msg)
+
 
 def get_excess_amount(token_contract_address, target_address):
     """通用代币余额查询"""
@@ -83,6 +96,7 @@ def send_transaction(steth_amount, nonce, gas_price):
     # 发送交易
     tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
     print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
+    send_msg(f"Transaction sent: {tx_hash.hex()}")
     if tx_hash:
         # 等待确认
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
@@ -196,15 +210,17 @@ if __name__ == "__main__":
                     for tx in w3.eth.filter('pending').get_new_entries():
                         try:
                             tx = w3.eth.get_transaction(tx)
+                            print(datetime.now(), '找到交易', tx.hex())
                         except:
                             traceback.print_exc()
-                            print(datetime.now(),'没找到交易，继续读取', tx.hex())
+                            print(datetime.now(), '没找到交易，继续读取', tx.hex())
                             continue
                         if tx['from'] != WALLET_ADDRESS and '0x6bef22ee' in tx[
                             'input']:  # and (not block or w3.eth.get_block('pending')['number'] == block):
                             gas_price = tx['gasPrice'] + int(w3.eth.gas_price * 0.1)
                             send_transaction(int(tx['input'][11:], 16), nonce, gas_price)
                             print(datetime.now(), 'gas修改抢跑', gas_price, tx)
+                            send_msg(f'gas修改抢跑{tx}')
                             break
                 except:
                     continue

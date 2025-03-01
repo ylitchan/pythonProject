@@ -1,6 +1,7 @@
 import asyncio
 import traceback
 
+import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from web3 import Web3
 
@@ -261,6 +262,18 @@ WALLET_ADDRESS = ACCOUNT.address
 contract_lybra = w3.eth.contract(address=Web3.to_checksum_address(LYBRA_CONTRACT_ADDRESS), abi=LYBRA_ABI)
 badCollateralRatio = 150000000000000000000
 eusdAmount = 1000
+session = requests.Session()
+session.headers = {'Content-Type': 'application/json'}
+
+
+def send_msg(msg):
+    print(msg)
+    json_msg = {
+        "msgtype": "text",
+        "text": {'content': msg}
+    }
+    session.post(url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ee6e64f7-4423-47d0-9f9c-583298d7ae02',
+                 json=json_msg)
 
 
 async def provider():
@@ -282,6 +295,7 @@ async def provider():
             else:
                 assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset / 2))
             target_address_set.add((target_address, assetAmount))
+            send_msg(f'清算地址:{target_address}')
         except:
             return
 
@@ -303,7 +317,7 @@ async def provider():
                 ).build_transaction({
                     'chainId': chainId,  # 主网
                     'gas': 1000000,
-                    'gasPrice': w3.eth.gas_price * 1.1,  # 根据网络情况调整
+                    'gasPrice': int(w3.eth.gas_price * 1.1),  # 根据网络情况调整
                     'nonce': w3.eth.get_transaction_count(ACCOUNT.address),
                 })
             # 签名交易
@@ -311,6 +325,7 @@ async def provider():
             # 发送交易
             tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
             print(f"交易哈希: {tx_hash.hex()}")
+            send_msg(f"清算哈希: {tx_hash.hex()}")
             if tx_hash:
                 # 等待确认
                 receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
