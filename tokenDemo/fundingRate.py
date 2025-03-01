@@ -38,7 +38,7 @@ async def main():
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
     listenKey = um_futures_client.new_listen_key()["listenKey"]
     logging.info("Listen key : {}".format(listenKey))
-    sp = {i['symbol']: i['quantityPrecision'] for i in um_futures_client.exchange_info()['symbols']}
+    sp = {i['symbol']: i['quantityPrecision'] - 1 for i in um_futures_client.exchange_info()['symbols']}
     url = 'https://mainnet.helius-rpc.com/?api-key=346cd7c9-73a9-4916-a150-4157181b99dc'  # replace w/ any rpc
     connection = AsyncClient(url)
     with open('PRIVATE_KEY', 'r') as f:
@@ -186,7 +186,8 @@ async def main():
             send_msg(msg)
             raise Exception(msg)
 
-    # amout=get_amount()
+    amout = get_amount()
+
     # open_bn_position('SHORT',amout)
     # close_bn_position()
     def drift_callback(event: WrappedEvent):
