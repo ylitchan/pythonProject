@@ -136,9 +136,10 @@ async def main():
                 send_msg(msg)
                 continue
 
-    async def close_drift_position(base_asset_amount):
+    async def close_drift_position():
         while 1:
             try:
+                base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
                 order_params = OrderParams(
                     market_type=MarketType.Perp(),
                     order_type=OrderType.Market(),
@@ -193,10 +194,7 @@ async def main():
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
-            try:
-                close_bn_position()
-            except:
-                send_msg(f'{symbol}平对手仓bn失败')
+            close_bn_position()
         elif event.event_type == "FundingRateRecord" and event.data.market_index != market_index:
             funding_rate = event.data.funding_rate
             send_msg(f'{symbol}费率更新:{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}')
@@ -204,7 +202,7 @@ async def main():
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
             elif positions and positions.base_asset_amount:
-                asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
+                asyncio.ensure_future(close_drift_position(), loop=loop)
                 close_bn_position()
             amount = get_amount()
             if amount == 0:
@@ -226,11 +224,7 @@ async def main():
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', '') and message.get('0', {}).get('x') == 'NEW':
             send_msg(f'bn清算{symbol}')
-            try:
-                base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
-                asyncio.ensure_future(close_drift_position(base_asset_amount), loop=loop)
-            except:
-                send_msg(f'{symbol}平对手仓drift失败')
+            asyncio.ensure_future(close_drift_position(), loop=loop)
 
     loop = asyncio.get_running_loop()
 
@@ -275,8 +269,7 @@ async def main():
                     MarginCategory.MAINTENANCE, None
                 ) * 0.9
                 if drift_user.is_being_liquidated() or total_collateral < maintenance_req:
-                    positions = drift_user.get_perp_position(market_index)
-                    asyncio.ensure_future(close_drift_position(positions.base_asset_amount))
+                    asyncio.ensure_future(close_drift_position())
                     close_bn_position()
                     return 'drift定期检查，正在平仓'
                 return 'drift定期检查，仓位健康'
