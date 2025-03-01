@@ -17,6 +17,7 @@ from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
 from driftpy.events.types import WrappedEvent
+from driftpy.math.margin import MarginCategory
 from driftpy.types import OrderParams, OrderType, MarketType
 from driftpy.types import PositionDirection
 from solana.rpc.async_api import AsyncClient
@@ -26,7 +27,7 @@ from solders.keypair import Keypair
 async def main():
     symbol = 'ETHUSDT'
     market_index = 2
-    leverage = 20
+    leverage = 2
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -111,48 +112,52 @@ async def main():
             raise Exception(msg)
 
     def close_bn_position():
-        try:
-            position = um_futures_client.get_position_risk()[0]
-            positionSide = position['positionSide']
-            positionAmt = position['positionAmt']
-            tx = um_futures_client.new_order(
-                symbol=symbol,
-                side=close_map.get(positionSide),
-                type="MARKET",
-                quantity=abs(float(positionAmt)),
-                positionSide=positionSide,
-            )
-            msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
-            send_msg(msg)
-        except:
-            traceback.print_exc()
-            msg = f'bn平仓{symbol}失败'
-            send_msg(msg)
-            raise Exception(msg)
+        while 1:
+            try:
+                position = um_futures_client.get_position_risk()[0]
+                positionSide = position['positionSide']
+                positionAmt = position['positionAmt']
+                tx = um_futures_client.new_order(
+                    symbol=symbol,
+                    side=close_map.get(positionSide),
+                    type="MARKET",
+                    quantity=abs(float(positionAmt)),
+                    positionSide=positionSide,
+                )
+                msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
+                send_msg(msg)
+                break
+            except:
+                traceback.print_exc()
+                msg = f'bn平仓{symbol}失败'
+                send_msg(msg)
+                continue
 
     async def close_drift_position(base_asset_amount):
-        try:
-            order_params = OrderParams(
-                market_type=MarketType.Perp(),
-                order_type=OrderType.Market(),
-                market_index=market_index,
-                base_asset_amount=abs(base_asset_amount),
-                direction=(
-                    PositionDirection.Long()
-                    if base_asset_amount < 0
-                    else PositionDirection.Short()
-                ),
-                price=0,
-                reduce_only=True,
-            )
-            tx_sig = await drift_client.place_perp_order(order_params)
-            msg = f"drift平仓{symbol}成功，交易数量:{base_asset_amount}，交易签名:{tx_sig}"
-            send_msg(msg)
-        except:
-            traceback.print_exc()
-            msg = f"drift平仓{symbol}失败"
-            send_msg(msg)
-            raise Exception(msg)
+        while 1:
+            try:
+                order_params = OrderParams(
+                    market_type=MarketType.Perp(),
+                    order_type=OrderType.Market(),
+                    market_index=market_index,
+                    base_asset_amount=abs(base_asset_amount),
+                    direction=(
+                        PositionDirection.Long()
+                        if base_asset_amount < 0
+                        else PositionDirection.Short()
+                    ),
+                    price=0,
+                    reduce_only=True,
+                )
+                tx_sig = await drift_client.place_perp_order(order_params)
+                msg = f"drift平仓{symbol}成功，交易数量:{base_asset_amount}，交易签名:{tx_sig}"
+                send_msg(msg)
+                break
+            except:
+                traceback.print_exc()
+                msg = f"drift平仓{symbol}失败"
+                send_msg(msg)
+                continue
 
     async def open_drift_position(positionSide, amount):
         try:
@@ -177,8 +182,13 @@ async def main():
             send_msg(msg)
             raise Exception(msg)
 
+    # amout=get_amount()
+    # open_bn_position('SHORT',amout)
+    # close_bn_position()
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
+        if event.data.market_index != market_index:
+            return
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
@@ -186,15 +196,15 @@ async def main():
                 close_bn_position()
             except:
                 send_msg(f'{symbol}平对手仓bn失败')
-        elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
+        elif event.event_type == "FundingRateRecord":
             funding_rate = event.data.funding_rate
             send_msg(f'{symbol}费率更新:{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}')
             positions = drift_user.get_perp_position(market_index)
             if positions and funding_rate * positions.base_asset_amount < 0:
                 return
             elif positions and positions.base_asset_amount:
-                close_bn_position()
                 asyncio.ensure_future(close_drift_position(positions.base_asset_amount), loop=loop)
+                close_bn_position()
             amount = get_amount()
             if amount == 0:
                 return
@@ -255,10 +265,32 @@ async def main():
 
     my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler, on_open=open_handler)
     my_client.user_data(listen_key=listenKey)
+
+    def health():
+        while 1:
+            try:
+                total_collateral = drift_user.get_total_collateral()
+                maintenance_req = drift_user.get_margin_requirement(
+                    MarginCategory.MAINTENANCE, None
+                ) * 0.9
+                if drift_user.is_being_liquidated() or total_collateral < maintenance_req:
+                    positions = drift_user.get_perp_position(market_index)
+                    asyncio.ensure_future(close_drift_position(positions.base_asset_amount))
+                    close_bn_position()
+                    return '定期检查，正在平仓'
+                return '定期检查，仓位健康'
+            except:
+                continue
+
     while 1:
-        await asyncio.sleep(1800)
-        um_futures_client.renew_listen_key(listenKey=listenKey)
-        print(datetime.now(), f'renew listen key:{listenKey}')
+        try:
+            await asyncio.sleep(300)
+            is_health = health()
+            send_msg(is_health)
+            um_futures_client.renew_listen_key(listenKey=listenKey)
+            print(datetime.now(), f'renew listen key:{listenKey}')
+        except:
+            continue
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发
 

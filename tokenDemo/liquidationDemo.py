@@ -246,7 +246,21 @@ LYBRA_ABI = [
                  "index": "0x0000000000000000000000000000000000000000000000000000000000000000", "indexed": False,
                  "simple_type": {"type": "uint"}}], "outputs": []}
 ]
+EUSD_ABI = [
+    {
+        "constant": True,
+        "inputs": [{"name": "_owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "balance", "type": "uint256"}],
+        "type": "function"
+    },
+    {"type": "function", "name": "decimals", "constant": False, "anonymous": False,
+     "stateMutability": "pure", "inputs": [], "outputs": [
+        {"name": "", "type": "uint8", "storage_location": "default", "offset": 0,
+         "index": "0x0000000000000000000000000000000000000000000000000000000000000000", "indexed": False,
+         "simple_type": {"type": "uint"}}]}]
 LYBRA_CONTRACT_ADDRESS = '0xa980d4c0C2E48d305b582AA439a3575e3de06f0E'  # ← 你的ERC20合约地址
+EUSD_CONTRACT_ADDRESS = '0xdf3ac4F479375802A821f7b7b46Cd7EB5E4262cC'
 NODE_URL = 'https://eth-mainnet.g.alchemy.com/v2/r8aq919e-3HfTzAPXTYPZxRBLu_kZw-A'
 # NODE_URL = 'https://virtual.mainnet.rpc.tenderly.co/0bd09288-f95c-4d59-9d0c-8172952140f3'
 # NODE_URL = 'https://mainnet.infura.io/v3/42d116ef28d84f0c99f9873f4eb0d7c0'
@@ -260,10 +274,12 @@ with open('PRIVATE_MNEMONIC', 'r') as f:
 ACCOUNT = w3.eth.account.from_mnemonic(PRIVATE_MNEMONIC)  # .from_key(PRIVATE_KEY)
 WALLET_ADDRESS = ACCOUNT.address
 contract_lybra = w3.eth.contract(address=Web3.to_checksum_address(LYBRA_CONTRACT_ADDRESS), abi=LYBRA_ABI)
+contract_eusd = w3.eth.contract(address=Web3.to_checksum_address(EUSD_CONTRACT_ADDRESS), abi=EUSD_ABI)
 badCollateralRatio = 150000000000000000000
-eusdAmount = 1000
 session = requests.Session()
 session.headers = {'Content-Type': 'application/json'}
+decimals = contract_eusd.functions.decimals().call()
+print()
 
 
 def send_msg(msg):
@@ -288,38 +304,36 @@ async def provider():
             assetValue = depositedAsset * assetPrice
             onBehalfOfCollateralRatio = (assetValue * 100) / borrowed
             print(target_address, onBehalfOfCollateralRatio / 10e19, assetValue / 10e35)
-            if onBehalfOfCollateralRatio >= badCollateralRatio or assetValue * 0.1 / 10e27 <= w3.eth.gas_price:
+            if onBehalfOfCollateralRatio >= badCollateralRatio or assetValue * 0.1 / 10e27 <= w3.eth.gas_price * 1.3:
                 return
-            if superLiquidation and onBehalfOfCollateralRatio < 125 * 1e18:
-                assetAmount = int(min(eusdAmount * 1e36 / assetPrice, depositedAsset))
-            else:
-                assetAmount = int(min(eusdAmount * 1e36 / assetPrice, depositedAsset / 2))
-            target_address_set.add((target_address, assetAmount))
+            target_address_set.add((target_address, onBehalfOfCollateralRatio, depositedAsset))
             send_msg(f'清算地址:{target_address}')
         except:
             return
 
-    async def keeper(arg):
+    def keeper(arg):
         try:
-            target_address, assetAmount = arg
+            # 查询余额
+            eusdAmount = contract_eusd.functions.balanceOf(WALLET_ADDRESS).call()
+            target_address, onBehalfOfCollateralRatio, depositedAsset = arg
+            if superLiquidation and onBehalfOfCollateralRatio < 125 * 1e18:
+                assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset))
+            else:
+                assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset / 2))
             if superLiquidation:
                 tx = contract_lybra.functions.superLiquidation(
                     WALLET_ADDRESS, target_address, assetAmount
-                ).build_transaction({
-                    'chainId': chainId,  # 主网
-                    'gas': 1000000,
-                    'gasPrice': int(w3.eth.gas_price * 1.5),  # 根据网络情况调整
-                    'nonce': w3.eth.get_transaction_count(ACCOUNT.address),
-                })
+                )
             else:
                 tx = contract_lybra.functions.liquidation(
                     WALLET_ADDRESS, target_address, assetAmount
-                ).build_transaction({
-                    'chainId': chainId,  # 主网
-                    'gas': 1000000,
-                    'gasPrice': int(w3.eth.gas_price * 1.5),  # 根据网络情况调整
-                    'nonce': w3.eth.get_transaction_count(ACCOUNT.address),
-                })
+                )
+            tx = tx.build_transaction({
+                'chainId': chainId,  # 主网
+                'gas': 1000000,
+                'gasPrice': int(w3.eth.gas_price * 1.3),  # 根据网络情况调整
+                'nonce': w3.eth.get_transaction_count(ACCOUNT.address),
+            })
             # 签名交易
             signed_tx = ACCOUNT.sign_transaction(tx)
             # 发送交易
@@ -351,7 +365,7 @@ async def provider():
     await asyncio.gather(*[onBehalfOfAddress(target_address) for target_address in address_borrowed])
     target_address_set = sorted(target_address_set, key=lambda x: x[-1], reverse=True)
     for a in target_address_set:
-        await keeper(a)
+        keeper(a)
         break
 
 
