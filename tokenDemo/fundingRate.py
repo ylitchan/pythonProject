@@ -277,8 +277,8 @@ async def main():
                     positions = drift_user.get_perp_position(market_index)
                     asyncio.ensure_future(close_drift_position(positions.base_asset_amount))
                     close_bn_position()
-                    return '定期检查，正在平仓'
-                return '定期检查，仓位健康'
+                    return 'drift定期检查，正在平仓'
+                return 'drift定期检查，仓位健康'
             except:
                 continue
 
