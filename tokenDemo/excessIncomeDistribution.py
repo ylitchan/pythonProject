@@ -2,6 +2,7 @@ import traceback
 from datetime import datetime
 from threading import Thread
 
+import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from web3 import Web3
 

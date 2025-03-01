@@ -291,9 +291,9 @@ async def provider():
             if onBehalfOfCollateralRatio >= badCollateralRatio or assetValue * 0.1 / 10e27 <= w3.eth.gas_price:
                 return
             if superLiquidation and onBehalfOfCollateralRatio < 125 * 1e18:
-                assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset))
+                assetAmount = int(min(eusdAmount * 1e36 / assetPrice, depositedAsset))
             else:
-                assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset / 2))
+                assetAmount = int(min(eusdAmount * 1e36 / assetPrice, depositedAsset / 2))
             target_address_set.add((target_address, assetAmount))
             send_msg(f'清算地址:{target_address}')
         except:
@@ -308,7 +308,7 @@ async def provider():
                 ).build_transaction({
                     'chainId': chainId,  # 主网
                     'gas': 1000000,
-                    'gasPrice': w3.eth.gas_price * 1.1,  # 根据网络情况调整
+                    'gasPrice': int(w3.eth.gas_price * 1.5),  # 根据网络情况调整
                     'nonce': w3.eth.get_transaction_count(ACCOUNT.address),
                 })
             else:
@@ -317,7 +317,7 @@ async def provider():
                 ).build_transaction({
                     'chainId': chainId,  # 主网
                     'gas': 1000000,
-                    'gasPrice': int(w3.eth.gas_price * 1.1),  # 根据网络情况调整
+                    'gasPrice': int(w3.eth.gas_price * 1.5),  # 根据网络情况调整
                     'nonce': w3.eth.get_transaction_count(ACCOUNT.address),
                 })
             # 签名交易
@@ -349,8 +349,10 @@ async def provider():
             await asyncio.sleep(300)
             continue
     await asyncio.gather(*[onBehalfOfAddress(target_address) for target_address in address_borrowed])
+    target_address_set = sorted(target_address_set, key=lambda x: x[-1], reverse=True)
     for a in target_address_set:
         await keeper(a)
+        break
 
 
 async def main():
