@@ -267,8 +267,8 @@ async def main():
                 if drift_user.is_being_liquidated() or total_collateral < maintenance_req:
                     asyncio.ensure_future(close_drift_position())
                     close_bn_position()
-                    return f'drift定期检查，抵押率{total_collateral / maintenance_req}，正在平仓'
-                return f'drift定期检查，抵押率{total_collateral / maintenance_req}，仓位健康'
+                    return f'drift定期检查，抵押率{round(total_collateral / maintenance_req, 2)}，正在平仓'
+                return f'drift定期检查，抵押率{round(total_collateral / maintenance_req, 2)}，仓位健康'
             except:
                 continue
 
