@@ -208,8 +208,9 @@ async def main():
             if amount == 0:
                 return
             if funding_rate > 0:
-                open_bn_position("LONG", amount)
-                asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
+                return
+                # open_bn_position("LONG", amount)
+                # asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
             elif funding_rate < 0:
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
