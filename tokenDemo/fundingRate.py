@@ -84,17 +84,20 @@ async def main():
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn余额{balance_bn}\ndrift余额{balance_drift}')
         balance = min(balance_bn, balance_drift)
-        if balance < 6:
-            amout_round = 0
+        markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
+                        drift_client.get_oracle_price_data_for_perp_market(
+                            market_index=market_index).price / QUOTE_PRECISION)
+        balance_min = float(Decimal(f'0.{"0" * (quantityPrecision - 1)}1')) * markPrice / leverage
+        if balance_min > balance:
+            amount_round = 0
         else:
-            markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
-                            drift_client.get_oracle_price_data_for_perp_market(
-                                market_index=market_index).price / QUOTE_PRECISION)
-            amout = str(balance / markPrice)
-            amout_round = float(Decimal(amout).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN))
-        if amout_round == 0:
-            send_msg('账户余额不足')
-        return amout_round * leverage
+            amount = str(balance * leverage / markPrice)
+            amount_round = float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN))
+            if amount_round * markPrice < 6:
+                amount_round = 0
+        if amount_round == 0:
+            send_msg(f'账户余额不足，当前余额{balance}，最少需要{6 / leverage}')
+        return amount_round
 
     def open_bn_position(positionSide, amount):
         try:
@@ -193,13 +196,16 @@ async def main():
             raise Exception(msg)
 
     # amout = get_amount()
-    # open_bn_position('SHORT',amout)
+    # open_bn_position('SHORT', amout)
+    # await open_drift_position('LONG', amout)
+
     # close_bn_position()
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
+            asyncio.ensure_future(close_drift_position(), loop=loop)
             close_bn_position()
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
@@ -268,8 +274,8 @@ async def main():
                 total_collateral = drift_user.get_total_collateral()
                 maintenance_req = drift_user.get_margin_requirement(
                     MarginCategory.MAINTENANCE, None
-                ) * 0.8
-                if drift_user.is_being_liquidated() or total_collateral < maintenance_req:
+                )
+                if drift_user.is_being_liquidated() or total_collateral < maintenance_req * 1.25:
                     asyncio.ensure_future(close_drift_position())
                     close_bn_position()
                     return f'drift定期检查，抵押率{round(total_collateral / maintenance_req, 2)}，正在平仓'
