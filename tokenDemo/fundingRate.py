@@ -271,10 +271,12 @@ async def main():
     def health():
         while 1:
             try:
-                total_collateral = drift_user.get_total_collateral()
                 maintenance_req = drift_user.get_margin_requirement(
                     MarginCategory.MAINTENANCE, None
                 )
+                if not maintenance_req:
+                    return f'drift定期检查，暂无仓位'
+                total_collateral = drift_user.get_total_collateral()
                 if drift_user.is_being_liquidated() or total_collateral < maintenance_req * 1.25:
                     asyncio.ensure_future(close_drift_position())
                     close_bn_position()
