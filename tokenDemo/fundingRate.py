@@ -28,7 +28,7 @@ from solders.keypair import Keypair
 async def main():
     symbol = 'ETHUSDT'
     market_index = 2
-    leverage = 20
+    leverage = 5
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -84,7 +84,7 @@ async def main():
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn余额{balance_bn}\ndrift余额{balance_drift}')
-        balance = min(balance_bn, balance_drift) * 0.13
+        balance = min(balance_bn, balance_drift) * 0.8
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=market_index).price / QUOTE_PRECISION)
@@ -93,11 +93,12 @@ async def main():
             amount_round = 0
         else:
             amount = str(balance * leverage / markPrice)
-            amount_round = float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN))
+            amount_round = min(
+                float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
             if amount_round * markPrice < 6:
                 amount_round = 0
         if amount_round == 0:
-            send_msg(f'账户余额不足，当前余额{balance}，最少需要{6 / leverage}')
+            send_msg(f'账户余额不足')
         return amount_round
 
     def open_bn_position(positionSide, amount):
@@ -208,27 +209,40 @@ async def main():
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
-            close_bn_position()
             asyncio.ensure_future(close_drift_position(), loop=loop)
+            close_bn_position()
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
             send_msg(f'{symbol}费率更新:{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}')
-            positions = drift_user.get_perp_position(market_index)
-            if positions and funding_rate * positions.base_asset_amount < 0:
-                return
-            elif positions and positions.base_asset_amount:
-                asyncio.ensure_future(close_drift_position(), loop=loop)
-                close_bn_position()
             amount = get_amount()
-            if amount == 0:
-                return
-            if funding_rate > 0:
-                return
-                # open_bn_position("LONG", amount)
-                # asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
-            elif funding_rate < 0:
-                open_bn_position("SHORT", amount)
+            return
+            if funding_rate < 0:
+                # maintenance_req = drift_user.get_margin_requirement(
+                #     MarginCategory.MAINTENANCE, None
+                # )
+                # if not maintenance_req:
+                #     return f'drift定期检查，暂无仓位'
+                # total_collateral = drift_user.get_total_collateral()
+                # if total_collateral
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
+                open_bn_position("SHORT", amount)
+            # positions = drift_user.get_perp_position(market_index)
+            # if positions and funding_rate * positions.base_asset_amount < 0:
+            #     return
+            # elif positions and positions.base_asset_amount:
+            #     return
+            #     # asyncio.ensure_future(close_drift_position(), loop=loop)
+            #     # close_bn_position()
+            # amount = get_amount()
+            # if amount == 0:
+            #     return
+            # if funding_rate > 0:
+            #     return
+            #     # open_bn_position("LONG", amount)
+            #     # asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
+            # elif funding_rate < 0:
+            #     asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
+            #     open_bn_position("SHORT", amount)
 
     event_subscriber.event_emitter.new_event += drift_callback
 
