@@ -117,7 +117,10 @@ async def main():
     def close_bn_position():
         while 1:
             try:
-                position = um_futures_client.get_position_risk()[0]
+                position = um_futures_client.get_position_risk()
+                if not position:
+                    return
+                position = position[0]
                 positionSide = position['positionSide']
                 positionAmt = position['positionAmt']
                 tx = um_futures_client.new_order(
@@ -139,7 +142,10 @@ async def main():
     async def close_drift_position():
         while 1:
             try:
-                base_asset_amount = drift_user.get_perp_position(market_index).base_asset_amount
+                perp_position = drift_user.get_perp_position(market_index)
+                if not perp_position:
+                    return
+                base_asset_amount = perp_position.base_asset_amount
                 order_params = OrderParams(
                     market_type=MarketType.Perp(),
                     order_type=OrderType.Market(),
