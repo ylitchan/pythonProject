@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import traceback
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
@@ -137,6 +138,7 @@ async def main():
                 send_msg(msg)
                 break
             except:
+                time.sleep(5)
                 traceback.print_exc()
                 msg = f'bn平仓{symbol}失败'
                 send_msg(msg)
@@ -167,6 +169,7 @@ async def main():
                 send_msg(msg)
                 break
             except:
+                await asyncio.sleep(5)
                 traceback.print_exc()
                 msg = f"drift平仓{symbol}失败"
                 send_msg(msg)
@@ -263,6 +266,7 @@ async def main():
                 print(datetime.now(), f'error renew listen key:{listenKey}')
                 break
             except:
+                time.sleep(5)
                 continue
 
     my_client = UMFuturesWebsocketClient(on_message=message_handler, on_error=error_handler)
@@ -283,7 +287,7 @@ async def main():
                     return f'drift定期检查，抵押率{round(total_collateral / maintenance_req, 2)}，正在平仓'
                 return f'drift定期检查，抵押率{round(total_collateral / maintenance_req, 2)}，仓位健康'
             except:
-                continue
+                return 'drift检查失败'
 
     while 1:
         try:
