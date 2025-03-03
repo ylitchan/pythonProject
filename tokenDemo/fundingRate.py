@@ -84,7 +84,7 @@ async def main():
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn余额{balance_bn}\ndrift余额{balance_drift}')
-        balance = min(balance_bn, balance_drift)
+        balance = min(balance_bn, balance_drift) * 0.13
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=market_index).price / QUOTE_PRECISION)
