@@ -113,7 +113,7 @@ async def main():
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn可活动余额{balance_bn}\ndrift可活动余额{balance_drift}')
-        balance = min(balance_bn, balance_drift) * 0.8
+        balance = min(balance_bn, balance_drift)
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=market_index).price / QUOTE_PRECISION)
@@ -240,7 +240,8 @@ async def main():
             funding_rate = event.data.funding_rate
             balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
             balance_drift = drift_user.get_total_collateral() / QUOTE_PRECISION
-            send_msg(f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn余额:\n{balance_bn}\n-------\ndrift余额:\n{balance_drift}')
+            send_msg(
+                f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn余额:\n{balance_bn}\n-------\ndrift余额:\n{balance_drift}')
             return
             if funding_rate < 0:
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
