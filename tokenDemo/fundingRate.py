@@ -68,7 +68,7 @@ async def main():
 
     def send_msg(msg):
         try:
-            print(msg)
+            print(datetime.now(), msg)
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': msg}
