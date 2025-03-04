@@ -243,7 +243,7 @@ async def main():
             send_msg(
                 f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn余额:\n{balance_bn}\n-------\ndrift余额:\n{balance_drift}')
             return
-            if funding_rate < 0:
+            if funding_rate < 0 and (amount := get_amount()) > 0:
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
                 open_bn_position("SHORT", amount)
             # positions = drift_user.get_perp_position(market_index)
