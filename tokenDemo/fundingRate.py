@@ -19,7 +19,7 @@ from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
 from driftpy.events.types import WrappedEvent
 from driftpy.math.margin import MarginCategory
-from driftpy.types import OrderParams, OrderType, MarketType
+from driftpy.types import OrderParams, OrderType, MarketType, PerpPosition
 from driftpy.types import PositionDirection
 from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
@@ -79,11 +79,40 @@ async def main():
         except:
             return
 
+    def calculate_health(base_asset_amount=0) -> int:
+        if drift_user.is_being_liquidated():
+            return 0
+        total_collateral = drift_user.get_total_collateral(MarginCategory.MAINTENANCE)
+        maintenance_margin_req = drift_user.get_margin_requirement(MarginCategory.MAINTENANCE)
+        perp_position_cal = PerpPosition(
+            last_cumulative_funding_rate=1063537496050, base_asset_amount=base_asset_amount,
+            quote_asset_amount=-4829573078,
+            quote_break_even_amount=-4801819309, quote_entry_amount=-4797405660, open_bids=0, open_asks=0,
+            settled_pnl=94090387, lp_shares=0, last_base_asset_amount_per_lp=0, last_quote_asset_amount_per_lp=0,
+            remainder_base_asset_amount=0, market_index=2, open_orders=0, per_lp_base=0
+        )
+        base_asset_value_cal = drift_user.calculate_weighted_perp_position_liability(
+            perp_position=perp_position_cal,
+            margin_category=MarginCategory.INITIAL,
+            liquidation_buffer=0,
+            include_open_orders=False,
+            strict=False,
+        )
+        maintenance_margin_req += base_asset_value_cal
+        if maintenance_margin_req == 0 and total_collateral >= 0:
+            return 100
+        elif total_collateral <= 0:
+            return 0
+        else:
+            return round(
+                min(100, max(0, (1 - maintenance_margin_req / total_collateral) * 100))
+            )
+
     def get_amount():
         quantityPrecision = sp.get(symbol)
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
-        send_msg(f'bn余额{balance_bn}\ndrift余额{balance_drift}')
+        send_msg(f'bn可活动余额{balance_bn}\ndrift可活动余额{balance_drift}')
         balance = min(balance_bn, balance_drift) * 0.8
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
@@ -95,7 +124,7 @@ async def main():
             amount = str(balance * leverage / markPrice)
             amount_round = min(
                 float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
-            if amount_round * markPrice < 6:
+            if amount_round * markPrice < 6 or calculate_health(int(amount_round * BASE_PRECISION)) < 20:
                 amount_round = 0
         if amount_round == 0:
             send_msg(f'账户余额不足')
@@ -199,10 +228,6 @@ async def main():
             send_msg(msg)
             raise Exception(msg)
 
-    # amout = get_amount()
-    # open_bn_position('SHORT', amout)
-    # await open_drift_position('LONG', amout)
-
     # close_bn_position()
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
@@ -213,17 +238,11 @@ async def main():
             close_bn_position()
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
-            send_msg(f'{symbol}费率更新:{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}')
-            amount = get_amount()
+            balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
+            balance_drift = drift_user.get_total_collateral() / QUOTE_PRECISION
+            send_msg(f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn余额:\n{balance_bn}\n-------\ndrift余额:\n{balance_drift}')
             return
             if funding_rate < 0:
-                # maintenance_req = drift_user.get_margin_requirement(
-                #     MarginCategory.MAINTENANCE, None
-                # )
-                # if not maintenance_req:
-                #     return f'drift定期检查，暂无仓位'
-                # total_collateral = drift_user.get_total_collateral()
-                # if total_collateral
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
                 open_bn_position("SHORT", amount)
             # positions = drift_user.get_perp_position(market_index)
@@ -289,25 +308,20 @@ async def main():
     def health():
         while 1:
             try:
-                maintenance_req = drift_user.get_margin_requirement(
-                    MarginCategory.MAINTENANCE, None
-                )
-                if not maintenance_req:
-                    return f'drift定期检查，暂无仓位'
-                total_collateral = drift_user.get_total_collateral()
-                if drift_user.is_being_liquidated() or total_collateral < maintenance_req * 1.25:
+                health = drift_user.get_health()
+                if health < 20:
                     asyncio.ensure_future(close_drift_position())
                     close_bn_position()
-                    return f'drift定期检查，抵押率{round(total_collateral / maintenance_req, 2)}，正在平仓'
-                return f'drift定期检查，抵押率{round(total_collateral / maintenance_req, 2)}，仓位健康'
+                    return f'drift定期检查，健康度{health}，正在平仓'
+                return f'drift定期检查，健康度{health}，仓位健康'
             except:
                 return 'drift检查失败'
 
     while 1:
         try:
             await asyncio.sleep(300)
-            is_health = health()
-            send_msg(is_health)
+            msg_health = health()
+            send_msg(msg_health)
             um_futures_client.renew_listen_key(listenKey=listenKey)
             print(datetime.now(), f'renew listen key:{listenKey}')
         except:

@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import traceback
 from datetime import datetime
 
@@ -10,7 +11,8 @@ from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
 from driftpy.events.types import WrappedEvent
-from driftpy.types import MarketType
+from driftpy.math.margin import MarginCategory
+from driftpy.types import MarketType, PerpPosition
 from driftpy.types import PositionDirection, OrderParams, OrderType  # 新增 MarketType 导入
 from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
@@ -38,6 +40,50 @@ async def main():
     await drift_client.subscribe()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
+
+    def calculate_health(base_asset_amount=0) -> int:
+        if drift_user.is_being_liquidated():
+            return 0
+        total_collateral = drift_user.get_total_collateral(MarginCategory.MAINTENANCE)
+        maintenance_margin_req = drift_user.get_margin_requirement(MarginCategory.MAINTENANCE)
+        perp_position_cal = PerpPosition(
+            last_cumulative_funding_rate=1063537496050, base_asset_amount=base_asset_amount,
+            quote_asset_amount=-4829573078,
+            quote_break_even_amount=-4801819309, quote_entry_amount=-4797405660, open_bids=0, open_asks=0,
+            settled_pnl=94090387, lp_shares=0, last_base_asset_amount_per_lp=0, last_quote_asset_amount_per_lp=0,
+            remainder_base_asset_amount=0, market_index=2, open_orders=0, per_lp_base=0
+        )
+        base_asset_value_cal = drift_user.calculate_weighted_perp_position_liability(
+            perp_position=perp_position_cal,
+            margin_category=MarginCategory.INITIAL,
+            liquidation_buffer=0,
+            include_open_orders=False,
+            strict=False,
+        )
+        maintenance_margin_req += base_asset_value_cal
+        if maintenance_margin_req == 0 and total_collateral >= 0:
+            return 100
+        elif total_collateral <= 0:
+            return 0
+        else:
+            return round(
+                min(100, max(0, (1 - maintenance_margin_req / total_collateral) * 100))
+            )
+
+    health_cal = calculate_health(1000000000)
+    health = drift_user.get_health()
+    active_perp_positions = drift_user.get_active_perp_positions()
+    if active_perp_positions:
+        perp_position_cal = copy.deepcopy(active_perp_positions[0])
+        # Gwei
+        perp_position_cal.base_asset_amount = 0
+        base_asset_value = drift_user.calculate_weighted_perp_position_liability(
+            perp_position=perp_position_cal,
+            margin_category=MarginCategory.INITIAL,
+            liquidation_buffer=0,
+            include_open_orders=False,
+            strict=False,
+        )
     free_collateral = drift_user.get_free_collateral()
     print(free_collateral)
     # position = drift_user.get_perp_position(2)
