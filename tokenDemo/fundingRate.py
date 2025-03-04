@@ -148,7 +148,7 @@ async def main():
                 float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
             notional = amount_round * markPrice
             if notional < 6 or calculate_health_drift(
-                    int(amount_round * BASE_PRECISION)) < 20 or calculate_health_bn(notional) < 20:
+                    int(amount_round * BASE_PRECISION)) < 30 or calculate_health_bn(notional) < 30:
                 amount_round = 0
         if amount_round == 0:
             send_msg(f'账户余额不足')
