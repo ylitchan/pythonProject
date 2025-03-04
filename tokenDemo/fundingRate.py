@@ -340,7 +340,7 @@ async def main():
                     asyncio.ensure_future(close_drift_position())
                     close_bn_position()
                     return f'drift定期检查，健康度{health_drift}，正在平仓'
-                health_bn = calculate_health_bn(0, 0)
+                health_bn = calculate_health_bn(0)
                 if health_bn < 20:
                     asyncio.ensure_future(close_drift_position())
                     close_bn_position()
