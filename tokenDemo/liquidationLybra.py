@@ -3,7 +3,7 @@ import traceback
 
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pydantic.schema import datetime
+from datetime import datetime
 from web3 import Web3
 
 address_borrowed = {'0x474EEEE2D36d376cDa238fF5ffc7c97A393ebC5c', '0xbF3e9A466037afB7E1937322E0e2807a89218475',
