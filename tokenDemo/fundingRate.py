@@ -79,7 +79,7 @@ async def main():
         except:
             return
 
-    def calculate_health(base_asset_amount=0) -> int:
+    def calculate_health_drift(base_asset_amount=0) -> int:
         if drift_user.is_being_liquidated():
             return 0
         total_collateral = drift_user.get_total_collateral(MarginCategory.MAINTENANCE)
@@ -108,6 +108,28 @@ async def main():
                 min(100, max(0, (1 - maintenance_margin_req / total_collateral) * 100))
             )
 
+    def calculate_health_bn(notional) -> int:
+        account_data = um_futures_client.account()
+        # 总账户余额（可用保证金 + 已占用保证金）
+        total_balance = float(account_data['totalMarginBalance'])
+        position_data = um_futures_client.get_position_risk()
+        total_maintenance_margin = 0.0
+        for position in position_data:
+            # 只考虑有持仓的头寸（positionAmt 不为 0）
+            if float(position['positionAmt']) != 0:
+                maintenance_margin = float(position['maintMargin'])  # 维持保证金
+                total_maintenance_margin += maintenance_margin
+        total_maintenance_margin += notional / leverage
+        if total_maintenance_margin == 0 and total_balance >= 0:
+            return 100
+        elif total_balance <= 0:
+            return 0
+        else:
+            # 保证金比例 = 维持保证金 / 账户余额 × 100%
+            return round(
+                min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100))
+            )
+
     def get_amount():
         quantityPrecision = sp.get(symbol)
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
@@ -124,7 +146,9 @@ async def main():
             amount = str(balance * leverage / markPrice)
             amount_round = min(
                 float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
-            if amount_round * markPrice < 6 or calculate_health(int(amount_round * BASE_PRECISION)) < 20:
+            notional = amount_round * markPrice
+            if notional < 6 or calculate_health_drift(
+                    int(amount_round * BASE_PRECISION)) < 20 or calculate_health_bn(notional) < 20:
                 amount_round = 0
         if amount_round == 0:
             send_msg(f'账户余额不足')
@@ -238,10 +262,12 @@ async def main():
             close_bn_position()
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
-            balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
-            balance_drift = drift_user.get_total_collateral() / QUOTE_PRECISION
+            account_data = um_futures_client.account()
+            # 总账户余额（可用保证金 + 已占用保证金）
+            balance_bn_total = account_data['totalMarginBalance']
+            balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
             send_msg(
-                f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn余额:\n{balance_bn}\n-------\ndrift余额:\n{balance_drift}')
+                f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn总额:\n{balance_bn_total}\n-------\ndrift总额:\n{balance_drift_total}')
             return
             if funding_rate < 0 and (amount := get_amount()) > 0:
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
@@ -309,14 +335,19 @@ async def main():
     def health():
         while 1:
             try:
-                health = drift_user.get_health()
-                if health < 20:
+                health_drift = drift_user.get_health()
+                if health_drift < 20:
                     asyncio.ensure_future(close_drift_position())
                     close_bn_position()
-                    return f'drift定期检查，健康度{health}，正在平仓'
-                return f'drift定期检查，健康度{health}，仓位健康'
+                    return f'drift定期检查，健康度{health_drift}，正在平仓'
+                health_bn = calculate_health_bn(0, 0)
+                if health_bn < 20:
+                    asyncio.ensure_future(close_drift_position())
+                    close_bn_position()
+                    return f'bn定期检查，健康度{health_bn}，正在平仓'
+                return f'drift定期检查，健康度{health_drift}，仓位健康\nbn定期检查，健康度{health_bn}，仓位健康'
             except:
-                return 'drift检查失败'
+                return '健康度检查失败'
 
     while 1:
         try:
