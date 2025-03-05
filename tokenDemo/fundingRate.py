@@ -29,7 +29,7 @@ async def main():
     symbol = 'ETHUSDT'
     market_index = 2
     leverage = 5
-    positionDecrease = 5 / 8
+    positionClose = 5 / 8
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -130,7 +130,23 @@ async def main():
                 min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100))
             )
 
-    def get_amount():
+    def get_amount_close():
+        quantityPrecision = sp.get(symbol)
+        position = um_futures_client.get_position_risk()
+        if not position:
+            return 0
+        perp_position = drift_user.get_perp_position(market_index)
+        if not perp_position:
+            return 0
+        position = position[0]
+        positionAmt = round(float(position['positionAmt']) * positionClose, quantityPrecision)
+        perp_position = drift_user.get_perp_position(market_index)
+        base_asset_amount = round(perp_position.base_asset_amount * positionClose / BASE_PRECISION,
+                                  quantityPrecision)
+        amount = min(abs(positionAmt), abs(base_asset_amount), 1)
+        return amount
+
+    def get_amount_open():
         quantityPrecision = sp.get(symbol)
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
@@ -175,23 +191,18 @@ async def main():
             send_msg(msg)
             raise Exception(msg)
 
-    def close_bn_position():
+    def close_bn_position(amount):
         while 1:
             try:
-                quantityPrecision = sp.get(symbol)
                 position = um_futures_client.get_position_risk()
                 if not position:
                     return
-                position = position[0]
-                positionSide = position['positionSide']
-                positionAmt = max(
-                    abs(float(Decimal(position['positionAmt']).quantize(Decimal(f'0.{"1" * quantityPrecision}'),
-                                                                        rounding=ROUND_DOWN))), 1)
+                positionSide = "SHORT"
                 tx = um_futures_client.new_order(
                     symbol=symbol,
                     side=close_map.get(positionSide),
                     type="MARKET",
-                    quantity=positionAmt,
+                    quantity=amount,
                     positionSide=positionSide,
                 )
                 msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
@@ -204,28 +215,20 @@ async def main():
                 send_msg(msg)
                 continue
 
-    async def close_drift_position():
+    async def close_drift_position(amount):
         while 1:
             try:
-                perp_position = drift_user.get_perp_position(market_index)
-                if not perp_position:
-                    return
-                base_asset_amount = perp_position.base_asset_amount
                 order_params = OrderParams(
                     market_type=MarketType.Perp(),
                     order_type=OrderType.Market(),
                     market_index=market_index,
-                    base_asset_amount=max(abs(int(base_asset_amount * positionDecrease)), 1 * BASE_PRECISION),
-                    direction=(
-                        PositionDirection.Long()
-                        if base_asset_amount < 0
-                        else PositionDirection.Short()
-                    ),
+                    base_asset_amount=amount * BASE_PRECISION,
+                    direction=PositionDirection.Short(),
                     price=0,
                     reduce_only=True,
                 )
                 tx_sig = await drift_client.place_perp_order(order_params)
-                msg = f"drift平仓{symbol}成功，交易数量:{base_asset_amount}，交易签名:{tx_sig}"
+                msg = f"drift平仓{symbol}成功，交易数量:{amount}，交易签名:{tx_sig}"
                 send_msg(msg)
                 break
             except:
@@ -264,8 +267,9 @@ async def main():
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
-            asyncio.ensure_future(close_drift_position(), loop=loop)
-            close_bn_position()
+            amount = get_amount_close()
+            asyncio.ensure_future(close_drift_position(amount), loop=loop)
+            close_bn_position(amount)
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
             account_data = um_futures_client.account()
@@ -274,7 +278,7 @@ async def main():
             balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
             send_msg(
                 f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn总额:\n{balance_bn_total}\n-------\ndrift总额:\n{balance_drift_total}\n-------\n双边总额:\n{balance_bn_total + balance_drift_total}')
-            if funding_rate < 0 < (amount := get_amount()):
+            if funding_rate < 0 < (amount := get_amount_open()):
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
 
@@ -288,7 +292,8 @@ async def main():
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', '') and message.get('0', {}).get('x') == 'NEW':
             send_msg(f'bn清算{symbol}')
-            asyncio.ensure_future(close_drift_position(), loop=loop)
+            amount = get_amount_close()
+            asyncio.ensure_future(close_drift_position(amount), loop=loop)
 
     loop = asyncio.get_running_loop()
 
@@ -324,16 +329,13 @@ async def main():
         while 1:
             try:
                 health_drift = drift_user.get_health()
-                if health_drift < 20:
-                    asyncio.ensure_future(close_drift_position())
-                    close_bn_position()
-                    return f'drift定期检查，健康度{health_drift}，正在平仓'
                 health_bn = calculate_health_bn(0)
-                if health_bn < 20:
-                    asyncio.ensure_future(close_drift_position())
-                    close_bn_position()
-                    return f'bn定期检查，健康度{health_bn}，正在平仓'
-                return f'drift定期检查，健康度{health_drift}，仓位健康\nbn定期检查，健康度{health_bn}，仓位健康'
+                if health_drift < 20 or health_bn < 20:
+                    amount = get_amount_close()
+                    asyncio.ensure_future(close_drift_position(amount))
+                    close_bn_position(amount)
+                    return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n正在平仓'
+                return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n仓位健康'
             except:
                 return '健康度检查失败'
 
