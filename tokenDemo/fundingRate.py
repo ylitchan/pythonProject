@@ -29,6 +29,7 @@ async def main():
     symbol = 'ETHUSDT'
     market_index = 2
     leverage = 5
+    positionDecrease = 5 / 8
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -177,17 +178,20 @@ async def main():
     def close_bn_position():
         while 1:
             try:
+                quantityPrecision = sp.get(symbol)
                 position = um_futures_client.get_position_risk()
                 if not position:
                     return
                 position = position[0]
                 positionSide = position['positionSide']
-                positionAmt = position['positionAmt']
+                positionAmt = max(
+                    abs(float(Decimal(position['positionAmt']).quantize(Decimal(f'0.{"1" * quantityPrecision}'),
+                                                                        rounding=ROUND_DOWN))), 1)
                 tx = um_futures_client.new_order(
                     symbol=symbol,
                     side=close_map.get(positionSide),
                     type="MARKET",
-                    quantity=abs(float(positionAmt)),
+                    quantity=positionAmt,
                     positionSide=positionSide,
                 )
                 msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
@@ -211,7 +215,7 @@ async def main():
                     market_type=MarketType.Perp(),
                     order_type=OrderType.Market(),
                     market_index=market_index,
-                    base_asset_amount=abs(base_asset_amount),
+                    base_asset_amount=max(abs(int(base_asset_amount * positionDecrease)), 1 * BASE_PRECISION),
                     direction=(
                         PositionDirection.Long()
                         if base_asset_amount < 0
