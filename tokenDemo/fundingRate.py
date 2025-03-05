@@ -267,7 +267,7 @@ async def main():
             balance_bn_total = account_data['totalMarginBalance']
             balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
             send_msg(
-                f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn总额:\n{balance_bn_total}\n-------\ndrift总额:\n{balance_drift_total}')
+                f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn总额:\n{balance_bn_total}\n-------\ndrift总额:\n{balance_drift_total}\n-------\n双边总额:\n{balance_bn_total + balance_drift_total}')
             return
             if funding_rate < 0 and (amount := get_amount()) > 0:
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
