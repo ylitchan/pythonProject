@@ -32,6 +32,7 @@ async def main():
     market_index = 2
     leverage = 5
     positionClose = 5 / 8
+    excel_data = []
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -95,7 +96,7 @@ async def main():
         )
         base_asset_value_cal = drift_user.calculate_weighted_perp_position_liability(
             perp_position=perp_position_cal,
-            margin_category=MarginCategory.INITIAL,
+            margin_category=MarginCategory.MAINTENANCE,
             liquidation_buffer=0,
             include_open_orders=False,
             strict=False,
@@ -121,7 +122,7 @@ async def main():
             if float(position['positionAmt']) != 0:
                 maintenance_margin = float(position['maintMargin'])  # 维持保证金
                 total_maintenance_margin += maintenance_margin
-        total_maintenance_margin += notional / leverage
+        total_maintenance_margin += notional * 0.004
         if total_maintenance_margin == 0 and total_balance >= 0:
             return 100
         elif total_balance <= 0:
@@ -148,7 +149,7 @@ async def main():
         balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn可活动余额{balance_bn}\ndrift可活动余额{balance_drift}')
-        balance = min(balance_bn, balance_drift)
+        balance = min(balance_bn, balance_drift) * 0.8
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=market_index).price / QUOTE_PRECISION)
@@ -277,31 +278,14 @@ async def main():
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
             funding_rate_round = round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)
-            excel_data = {'bn费率': um_futures_client.funding_rate(symbol, limit=1), 'bn总额': balance_bn_total,
-                          'drift费率': funding_rate_round, 'drift总额': balance_drift_total,
-                          '双边总额': balance_bn_total + balance_drift_total}
-            msg = f'==={symbol}费率更新===\n' + '\n-------\n'.join([f'{k}:{j}' for k, j in excel_data.items()])
+            excel_data_now = {'时间': datetime.now(),
+                              'bn费率': float(um_futures_client.funding_rate(symbol, limit=1)[0]['fundingRate']) * 100,
+                              'bn总额': balance_bn_total,
+                              'drift费率': funding_rate_round, 'drift总额': balance_drift_total,
+                              '双边总额': balance_bn_total + balance_drift_total}
+            excel_data.append(excel_data_now)
+            msg = f'==={symbol}费率更新===\n' + '\n-------\n'.join([f'{k}:{j}' for k, j in excel_data_now.items()])
             send_msg(msg)
-            df = pd.DataFrame.from_dict(excel_data, orient='index').dropna()
-            # 将DataFrame转换为CSV内存文件
-            excel_buffer = BytesIO()
-            df.to_excel(excel_buffer, index=True)  # utf-8-sig解决中文乱码
-            excel_buffer.seek(0)  # 重置指针位置
-            files = {
-                "media": (
-                    f"费率{datetime.now().strftime('%Y%m%d')}.xlsx", excel_buffer,
-                    "application/octet-stream")
-            }
-            res = requests.post(
-                'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73&type=file',
-                files=files)
-            requests.post('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-                          json={
-                              "msgtype": "file",
-                              "file": {
-                                  "media_id": res.json().get('media_id')
-                              }
-                          })
 
     event_subscriber.event_emitter.new_event += drift_callback
 
@@ -367,6 +351,30 @@ async def main():
             send_msg(msg_health)
             um_futures_client.renew_listen_key(listenKey=listenKey)
             print(datetime.now(), f'renew listen key:{listenKey}')
+            time_now = datetime.now()
+            if excel_data and time_now.hour == 21 and time_now.minute <= 5:
+                df = pd.DataFrame(excel_data)
+                # 将DataFrame转换为CSV内存文件
+                excel_buffer = BytesIO()
+                df.to_excel(excel_buffer, index=True)  # utf-8-sig解决中文乱码
+                excel_buffer.seek(0)  # 重置指针位置
+                files = {
+                    "media": (
+                        f"费率{datetime.now().strftime('%Y%m%d')}.xlsx", excel_buffer,
+                        "application/octet-stream")
+                }
+                res = requests.post(
+                    'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73&type=file',
+                    files=files)
+                requests.post(
+                    'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+                    json={
+                        "msgtype": "file",
+                        "file": {
+                            "media_id": res.json().get('media_id')
+                        }
+                    })
+                excel_data.clear()
         except:
             continue
     stop_event = asyncio.Event()
