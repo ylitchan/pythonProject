@@ -133,11 +133,6 @@ async def main():
     def get_amount_close():
         quantityPrecision = sp.get(symbol)
         position = um_futures_client.get_position_risk()
-        if not position:
-            return 0
-        perp_position = drift_user.get_perp_position(market_index)
-        if not perp_position:
-            return 0
         position = position[0]
         positionAmt = round(float(position['positionAmt']) * positionClose, quantityPrecision)
         perp_position = drift_user.get_perp_position(market_index)
