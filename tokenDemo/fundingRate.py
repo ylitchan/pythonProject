@@ -279,7 +279,7 @@ async def main():
                               'bn费率': float(um_futures_client.funding_rate(symbol, limit=1)[0]['fundingRate']) * 100,
                               'bn总额': balance_bn_total,
                               'drift费率': funding_rate_round, 'drift总额': balance_drift_total,
-                              '双边总额': balance_bn_total + balance_drift_total}
+                              '双边总额': float(balance_bn_total) + balance_drift_total}
             excel_data.append(excel_data_now)
             msg = f'==={symbol}费率更新===\n' + '\n-------\n'.join([f'{k}:{j}' for k, j in excel_data_now.items()])
             send_msg(msg)
@@ -353,7 +353,7 @@ async def main():
             um_futures_client.renew_listen_key(listenKey=listenKey)
             print(datetime.now(), f'renew listen key:{listenKey}')
             time_now = datetime.now()
-            if excel_data and time_now.hour == 21 and time_now.minute <= 5:
+            if excel_data and time_now.hour == 23 and time_now.minute <= 5:
                 df = pd.DataFrame(excel_data)
                 # 将DataFrame转换为CSV内存文件
                 excel_buffer = BytesIO()
