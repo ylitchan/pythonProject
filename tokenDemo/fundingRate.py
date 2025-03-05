@@ -146,10 +146,13 @@ async def main():
             amount = str(balance * leverage / markPrice)
             amount_round = min(
                 float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
-            notional = amount_round * markPrice
-            if notional < 6 or calculate_health_drift(
-                    int(amount_round * BASE_PRECISION)) < 50 or calculate_health_bn(notional) < 50:
+            if amount_round < 1:
                 amount_round = 0
+            else:
+                notional = amount_round * markPrice
+                if notional < 6 or calculate_health_drift(
+                        int(amount_round * BASE_PRECISION)) < 50 or calculate_health_bn(notional) < 50:
+                    amount_round = 0
         if amount_round == 0:
             send_msg(f'账户余额不足')
         return amount_round
@@ -268,10 +271,9 @@ async def main():
             balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
             send_msg(
                 f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn总额:\n{balance_bn_total}\n-------\ndrift总额:\n{balance_drift_total}\n-------\n双边总额:\n{balance_bn_total + balance_drift_total}')
-            return
-            if funding_rate < 0 and (amount := get_amount()) > 0:
-                asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
+            if funding_rate < 0 < (amount := get_amount()):
                 open_bn_position("SHORT", amount)
+                asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
             # positions = drift_user.get_perp_position(market_index)
             # if positions and funding_rate * positions.base_asset_amount < 0:
             #     return
