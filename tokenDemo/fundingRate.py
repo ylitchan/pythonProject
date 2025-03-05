@@ -45,7 +45,6 @@ async def main():
     with open('PRIVATE_KEY', 'r') as f:
         PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
-    # wallet= Wallet(Keypair.from_base58_string('26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
     drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[0, market_index],
                                spot_market_indexes=[0])
     # 4. 订阅账户数据
@@ -274,23 +273,6 @@ async def main():
             if funding_rate < 0 < (amount := get_amount()):
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
-            # positions = drift_user.get_perp_position(market_index)
-            # if positions and funding_rate * positions.base_asset_amount < 0:
-            #     return
-            # elif positions and positions.base_asset_amount:
-            #     return
-            #     # asyncio.ensure_future(close_drift_position(), loop=loop)
-            #     # close_bn_position()
-            # amount = get_amount()
-            # if amount == 0:
-            #     return
-            # if funding_rate > 0:
-            #     return
-            #     # open_bn_position("LONG", amount)
-            #     # asyncio.ensure_future(open_drift_position("SHORT", amount), loop=loop)
-            # elif funding_rate < 0:
-            #     asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
-            #     open_bn_position("SHORT", amount)
 
     event_subscriber.event_emitter.new_event += drift_callback
 
