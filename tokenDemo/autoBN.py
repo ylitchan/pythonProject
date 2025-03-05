@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import gc
 import json
+import time
 import traceback
 from decimal import Decimal, ROUND_DOWN
 
@@ -28,6 +29,7 @@ def trade(symbol, price, stopPrice, symbols_info):
             "quoteOrderQty": round(usdt_free, quotePrecision)
         }
         spotBN.new_order(**params)
+        time.sleep(5)
         symbol_free = spotBN.user_asset(asset=symbol[:-4])[0]['free']
         symbol_free_round = float(Decimal(symbol_free).quantize(Decimal(f'0.{"1" * minQty}'), rounding=ROUND_DOWN))
         params = {
