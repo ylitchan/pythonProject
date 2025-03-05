@@ -32,7 +32,6 @@ async def main():
     market_index = 2
     leverage = 5
     positionClose = 5 / 8
-    excel_data = []
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -280,10 +279,12 @@ async def main():
                               'bn总额': balance_bn_total,
                               'drift费率': funding_rate_round, 'drift总额': balance_drift_total,
                               '双边总额': float(balance_bn_total) + balance_drift_total}
-            excel_data.append(excel_data_now)
             msg = f'==={symbol}费率更新===\n' + '\n-------\n'.join([f'{k}:{j}' for k, j in excel_data_now.items()])
             send_msg(msg)
-
+            with open('fundingRate.json', 'w') as f:
+                excel_data = json.load(f)
+                excel_data.append(excel_data_now)
+                json.dump(f, excel_data, ensure_ascii=False)
             if funding_rate < 0 < (amount := get_amount_open()):
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
@@ -353,29 +354,32 @@ async def main():
             um_futures_client.renew_listen_key(listenKey=listenKey)
             print(datetime.now(), f'renew listen key:{listenKey}')
             time_now = datetime.now()
-            if excel_data and time_now.hour == 23 and time_now.minute <= 5:
-                df = pd.DataFrame(excel_data)
-                # 将DataFrame转换为CSV内存文件
-                excel_buffer = BytesIO()
-                df.to_excel(excel_buffer, index=True)  # utf-8-sig解决中文乱码
-                excel_buffer.seek(0)  # 重置指针位置
-                files = {
-                    "media": (
-                        f"费率{datetime.now().strftime('%Y%m%d')}.xlsx", excel_buffer,
-                        "application/octet-stream")
-                }
-                res = requests.post(
-                    'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73&type=file',
-                    files=files)
-                requests.post(
-                    'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-                    json={
-                        "msgtype": "file",
-                        "file": {
-                            "media_id": res.json().get('media_id')
+            if time_now.hour == 23 and time_now.minute <= 5:
+                with open('fundingRate.json', 'w') as f:
+                    excel_data = json.load(f)
+                    if excel_data:
+                        df = pd.DataFrame(excel_data)
+                        # 将DataFrame转换为CSV内存文件
+                        excel_buffer = BytesIO()
+                        df.to_excel(excel_buffer, index=True)  # utf-8-sig解决中文乱码
+                        excel_buffer.seek(0)  # 重置指针位置
+                        files = {
+                            "media": (
+                                f"费率{datetime.now().strftime('%Y%m%d')}.xlsx", excel_buffer,
+                                "application/octet-stream")
                         }
-                    })
-                excel_data.clear()
+                        res = requests.post(
+                            'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73&type=file',
+                            files=files)
+                        requests.post(
+                            'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+                            json={
+                                "msgtype": "file",
+                                "file": {
+                                    "media_id": res.json().get('media_id')
+                                }
+                            })
+                        excel_data.clear()
         except:
             continue
     stop_event = asyncio.Event()
