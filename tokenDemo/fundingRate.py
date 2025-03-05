@@ -369,10 +369,10 @@ async def main():
                                 "application/octet-stream")
                         }
                         res = requests.post(
-                            'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73&type=file',
+                            'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key=ee6e64f7-4423-47d0-9f9c-583298d7ae02&type=file',
                             files=files)
                         requests.post(
-                            'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+                            'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ee6e64f7-4423-47d0-9f9c-583298d7ae02',
                             json={
                                 "msgtype": "file",
                                 "file": {
