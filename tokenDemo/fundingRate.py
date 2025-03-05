@@ -165,7 +165,7 @@ async def main():
             else:
                 notional = amount_round * markPrice
                 if notional < 6 or calculate_health_drift(
-                        int(amount_round * BASE_PRECISION)) < 70 or calculate_health_bn(notional) < 70:
+                        int(amount_round * BASE_PRECISION)) < 80 or calculate_health_bn(notional) < 80:
                     amount_round = 0
         if amount_round == 0:
             send_msg(f'账户余额不足')
