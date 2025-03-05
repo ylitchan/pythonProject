@@ -7,7 +7,9 @@ import time
 import traceback
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
+from io import BytesIO
 
+import pandas as pd
 import requests
 from anchorpy import Wallet
 from binance.lib.utils import config_logging
@@ -271,14 +273,35 @@ async def main():
             # 总账户余额（可用保证金 + 已占用保证金）
             balance_bn_total = account_data['totalMarginBalance']
             balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
-            funding_rate_round=round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)
-            send_msg(
-                f'{symbol}费率更新:\n{funding_rate_round}\n-------\nbn总额:\n{balance_bn_total}\n-------\ndrift总额:\n{balance_drift_total}\n-------\n双边总额:\n{balance_bn_total + balance_drift_total}')
             if funding_rate < 0 < (amount := get_amount_open()):
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
-            excel_data={'bn费率':um_futures_client.funding_rate(symbol,limit=1),'bn总额':balance_bn_total,'drift费率':funding_rate_round,'drift总额':balance_drift_total,'双边总额':balance_bn_total + balance_drift_total}
-
+            funding_rate_round = round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)
+            excel_data = {'bn费率': um_futures_client.funding_rate(symbol, limit=1), 'bn总额': balance_bn_total,
+                          'drift费率': funding_rate_round, 'drift总额': balance_drift_total,
+                          '双边总额': balance_bn_total + balance_drift_total}
+            msg = f'==={symbol}费率更新===\n' + '\n-------\n'.join([f'{k}:{j}' for k, j in excel_data.items()])
+            send_msg(msg)
+            df = pd.DataFrame.from_dict(excel_data, orient='index').dropna()
+            # 将DataFrame转换为CSV内存文件
+            excel_buffer = BytesIO()
+            df.to_excel(excel_buffer, index=True)  # utf-8-sig解决中文乱码
+            excel_buffer.seek(0)  # 重置指针位置
+            files = {
+                "media": (
+                    f"费率{datetime.now().strftime('%Y%m%d')}.xlsx", excel_buffer,
+                    "application/octet-stream")
+            }
+            res = requests.post(
+                'https://qyapi.weixin.qq.com/cgi-bin/webhook/upload_media?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73&type=file',
+                files=files)
+            requests.post('https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+                          json={
+                              "msgtype": "file",
+                              "file": {
+                                  "media_id": res.json().get('media_id')
+                              }
+                          })
 
     event_subscriber.event_emitter.new_event += drift_callback
 
