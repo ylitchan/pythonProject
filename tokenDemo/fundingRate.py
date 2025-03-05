@@ -271,11 +271,14 @@ async def main():
             # 总账户余额（可用保证金 + 已占用保证金）
             balance_bn_total = account_data['totalMarginBalance']
             balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
+            funding_rate_round=round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)
             send_msg(
-                f'{symbol}费率更新:\n{round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)}\n-------\nbn总额:\n{balance_bn_total}\n-------\ndrift总额:\n{balance_drift_total}\n-------\n双边总额:\n{balance_bn_total + balance_drift_total}')
+                f'{symbol}费率更新:\n{funding_rate_round}\n-------\nbn总额:\n{balance_bn_total}\n-------\ndrift总额:\n{balance_drift_total}\n-------\n双边总额:\n{balance_bn_total + balance_drift_total}')
             if funding_rate < 0 < (amount := get_amount_open()):
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
+            excel_data={'bn费率':um_futures_client.funding_rate(symbol,limit=1),'bn总额':balance_bn_total,'drift费率':funding_rate_round,'drift总额':balance_drift_total,'双边总额':balance_bn_total + balance_drift_total}
+
 
     event_subscriber.event_emitter.new_event += drift_callback
 
