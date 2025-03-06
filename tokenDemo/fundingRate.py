@@ -281,7 +281,7 @@ async def main():
                               '双边总额': float(balance_bn_total) + balance_drift_total}
             msg = f'==={symbol}费率更新===\n' + '\n-------\n'.join([f'{k}:{j}' for k, j in excel_data_now.items()])
             send_msg(msg)
-            with open('fundingRate.json', 'w') as f:
+            with open('fundingRate.json', 'r+') as f:
                 excel_data = json.load(f)
                 excel_data.append(excel_data_now)
                 json.dump(f, excel_data, ensure_ascii=False)
@@ -355,7 +355,7 @@ async def main():
             print(datetime.now(), f'renew listen key:{listenKey}')
             time_now = datetime.now()
             if time_now.hour == 0 and time_now.minute <= 5:
-                with open('fundingRate.json', 'w') as f:
+                with open('fundingRate.json', 'r+') as f:
                     excel_data = json.load(f)
                     if excel_data:
                         df = pd.DataFrame(excel_data)
