@@ -285,6 +285,7 @@ async def main():
                 excel_data = json.load(f)
                 excel_data.append(excel_data_now)
                 f.seek(0)
+                f.truncate()
                 json.dump(excel_data, f, ensure_ascii=False)
             if funding_rate < 0 < (amount := get_amount_open()):
                 open_bn_position("SHORT", amount)
@@ -380,9 +381,9 @@ async def main():
                                     "media_id": res.json().get('media_id')
                                 }
                             })
-                        excel_data.clear()
                         f.seek(0)
-                        json.dump(excel_data, f, ensure_ascii=False)
+                        f.truncate()
+                        json.dump([], f, ensure_ascii=False)
         except:
             continue
     stop_event = asyncio.Event()
