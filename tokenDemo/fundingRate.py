@@ -354,7 +354,7 @@ async def main():
             um_futures_client.renew_listen_key(listenKey=listenKey)
             print(datetime.now(), f'renew listen key:{listenKey}')
             time_now = datetime.now()
-            if time_now.hour == 0 and time_now.minute <= 5:
+            if time_now.hour == 12 and time_now.minute <= 5:
                 with open('fundingRate.json', 'r+') as f:
                     excel_data = json.load(f)
                     if excel_data:
