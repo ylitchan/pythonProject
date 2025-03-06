@@ -274,7 +274,7 @@ async def main():
             balance_bn_total = account_data['totalMarginBalance']
             balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
             funding_rate_round = round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)
-            excel_data_now = {'时间': datetime.now(),
+            excel_data_now = {'时间': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                               'bn费率': float(um_futures_client.funding_rate(symbol, limit=1)[0]['fundingRate']) * 100,
                               'bn总额': balance_bn_total,
                               'drift费率': funding_rate_round, 'drift总额': balance_drift_total,
@@ -284,7 +284,7 @@ async def main():
             with open('fundingRate.json', 'r+') as f:
                 excel_data = json.load(f)
                 excel_data.append(excel_data_now)
-                json.dump(f, excel_data, ensure_ascii=False)
+                json.dump(excel_data, f, ensure_ascii=False)
             if funding_rate < 0 < (amount := get_amount_open()):
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
@@ -380,7 +380,7 @@ async def main():
                                 }
                             })
                         excel_data.clear()
-                        json.dump(f, excel_data, ensure_ascii=False)
+                        json.dump(excel_data, f, ensure_ascii=False)
         except:
             continue
     stop_event = asyncio.Event()
