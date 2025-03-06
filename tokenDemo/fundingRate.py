@@ -352,8 +352,8 @@ async def main():
             msg_health = health()
             send_msg(msg_health)
             um_futures_client.renew_listen_key(listenKey=listenKey)
-            print(datetime.now(), f'renew listen key:{listenKey}')
             time_now = datetime.now()
+            print(time_now, f'renew listen key:{listenKey}')
             if time_now.hour == 12 and time_now.minute <= 5:
                 with open('fundingRate.json', 'r+') as f:
                     excel_data = json.load(f)
