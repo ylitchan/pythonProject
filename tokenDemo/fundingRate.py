@@ -284,6 +284,7 @@ async def main():
             with open('fundingRate.json', 'r+') as f:
                 excel_data = json.load(f)
                 excel_data.append(excel_data_now)
+                f.seek(0)
                 json.dump(excel_data, f, ensure_ascii=False)
             if funding_rate < 0 < (amount := get_amount_open()):
                 open_bn_position("SHORT", amount)
@@ -380,6 +381,7 @@ async def main():
                                 }
                             })
                         excel_data.clear()
+                        f.seek(0)
                         json.dump(excel_data, f, ensure_ascii=False)
         except:
             continue
