@@ -24,17 +24,11 @@ def send_msg(msg):
         return
 
 
-def get_excess_amount(token_contract_address, target_address):
+def get_excess_amount(target_address):
     """通用代币余额查询"""
     try:
-        # contract_steth = w3.eth.contract(
-        #     address=Web3.to_checksum_address(token_contract_address),
-        #     abi=ERC20_ABI
-        # )
-
         # 获取代币精度
         # decimals = contract_steth.functions.decimals().call()
-
         # 查询余额
         balance = contract_steth.functions.balanceOf(
             Web3.to_checksum_address(target_address)
@@ -89,7 +83,6 @@ def send_transaction(steth_amount, nonce, gas_price):
         'from': WALLET_ADDRESS,
         'nonce': nonce,
         'gasPrice': gas_price,
-        # 'gasPrice': w3.to_wei(int((w3.eth.gas_price / 10e8 + 1) * 10e8), 'gwei'),
         # 'maxPriorityFeePerGas': w3.eth.max_priority_fee,
         'gas': 1000000
         # 'value': Web3.to_wei(0.1, 'ether')  # 如果是payable函数
@@ -208,6 +201,7 @@ if __name__ == "__main__":
         nonce = w3.eth.get_transaction_count(ACCOUNT.address)
         print(datetime.now(), '开始', nonce)
         send_msg('开始excessIncomeDistribution')
+
         def job2():
             print('监听线程开始', nonce)
             while datetime.now().minute <= 30:
@@ -233,7 +227,7 @@ if __name__ == "__main__":
         # t.start()
         while 1:
             try:
-                excessAmount = get_excess_amount(STETH_CONTRACT_ADDRESS, LYBRA_CONTRACT_ADDRESS) - 11
+                excessAmount = get_excess_amount(LYBRA_CONTRACT_ADDRESS) - 11
                 print(datetime.now(), excessAmount)
                 if excessAmount >= 30000000000000000:
                     send_transaction(excessAmount, nonce, int(w3.eth.gas_price * 1.3))
@@ -245,7 +239,7 @@ if __name__ == "__main__":
         t.join()
 
 
-    job()
+    # job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
