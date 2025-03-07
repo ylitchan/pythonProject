@@ -18,7 +18,7 @@ def send_msg(msg):
             "text": {'content': msg}
         }
         session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=ee6e64f7-4423-47d0-9f9c-583298d7ae02',
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             json=json_msg)
     except:
         return
@@ -207,7 +207,7 @@ if __name__ == "__main__":
     def job():
         nonce = w3.eth.get_transaction_count(ACCOUNT.address)
         print(datetime.now(), '开始', nonce)
-
+        send_msg('开始excessIncomeDistribution')
         def job2():
             print('监听线程开始', nonce)
             while datetime.now().minute <= 30:
