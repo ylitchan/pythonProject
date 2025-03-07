@@ -30,7 +30,7 @@ from solders.keypair import Keypair
 async def main():
     symbol = 'ETHUSDT'
     market_index = 2
-    leverage = 8
+    leverage = 10
     positionClose = 5 / 8
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
