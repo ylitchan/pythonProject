@@ -30,7 +30,7 @@ from solders.keypair import Keypair
 async def main():
     symbol = 'ETHUSDT'
     market_index = 2
-    leverage = 5
+    leverage = 8
     positionClose = 5 / 8
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
@@ -164,7 +164,7 @@ async def main():
             else:
                 notional = amount_round * markPrice
                 if notional < 6 or calculate_health_drift(
-                        int(amount_round * BASE_PRECISION)) < 80 or calculate_health_bn(notional) < 80:
+                        int(amount_round * BASE_PRECISION)) < 60 or calculate_health_bn(notional) < 60:
                     amount_round = 0
         if amount_round == 0:
             send_msg(f'账户余额不足')
