@@ -224,8 +224,8 @@ if __name__ == "__main__":
                     continue
 
         t = Thread(target=job2)
-        # t.start()
-        while 1:
+        t.start()
+        while datetime.now().minute <= 30:
             try:
                 excessAmount = get_excess_amount(LYBRA_CONTRACT_ADDRESS) - 11
                 print(datetime.now(), excessAmount)
