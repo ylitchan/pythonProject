@@ -159,7 +159,7 @@ async def main():
             amount = str(balance * leverage / markPrice)
             amount_round = min(
                 float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
-            if amount_round < 0.1:
+            if amount_round < 1:
                 amount_round = 0
             else:
                 notional = amount_round * markPrice
