@@ -145,10 +145,10 @@ async def main():
 
     def get_amount_open():
         quantityPrecision = sp.get(symbol)
-        balance_bn = {i['asset']: float(i['balance']) for i in um_futures_client.balance()}.get('USDT', 0)
+        balance_bn = float(um_futures_client.account()['availableBalance'])
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn可活动余额{balance_bn}\ndrift可活动余额{balance_drift}')
-        balance = min(balance_bn, balance_drift) * 0.8
+        balance = min(balance_bn, balance_drift) * 0.97
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=market_index).price / QUOTE_PRECISION)
@@ -159,7 +159,7 @@ async def main():
             amount = str(balance * leverage / markPrice)
             amount_round = min(
                 float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
-            if amount_round < 1:
+            if amount_round < 0.01:
                 amount_round = 0
             else:
                 notional = amount_round * markPrice
