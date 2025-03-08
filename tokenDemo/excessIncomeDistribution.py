@@ -82,9 +82,10 @@ def send_transaction(steth_amount, nonce, gas_price):
         'chainId': chainId,
         'from': WALLET_ADDRESS,
         'nonce': nonce,
-        'gasPrice': gas_price,
-        # 'maxPriorityFeePerGas': w3.eth.max_priority_fee,
-        'gas': 1000000
+        # 'gasPrice': gas_price,
+        'maxFeePerGas': gas_price,
+        'maxPriorityFeePerGas': gas_price,
+        'gas': 2000000
         # 'value': Web3.to_wei(0.1, 'ether')  # 如果是payable函数
     })
     # 估算Gas（可选但推荐）
@@ -224,19 +225,20 @@ if __name__ == "__main__":
                     continue
 
         t = Thread(target=job2)
-        t.start()
+        # t.start()
         while datetime.now().minute <= 30:
             try:
                 excessAmount = get_excess_amount(LYBRA_CONTRACT_ADDRESS) - 11
-                print(datetime.now(), excessAmount)
+                # print(datetime.now(), excessAmount)
                 if excessAmount >= 30000000000000000:
-                    send_transaction(excessAmount, nonce, int(w3.eth.gas_price * 1.3))
+                    send_transaction(excessAmount, nonce, int((w3.eth.get_block('latest')[
+                                                                   'baseFeePerGas'] + w3.eth.max_priority_fee * 10e2) * 1.3))
                     print(datetime.now(), excessAmount, '完成')
                     break
             except:
                 traceback.print_exc()
                 continue
-        t.join()
+        # t.join()
 
 
     # job()

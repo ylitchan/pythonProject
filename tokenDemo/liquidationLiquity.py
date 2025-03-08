@@ -222,10 +222,13 @@ async def provider():
     def keeper(target_address):
         try:
             tx = contract_liquity.functions.liquidate(target_address)
+            gas_price = int((w3.eth.get_block('latest')[
+                                 'baseFeePerGas'] + w3.eth.max_priority_fee * 10e2) * 1.3)
             tx = tx.build_transaction({
                 'chainId': chainId,  # 主网
-                'gas': 1000000,
-                'gasPrice': int(w3.eth.gas_price * 1.3),  # 根据网络情况调整
+                'maxFeePerGas': gas_price,
+                'maxPriorityFeePerGas': gas_price,
+                'gas': 2000000,
                 'nonce': w3.eth.get_transaction_count(ACCOUNT.address),
             })
             # 签名交易
