@@ -32,6 +32,8 @@ async def main():
     market_index = 2
     leverage = 6
     size_min = 0.1
+    health4open = 80
+    health4close = 20
     positionClose = 5 / 8
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
@@ -165,7 +167,8 @@ async def main():
             else:
                 notional = amount_round * markPrice
                 if notional < 6 or calculate_health_drift(
-                        int(amount_round * BASE_PRECISION)) < 80 or calculate_health_bn(notional) < 80:
+                        int(amount_round * BASE_PRECISION)) < health4open or calculate_health_bn(
+                    notional) < health4open:
                     amount_round = 0
         if amount_round == 0:
             send_msg(f'账户余额不足')
@@ -340,7 +343,7 @@ async def main():
             try:
                 health_drift = drift_user.get_health()
                 health_bn = calculate_health_bn(0)
-                if health_drift < 20 or health_bn < 20:
+                if health_drift < health4close or health_bn < health4close:
                     amount = get_amount_close()
                     asyncio.ensure_future(close_drift_position(amount))
                     close_bn_position(amount)
