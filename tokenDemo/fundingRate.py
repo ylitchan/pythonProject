@@ -31,6 +31,7 @@ async def main():
     symbol = 'ETHUSDT'
     market_index = 2
     leverage = 6
+    size_min = 0.1
     positionClose = 5 / 8
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
@@ -159,7 +160,7 @@ async def main():
             amount = str(balance * leverage / markPrice)
             amount_round = min(
                 float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
-            if amount_round < 1:
+            if amount_round < size_min:
                 amount_round = 0
             else:
                 notional = amount_round * markPrice
