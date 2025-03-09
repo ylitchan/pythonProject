@@ -34,6 +34,7 @@ async def main():
     size_min = 0.1
     health4open = 80
     health4close = 20
+    health4transfer = 50
     positionClose = 5 / 8
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
@@ -206,13 +207,13 @@ async def main():
                     quantity=amount,
                     positionSide=positionSide,
                 )
-                msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
+                msg = f'bn减仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
                 send_msg(msg)
                 break
             except:
                 time.sleep(5)
                 traceback.print_exc()
-                msg = f'bn平仓{symbol}失败'
+                msg = f'bn减仓{symbol}失败'
                 send_msg(msg)
                 continue
 
@@ -229,13 +230,13 @@ async def main():
                     reduce_only=True,
                 )
                 tx_sig = await drift_client.place_perp_order(order_params)
-                msg = f"drift平仓{symbol}成功，交易数量:{amount}，交易签名:{tx_sig}"
+                msg = f"drift减仓{symbol}成功，交易数量:{amount}，交易签名:{tx_sig}"
                 send_msg(msg)
                 break
             except:
                 await asyncio.sleep(5)
                 traceback.print_exc()
-                msg = f"drift平仓{symbol}失败"
+                msg = f"drift减仓{symbol}失败"
                 send_msg(msg)
                 continue
 
@@ -347,7 +348,9 @@ async def main():
                     amount = get_amount_close()
                     asyncio.ensure_future(close_drift_position(amount))
                     close_bn_position(amount)
-                    return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n正在平仓'
+                    return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n正在减仓'
+                elif health_drift < health4transfer or health_bn < health4transfer:
+                    return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n需要转移'
                 return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n仓位健康'
             except:
                 return '健康度检查失败'
