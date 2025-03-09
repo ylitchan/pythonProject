@@ -271,8 +271,7 @@ def filter_stocks(stock_codes):
 
         # today_vol = spot_data['成交量'].values[0]
         # today_pct = spot_data['涨跌幅'].values[0]
-
-        if yesterday_pct <= -yesterday_yesterday_pct / 2:
+        if (yesterday_pct / 100 + 1) * (1 + yesterday_yesterday_pct / 100) - 1 <= yesterday_yesterday_pct / 100 / 2:
             selected.append(''.join(code))
     return selected
 
@@ -293,7 +292,7 @@ def monitor_stocks():
 
 
 async def main():
-    # monitor_stocks()
+    monitor_stocks()
     await rzq_market('BN')
     # 设置任务调度
     scheduler.add_job(monitor_stocks, 'cron', hour='9', minute='30', second='00', day_of_week='mon-fri',
