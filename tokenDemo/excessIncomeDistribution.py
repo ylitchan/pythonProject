@@ -1,9 +1,11 @@
 import traceback
 from datetime import datetime
 from threading import Thread
+from uuid import uuid4
 
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
+from flashbots import flashbot
 from web3 import Web3
 
 session = requests.Session()
@@ -92,14 +94,31 @@ def send_transaction(steth_amount, nonce, gas_price):
     # tx['gas'] = w3.eth.estimate_gas(tx)
     # 签名交易
     signed_tx = ACCOUNT.sign_transaction(tx)
+    bundle = [
+        {"signed_transaction": signed_tx.rawTransaction}
+    ]
+    block = w3.eth.block_number
+    # w3.flashbots.simulate(bundle, block)
     # 发送交易
-    tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-    print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
-    send_msg(f"Transaction sent: {tx_hash.hex()}")
-    if tx_hash:
-        # 等待确认
-        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-        print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
+    send_result = w3.flashbots.send_bundle(
+        bundle,
+        target_block_number=block + 1,
+        opts={"replacementUuid": str(uuid4())},
+    )
+    stats = w3.flashbots.get_bundle_stats(
+        w3.to_hex(send_result.bundle_hash()), block
+    )
+    print(datetime.now(), f"bundleStats {stats}")
+    send_msg(f"Transaction sent: {send_result.bundle_hash().hex()}")
+    receipts = send_result.receipts()
+    print(datetime.now(), f"Bundle was mined in block {receipts[0].blockNumber}")
+    # tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    # print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
+    # send_msg(f"Transaction sent: {tx_hash.hex()}")
+    # if tx_hash:
+    #     # 等待确认
+    #     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+    #     print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
 
 
 # 查询你的合约持有的stETH余额
@@ -108,9 +127,16 @@ if __name__ == "__main__":
     NODE_URL = 'https://eth-mainnet.g.alchemy.com/v2/r8aq919e-3HfTzAPXTYPZxRBLu_kZw-A'
     # NODE_URL = 'https://virtual.mainnet.rpc.tenderly.co/0bd09288-f95c-4d59-9d0c-8172952140f3'
     # NODE_URL = 'https://mainnet.infura.io/v3/42d116ef28d84f0c99f9873f4eb0d7c0'
-    # NODE_URL = 'https://rpc.tenderly.co/fork/90dc85bc-f2f6-4816-adab-0e44465ec873'
+    # NODE_URL = 'https://rpc.tenderly.co/fork/1ee0c23c-78d2-4126-9b2b-6267485ab8df'
     # NODE_URL = 'https://mainnet.gateway.tenderly.co/7aTTDUXsphVy5fWhOnfor1'
     w3 = Web3(Web3.HTTPProvider(NODE_URL))
+    w3.eth.account.enable_unaudited_hdwallet_features()
+    # WALLET_ADDRESS = '0x802d78fd3045b64bf2680aaa9a5ae0f4f5241836'  # 要修改的钱包地址
+    with open('PRIVATE_MNEMONIC', 'r') as f:
+        PRIVATE_MNEMONIC = f.read()
+    ACCOUNT = w3.eth.account.from_mnemonic(PRIVATE_MNEMONIC)  # .from_key(PRIVATE_KEY)
+    w3 = flashbot(w3, ACCOUNT)
+    WALLET_ADDRESS = ACCOUNT.address
     # 合约地址配置
     LYBRA_CONTRACT_ADDRESS = '0xa980d4c0C2E48d305b582AA439a3575e3de06f0E'  # ← 你的ERC20合约地址
     STETH_CONTRACT_ADDRESS = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'  # stETH官方合约
@@ -186,12 +212,6 @@ if __name__ == "__main__":
         address=Web3.to_checksum_address(EUSD_CONTRACT_ADDRESS),
         abi=EUSD_ABI
     )
-    # WALLET_ADDRESS = '0x802d78fd3045b64bf2680aaa9a5ae0f4f5241836'  # 要修改的钱包地址
-    with open('PRIVATE_MNEMONIC', 'r') as f:
-        PRIVATE_MNEMONIC = f.read()
-    w3.eth.account.enable_unaudited_hdwallet_features()
-    ACCOUNT = w3.eth.account.from_mnemonic(PRIVATE_MNEMONIC)  # .from_key(PRIVATE_KEY)
-    WALLET_ADDRESS = ACCOUNT.address
     # approve_eusd(Web3.to_checksum_address(LYBRA_CONTRACT_ADDRESS), 999)
     decimals_steth = contract_steth.functions.decimals().call()
     chainId = w3.eth.chain_id
