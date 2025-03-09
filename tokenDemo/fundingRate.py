@@ -32,6 +32,7 @@ async def main():
     market_index = 2
     leverage = 6
     size_min = 0.1
+    size_max = 0.3
     health4open = 80
     health4close = 20
     health4transfer = 50
@@ -162,7 +163,7 @@ async def main():
         else:
             amount = str(balance * leverage / markPrice)
             amount_round = min(
-                float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), 1)
+                float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), size_max)
             if amount_round < size_min:
                 amount_round = 0
             else:
