@@ -94,31 +94,33 @@ def send_transaction(steth_amount, nonce, gas_price):
     # tx['gas'] = w3.eth.estimate_gas(tx)
     # 签名交易
     signed_tx = ACCOUNT.sign_transaction(tx)
-    bundle = [
-        {"signed_transaction": signed_tx.rawTransaction}
-    ]
-    block = w3.eth.block_number
-    # w3.flashbots.simulate(bundle, block)
-    # 发送交易
-    send_result = w3.flashbots.send_bundle(
-        bundle,
-        target_block_number=block + 1,
-        opts={"replacementUuid": str(uuid4())},
-    )
-    stats = w3.flashbots.get_bundle_stats(
-        w3.to_hex(send_result.bundle_hash()), block
-    )
-    print(datetime.now(), f"bundleStats {stats}")
-    send_msg(f"Transaction sent: {send_result.bundle_hash().hex()}")
-    receipts = send_result.receipts()
-    print(datetime.now(), f"Bundle was mined in block {receipts[0].blockNumber}")
-    # tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-    # print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
-    # send_msg(f"Transaction sent: {tx_hash.hex()}")
-    # if tx_hash:
-    #     # 等待确认
-    #     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-    #     print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
+    try:
+        bundle = [
+            {"signed_transaction": signed_tx.rawTransaction}
+        ]
+        block = w3.eth.block_number
+        # w3.flashbots.simulate(bundle, block)
+        # 发送交易
+        send_result = w3.flashbots.send_bundle(
+            bundle,
+            target_block_number=block + 1,
+            opts={"replacementUuid": str(uuid4())},
+        )
+        stats = w3.flashbots.get_bundle_stats(
+            w3.to_hex(send_result.bundle_hash()), block
+        )
+        print(datetime.now(), f"bundleStats {stats}")
+        send_msg(f"Transaction sent: {send_result.bundle_hash().hex()}")
+        receipts = send_result.receipts()
+        print(datetime.now(), f"Bundle was mined in block {receipts[0].blockNumber}")
+    except:
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
+        send_msg(f"Transaction sent: {tx_hash.hex()}")
+        if tx_hash:
+            # 等待确认
+            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+            print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
 
 
 # 查询你的合约持有的stETH余额
