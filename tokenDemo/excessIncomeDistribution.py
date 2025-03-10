@@ -1,9 +1,11 @@
+import json
 import traceback
 from datetime import datetime
 from threading import Thread
 
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
+from eth_account import messages
 from web3 import Web3
 
 session = requests.Session()
@@ -75,7 +77,7 @@ def approve_eusd(spender_address, amount_eusd):
 def send_transaction(steth_amount, nonce, gas_price):
     # 构造交易
     tx = contract_lybra.functions.excessIncomeDistribution(
-        steth_amount  # 单位：wei
+        1  # steth_amount  # 单位：wei
     ).build_transaction({
         'chainId': chainId,
         'from': WALLET_ADDRESS,
@@ -104,13 +106,26 @@ def send_transaction(steth_amount, nonce, gas_price):
             "maxTimestamp": int(w3.eth.get_block('latest')['timestamp']) + 24  # 最晚执行时间戳（10分钟后）
         }]
     }
+    # bundle = {
+    #     "jsonrpc": "2.0",
+    #     "id": 1,
+    #     "method": "flashbots_getUserStats",
+    #     "params": [
+    #         hex(target_block),
+    #     ]
+    # }
     # 发送 Bundle 到 Flashbots Relay
-    relay_url = "https://relay.flashbots.net"
-    headers = {"Content-Type": "application/json"}
+    message = messages.encode_defunct(text=Web3.keccak(text=json.dumps(bundle)).hex())
+    signature = WALLET_ADDRESS + ':' + ACCOUNT.sign_message(message).signature.hex()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Flashbots-Signature": signature
+    }
     response = requests.post(relay_url, json=bundle, headers=headers)
     # 检查响应
     if response.status_code == 200:
         print("Bundle 发送成功:", response.json())
+        send_msg(f"Bundle sent:{response.json()['result']['bundleHash']}")
     else:
         print("Bundle 发送失败:", response.status_code, response.text)
     # 发送交易
@@ -125,6 +140,7 @@ def send_transaction(steth_amount, nonce, gas_price):
 
 # 查询你的合约持有的stETH余额
 if __name__ == "__main__":
+    relay_url = "https://relay.flashbots.net"
     # 配置连接（使用Infura）
     NODE_URL = 'https://eth-mainnet.g.alchemy.com/v2/r8aq919e-3HfTzAPXTYPZxRBLu_kZw-A'
     # NODE_URL = 'https://virtual.mainnet.rpc.tenderly.co/0bd09288-f95c-4d59-9d0c-8172952140f3'
@@ -217,12 +233,13 @@ if __name__ == "__main__":
     decimals_steth = contract_steth.functions.decimals().call()
     chainId = w3.eth.chain_id
     print('准备完成')
+    send_msg('开始excessIncomeDistribution准备完成')
 
 
     def job():
         nonce = w3.eth.get_transaction_count(ACCOUNT.address)
         # print(datetime.now(), '开始', nonce)
-        send_msg('开始excessIncomeDistribution')
+        send_msg('excessIncomeDistribution开始')
 
         def job2():
             print('监听线程开始', nonce)
@@ -262,7 +279,7 @@ if __name__ == "__main__":
         # t.join()
 
 
-    job()
+    # job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
