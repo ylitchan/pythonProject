@@ -1,11 +1,9 @@
 import traceback
 from datetime import datetime
 from threading import Thread
-from uuid import uuid4
 
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
-from flashbots import flashbot
 from web3 import Web3
 
 session = requests.Session()
@@ -58,10 +56,8 @@ def approve_eusd(spender_address, amount_eusd):
         'gasPrice': w3.to_wei('2', 'gwei'),  # 根据网络情况调整
         'nonce': nonce,
     })
-
     # 签名交易
     signed_tx = ACCOUNT.sign_transaction(tx)
-
     # 发送交易
     tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
     print(f"交易哈希: {tx_hash.hex()}")
@@ -94,33 +90,37 @@ def send_transaction(steth_amount, nonce, gas_price):
     # tx['gas'] = w3.eth.estimate_gas(tx)
     # 签名交易
     signed_tx = ACCOUNT.sign_transaction(tx)
-    try:
-        bundle = [
-            {"signed_transaction": signed_tx.rawTransaction}
-        ]
-        block = w3.eth.block_number
-        # w3.flashbots.simulate(bundle, block)
-        # 发送交易
-        send_result = w3.flashbots.send_bundle(
-            bundle,
-            target_block_number=block + 1,
-            opts={"replacementUuid": str(uuid4())},
-        )
-        stats = w3.flashbots.get_bundle_stats(
-            w3.to_hex(send_result.bundle_hash()), block
-        )
-        print(datetime.now(), f"bundleStats {stats}")
-        send_msg(f"Transaction sent: {send_result.bundle_hash().hex()}")
-        receipts = send_result.receipts()
-        print(datetime.now(), f"Bundle was mined in block {receipts[0].blockNumber}")
-    except:
-        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-        print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
-        send_msg(f"Transaction sent: {tx_hash.hex()}")
-        if tx_hash:
-            # 等待确认
-            receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-            print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
+    # 构造 Flashbots Bundle
+    target_block = w3.eth.block_number + 1  # 目标为下一个区块
+    bundle = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_sendBundle",
+        "params": [{
+            "txs": [signed_tx.rawTransaction.hex()],  # 签名后的交易列表
+            "blockNumber": hex(target_block),  # 目标区块号（十六进制）
+            # 可选参数
+            "minTimestamp": 0,  # 最早执行时间戳
+            "maxTimestamp": int(w3.eth.get_block('latest')['timestamp']) + 24  # 最晚执行时间戳（10分钟后）
+        }]
+    }
+    # 发送 Bundle 到 Flashbots Relay
+    relay_url = "https://relay.flashbots.net"
+    headers = {"Content-Type": "application/json"}
+    response = requests.post(relay_url, json=bundle, headers=headers)
+    # 检查响应
+    if response.status_code == 200:
+        print("Bundle 发送成功:", response.json())
+    else:
+        print("Bundle 发送失败:", response.status_code, response.text)
+    # 发送交易
+    # tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    # print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
+    # send_msg(f"Transaction sent: {tx_hash.hex()}")
+    # if tx_hash:
+    #     # 等待确认
+    #     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+    #     print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
 
 
 # 查询你的合约持有的stETH余额
@@ -137,7 +137,6 @@ if __name__ == "__main__":
     with open('PRIVATE_MNEMONIC', 'r') as f:
         PRIVATE_MNEMONIC = f.read()
     ACCOUNT = w3.eth.account.from_mnemonic(PRIVATE_MNEMONIC)  # .from_key(PRIVATE_KEY)
-    w3 = flashbot(w3, ACCOUNT)
     WALLET_ADDRESS = ACCOUNT.address
     # 合约地址配置
     LYBRA_CONTRACT_ADDRESS = '0xa980d4c0C2E48d305b582AA439a3575e3de06f0E'  # ← 你的ERC20合约地址
@@ -222,7 +221,7 @@ if __name__ == "__main__":
 
     def job():
         nonce = w3.eth.get_transaction_count(ACCOUNT.address)
-        print(datetime.now(), '开始', nonce)
+        # print(datetime.now(), '开始', nonce)
         send_msg('开始excessIncomeDistribution')
 
         def job2():
@@ -263,7 +262,7 @@ if __name__ == "__main__":
         # t.join()
 
 
-    # job()
+    job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=19)
     # 启动调度器
