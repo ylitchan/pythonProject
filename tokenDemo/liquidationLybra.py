@@ -356,7 +356,7 @@ async def provider():
             assetValue = depositedAsset * assetPrice
             onBehalfOfCollateralRatio = (assetValue * 100) / borrowed
             print(target_address, onBehalfOfCollateralRatio / 10e19, assetValue / 10e35)
-            if onBehalfOfCollateralRatio >= badCollateralRatio or assetValue * 0.1 / 10e27 <= w3.eth.gas_price * 1.3:
+            if onBehalfOfCollateralRatio <= 10e19 or onBehalfOfCollateralRatio >= badCollateralRatio or assetValue * 0.1 / 10e27 <= w3.eth.gas_price * 1.3:
                 return
             target_address_set.add((target_address, onBehalfOfCollateralRatio, depositedAsset))
             send_msg(f'清算地址:{target_address}')
@@ -415,7 +415,7 @@ async def provider():
                 superLiquidation = False
             break
         except:
-            await asyncio.sleep(300)
+            await asyncio.sleep(120)
             continue
     await asyncio.gather(*[onBehalfOfAddress(target_address) for target_address in address_borrowed])
     target_address_set = sorted(target_address_set, key=lambda x: x[-1], reverse=True)
