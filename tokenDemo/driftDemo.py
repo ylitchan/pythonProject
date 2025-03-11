@@ -16,28 +16,43 @@ from driftpy.types import MarketType, PerpPosition
 from driftpy.types import PositionDirection, OrderParams, OrderType  # 新增 MarketType 导入
 from solana.rpc.async_api import AsyncClient
 from solders.keypair import Keypair
-
+from solders.pubkey import Pubkey
 perp_market_indexes = [i.market_index for i in mainnet_perp_market_configs]
 spot_market_indexes = [i.market_index for i in mainnet_spot_market_configs]
 print(perp_market_indexes)
+from driftpy.drift_user import DriftUser
 
 
 async def main():
     url = 'https://mainnet.helius-rpc.com/?api-key=346cd7c9-73a9-4916-a150-4157181b99dc'  # replace w/ any rpc
     connection = AsyncClient(url)
+    from typing import List, Union
+    from solana.rpc.types import MemcmpOpts,DataSliceOpts
+    memcmp_opts = MemcmpOpts(offset=0, bytes="3Mc6vR")
+    pubkey = Pubkey.from_string("4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T")
+    filters= [80]
+
+    a=await connection.get_program_accounts( Pubkey.from_string("dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH"),data_slice=DataSliceOpts(offset=0,length=10),encoding='base64')
+    print(a)
     with open('PRIVATE_KEY', 'r') as f:
         PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
     # wallet = Wallet(Keypair.from_base58_string(
     #     '26JUu5XCsF3iSrFaWfr8FDh9gRVgWb6AYCaTtPbzVxhrT8RRZRb4bcC45ZTuaynwCfQzR9FMxo9rNvrYbZZXsA3Y'))
-    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[0, 2],
-                               spot_market_indexes=[0])
-
+    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=perp_market_indexes[:5],
+                               spot_market_indexes=spot_market_indexes[:5])
     # tx_sig = await drift_client.initialize_user(sub_account_id=0, name=None)
     # print(tx_sig)
     # 4. 订阅账户数据
     await drift_client.unsubscribe()
     await drift_client.subscribe()
+    # a = DriftUser(drift_client, Pubkey.from_string("J1zeHKeV5hYSXec1MzxzErzaKdtJbRBQ6Ggv1F4V8TdZ"),drift_client.account_subscription_config)
+    # await a.subscribe()
+    c=DriftUser(drift_client, Pubkey.from_string(
+    '6MrGVgSrELt37aHNLg5RU5wpYkxWCNGAu8yULETREFMT')
+)
+    await c.subscribe()
+    b = c.get_health()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
 
