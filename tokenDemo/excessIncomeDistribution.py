@@ -233,7 +233,7 @@ if __name__ == "__main__":
     decimals_steth = contract_steth.functions.decimals().call()
     chainId = w3.eth.chain_id
     print('准备完成')
-    send_msg('开始excessIncomeDistribution准备完成')
+    send_msg('excessIncomeDistribution准备完成')
 
 
     def job():
