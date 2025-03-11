@@ -35,7 +35,7 @@ async def main():
     size_max = 0.3
     health4open = 80
     health4close = 30
-    health4transfer = 50
+    health4transfer = 60
     positionClose = 5 / 8
     health_sleep = 300
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
