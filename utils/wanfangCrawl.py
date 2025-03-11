@@ -2,6 +2,7 @@
 # @Author: ylitchan
 import asyncio
 import decimal
+import io
 import json
 import os
 import random
@@ -10,12 +11,14 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta, datetime
 
-import payload_pb2
 import requests
 from google.protobuf.json_format import MessageToJson, ParseDict
-from patent_pb2 import Root
 from pymongo import MongoClient
 from redisbloom.client import Client
+
+import payload_pb2
+from patent_pb2 import Root
+from protobuf_inspector.types import StandardParser
 
 os.environ["http_proxy"] = 'http://192.168.8.205:10502'
 os.environ["https_proxy"] = 'http://192.168.8.205:10502'
@@ -28,6 +31,9 @@ MINIO_SECURE = False
 
 
 def decode_proto_binary(binary_data):
+    fh = io.BytesIO(binary_data)
+    parser = StandardParser()
+    decoded_dict = parser.parse_message(fh, "message")
     try:
         # 创建空对象
         root = Root()
