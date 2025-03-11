@@ -77,7 +77,7 @@ def approve_eusd(spender_address, amount_eusd):
 def send_transaction(steth_amount, nonce, gas_price):
     # 构造交易
     tx = contract_lybra.functions.excessIncomeDistribution(
-        1  # steth_amount  # 单位：wei
+        steth_amount  # 单位：wei
     ).build_transaction({
         'chainId': chainId,
         'from': WALLET_ADDRESS,
