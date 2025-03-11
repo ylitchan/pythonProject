@@ -34,9 +34,10 @@ async def main():
     size_min = 0.1
     size_max = 0.3
     health4open = 80
-    health4close = 20
+    health4close = 30
     health4transfer = 50
     positionClose = 5 / 8
+    health_sleep = 300
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -137,16 +138,30 @@ async def main():
                 min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100))
             )
 
-    def get_amount_close():
-        quantityPrecision = sp.get(symbol)
-        position = um_futures_client.get_position_risk()
-        position = position[0]
-        positionAmt = round(float(position['positionAmt']) * positionClose, quantityPrecision)
-        perp_position = drift_user.get_perp_position(market_index)
-        base_asset_amount = round(perp_position.base_asset_amount * positionClose / BASE_PRECISION,
-                                  quantityPrecision)
-        amount = min(abs(positionAmt), abs(base_asset_amount), 1)
-        return amount
+    def get_amount_close(balance=False):
+        try:
+            quantityPrecision = sp.get(symbol)
+            position = um_futures_client.get_position_risk()
+            position = position[0]
+            positionAmt = abs(float(position['positionAmt']))
+            perp_position = drift_user.get_perp_position(market_index)
+            base_asset_amount = abs(perp_position.base_asset_amount)
+            if not balance:
+                positionAmt = round(positionAmt * positionClose, quantityPrecision)
+                base_asset_amount = round(base_asset_amount * positionClose / BASE_PRECISION,
+                                          quantityPrecision)
+                amount = min(positionAmt, base_asset_amount, 1)
+                return {'drift': amount, 'bn': amount}
+            elif base_asset_amount > positionAmt:
+                amount = round((base_asset_amount - positionAmt * BASE_PRECISION) / BASE_PRECISION,
+                               quantityPrecision)
+                return {'drift': amount, 'bn': 0}
+            else:
+                amount = round((positionAmt * BASE_PRECISION - base_asset_amount) / BASE_PRECISION,
+                               quantityPrecision)
+                return {'drift': 0, 'bn': amount}
+        except:
+            return {'drift': 0, 'bn': 0}
 
     def get_amount_open():
         quantityPrecision = sp.get(symbol)
@@ -195,7 +210,7 @@ async def main():
             raise Exception(msg)
 
     def close_bn_position(amount):
-        while 1:
+        while amount:
             try:
                 position = um_futures_client.get_position_risk()
                 if not position:
@@ -212,14 +227,14 @@ async def main():
                 send_msg(msg)
                 break
             except:
-                time.sleep(5)
+                time.sleep(3)
                 traceback.print_exc()
                 msg = f'bn减仓{symbol}失败'
                 send_msg(msg)
-                continue
+                amount = get_amount_close(balance=True).get('bn', 0)
 
     async def close_drift_position(amount):
-        while 1:
+        while amount:
             try:
                 order_params = OrderParams(
                     market_type=MarketType.Perp(),
@@ -235,11 +250,11 @@ async def main():
                 send_msg(msg)
                 break
             except:
-                await asyncio.sleep(5)
+                await asyncio.sleep(3)
                 traceback.print_exc()
                 msg = f"drift减仓{symbol}失败"
                 send_msg(msg)
-                continue
+                amount = get_amount_close(balance=True).get('drift', 0)
 
     async def open_drift_position(positionSide, amount):
         try:
@@ -270,7 +285,7 @@ async def main():
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
-            amount = get_amount_close()
+            amount = abs(event.data.liquidate_perp.base_asset_amount / BASE_PRECISION)
             asyncio.ensure_future(close_drift_position(amount), loop=loop)
             close_bn_position(amount)
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
@@ -307,7 +322,7 @@ async def main():
         message = json.loads(message)
         if 'autoclose' in message.get('o', {}).get('c', '') and message.get('0', {}).get('x') == 'NEW':
             send_msg(f'bn清算{symbol}')
-            amount = get_amount_close()
+            amount = float(message.get('o', {}).get('q', get_amount_close().get('drift', 0)))
             asyncio.ensure_future(close_drift_position(amount), loop=loop)
 
     loop = asyncio.get_running_loop()
@@ -341,24 +356,27 @@ async def main():
     my_client.user_data(listen_key=listenKey)
 
     def health():
-        while 1:
-            try:
-                health_drift = drift_user.get_health()
-                health_bn = calculate_health_bn(0)
-                if health_drift < health4close or health_bn < health4close:
-                    amount = get_amount_close()
-                    asyncio.ensure_future(close_drift_position(amount))
-                    close_bn_position(amount)
-                    return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n正在减仓'
-                elif health_drift < health4transfer or health_bn < health4transfer:
-                    return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n需要转移'
-                return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n仓位健康'
-            except:
-                return '健康度检查失败'
+        global health_sleep
+        try:
+            health_drift = drift_user.get_health()
+            health_bn = calculate_health_bn(0)
+            if health_drift < health4close or health_bn < health4close:
+                amount = get_amount_close()
+                asyncio.ensure_future(close_drift_position(amount.get('drift', 0)))
+                close_bn_position(amount.get('bn', 0))
+                health_sleep = 60
+                return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n正在减仓'
+            elif health_drift < health4transfer or health_bn < health4transfer:
+                health_sleep = 150
+                return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n需要转移'
+            health_sleep = 300
+            return f'drift定期检查，健康度{health_drift}\nbn定期检查，健康度{health_bn}\n仓位健康'
+        except:
+            return '健康度检查失败'
 
     while 1:
         try:
-            await asyncio.sleep(300)
+            await asyncio.sleep(health_sleep)
             msg_health = health()
             send_msg(msg_health)
             um_futures_client.renew_listen_key(listenKey=listenKey)
