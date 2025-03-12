@@ -64,6 +64,8 @@ class Parser(object):
             # 解码为字符串
             while 1:
                 try:
+                    if not chunk and chunk0:
+                        raise UnicodeDecodeError
                     text = bytes(chunk).decode("utf-8")  # 尝试解码为 UTF-8
                     printable_chunk = "".join(decorate(i, char) for i, char in enumerate(text))
                     break
