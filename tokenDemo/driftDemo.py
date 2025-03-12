@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import time
 import traceback
 from datetime import datetime
 
@@ -15,24 +16,27 @@ from driftpy.math.margin import MarginCategory
 from driftpy.types import MarketType, PerpPosition
 from driftpy.types import PositionDirection, OrderParams, OrderType  # 新增 MarketType 导入
 from solana.rpc.async_api import AsyncClient
+from solana.rpc.types import MemcmpOpts, DataSliceOpts
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
+
 perp_market_indexes = [i.market_index for i in mainnet_perp_market_configs]
 spot_market_indexes = [i.market_index for i in mainnet_spot_market_configs]
 print(perp_market_indexes)
 from driftpy.drift_user import DriftUser
+import base58
+
+base58.b58encode(b'\x9fu_\xe3\xef\x97:\xec').decode("utf-8")  # b'\x9fu_\xe3\xef\x97:\xec'
 
 
 async def main():
     url = 'https://mainnet.helius-rpc.com/?api-key=346cd7c9-73a9-4916-a150-4157181b99dc'  # replace w/ any rpc
     connection = AsyncClient(url)
-    from typing import List, Union
-    from solana.rpc.types import MemcmpOpts,DataSliceOpts
-    memcmp_opts = MemcmpOpts(offset=0, bytes="3Mc6vR")
-    pubkey = Pubkey.from_string("4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T")
-    filters= [80]
-
-    a=await connection.get_program_accounts( Pubkey.from_string("dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH"),data_slice=DataSliceOpts(offset=0,length=10),encoding='base64')
+    memcmp_opts = MemcmpOpts(offset=0, bytes='TfwwBiNJtao')
+    pubkey = Pubkey.from_string("dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH")
+    filters = [memcmp_opts]
+    data_slice = DataSliceOpts(offset=0, length=10)
+    a = await connection.get_program_accounts(pubkey, filters=filters, data_slice=data_slice, encoding='base64')
     print(a)
     with open('PRIVATE_KEY', 'r') as f:
         PRIVATE_KEY = f.read()
@@ -48,11 +52,23 @@ async def main():
     await drift_client.subscribe()
     # a = DriftUser(drift_client, Pubkey.from_string("J1zeHKeV5hYSXec1MzxzErzaKdtJbRBQ6Ggv1F4V8TdZ"),drift_client.account_subscription_config)
     # await a.subscribe()
-    c=DriftUser(drift_client, Pubkey.from_string(
-    '6MrGVgSrELt37aHNLg5RU5wpYkxWCNGAu8yULETREFMT')
-)
-    await c.subscribe()
-    b = c.get_health()
+    for i in a.value:
+        try:
+            c = DriftUser(drift_client, i.pubkey)
+            await c.subscribe()
+            b = c.get_health()
+            print(b)
+            if c.get_total_collateral(MarginCategory.MAINTENANCE) < c.get_margin_requirement(
+                    MarginCategory.MAINTENANCE):
+                x = await drift_client.liquidate_perp(c.account_subscriber.data_and_slot.data.authority,
+                                                      c.account_subscriber.data_and_slot.data.perp_positions[
+                                                          0].market_index, max_base_asset_amount=abs(
+                        c.account_subscriber.data_and_slot.data.perp_positions[0].base_asset_amount))
+        except:
+            traceback.print_exc()
+            continue
+        finally:
+            time.sleep(0.5)
     # 获取当前用户账户
     drift_user = drift_client.get_user()
 

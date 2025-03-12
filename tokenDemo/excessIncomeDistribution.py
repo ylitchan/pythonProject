@@ -1,11 +1,9 @@
-import json
 import traceback
 from datetime import datetime
 from threading import Thread
 
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
-from eth_account import messages
 from web3 import Web3
 
 session = requests.Session()
@@ -77,7 +75,7 @@ def approve_eusd(spender_address, amount_eusd):
 def send_transaction(steth_amount, nonce, gas_price):
     # 构造交易
     tx = contract_lybra.functions.excessIncomeDistribution(
-        1  # steth_amount  # 单位：wei
+        steth_amount  # 单位：wei
     ).build_transaction({
         'chainId': chainId,
         'from': WALLET_ADDRESS,
@@ -93,19 +91,19 @@ def send_transaction(steth_amount, nonce, gas_price):
     # 签名交易
     signed_tx = ACCOUNT.sign_transaction(tx)
     # 构造 Flashbots Bundle
-    target_block = w3.eth.block_number + 1  # 目标为下一个区块
-    bundle = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "eth_sendBundle",
-        "params": [{
-            "txs": [signed_tx.rawTransaction.hex()],  # 签名后的交易列表
-            "blockNumber": hex(target_block),  # 目标区块号（十六进制）
-            # 可选参数
-            "minTimestamp": 0,  # 最早执行时间戳
-            "maxTimestamp": int(w3.eth.get_block('latest')['timestamp']) + 24  # 最晚执行时间戳（10分钟后）
-        }]
-    }
+    # target_block = w3.eth.block_number + 1  # 目标为下一个区块
+    # bundle = {
+    #     "jsonrpc": "2.0",
+    #     "id": 1,
+    #     "method": "eth_sendBundle",
+    #     "params": [{
+    #         "txs": [signed_tx.rawTransaction.hex()],  # 签名后的交易列表
+    #         "blockNumber": hex(target_block),  # 目标区块号（十六进制）
+    #         # 可选参数
+    #         "minTimestamp": 0,  # 最早执行时间戳
+    #         "maxTimestamp": int(w3.eth.get_block('latest')['timestamp']) + 24  # 最晚执行时间戳（10分钟后）
+    #     }]
+    # }
     # bundle = {
     #     "jsonrpc": "2.0",
     #     "id": 1,
@@ -115,27 +113,27 @@ def send_transaction(steth_amount, nonce, gas_price):
     #     ]
     # }
     # 发送 Bundle 到 Flashbots Relay
-    message = messages.encode_defunct(text=Web3.keccak(text=json.dumps(bundle)).hex())
-    signature = WALLET_ADDRESS + ':' + ACCOUNT.sign_message(message).signature.hex()
-    headers = {
-        "Content-Type": "application/json",
-        "X-Flashbots-Signature": signature
-    }
-    response = requests.post(relay_url, json=bundle, headers=headers)
-    # 检查响应
-    if response.status_code == 200:
-        print("Bundle 发送成功:", response.json())
-        send_msg(f"Bundle sent:{response.json()['result']['bundleHash']}")
-    else:
-        print("Bundle 发送失败:", response.status_code, response.text)
+    # message = messages.encode_defunct(text=Web3.keccak(text=json.dumps(bundle)).hex())
+    # signature = WALLET_ADDRESS + ':' + ACCOUNT.sign_message(message).signature.hex()
+    # headers = {
+    #     "Content-Type": "application/json",
+    #     "X-Flashbots-Signature": signature
+    # }
+    # response = requests.post(relay_url, json=bundle, headers=headers)
+    # # 检查响应
+    # if response.status_code == 200:
+    #     print("Bundle 发送成功:", response.json())
+    #     send_msg(f"Bundle sent:{response.json()['result']['bundleHash']}")
+    # else:
+    #     print("Bundle 发送失败:", response.status_code, response.text)
     # 发送交易
-    # tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
-    # print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
-    # send_msg(f"Transaction sent: {tx_hash.hex()}")
-    # if tx_hash:
-    #     # 等待确认
-    #     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
-    #     print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
+    tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+    print(datetime.now(), f"Transaction sent: {tx_hash.hex()}", gas_price)
+    send_msg(f"Transaction sent: {tx_hash.hex()}")
+    if tx_hash:
+        # 等待确认
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+        print(datetime.now(), f"Transaction confirmed in block {receipt['blockNumber']}")
 
 
 # 查询你的合约持有的stETH余额
@@ -233,7 +231,7 @@ if __name__ == "__main__":
     decimals_steth = contract_steth.functions.decimals().call()
     chainId = w3.eth.chain_id
     print('准备完成')
-    send_msg('开始excessIncomeDistribution准备完成')
+    send_msg('excessIncomeDistribution准备完成')
 
 
     def job():
