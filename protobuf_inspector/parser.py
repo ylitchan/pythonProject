@@ -68,13 +68,13 @@ class Parser(object):
                     printable_chunk = "".join(decorate(i, char) for i, char in enumerate(text))
                     break
                 except UnicodeDecodeError:
-                    chunk0.insert(-1, chunk.pop())
                     if not chunk:
                         printable_chunk = "".join(
                             decorate(i, chr(x) if 0x20 <= x < 0x7F else fg3(".")) for i, x in enumerate(chunk0))
                         offset += len(chunk0)
                         chunk0.clear()
                         break
+                    chunk0.insert(-1, chunk.pop())
                     continue
             # lines.append("%04x   %s  %s" % (offset, hexdump, printable_chunk))
             lines.append(printable_chunk)
