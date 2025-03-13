@@ -38,6 +38,8 @@ async def main():
     health4transfer = 60
     positionClose = 5 / 8
     health_sleep = 300
+    perp_market_indexes = set()
+    spot_market_indexes = set()
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     config_logging(logging, logging.INFO)
@@ -54,13 +56,22 @@ async def main():
     with open('PRIVATE_KEY', 'r') as f:
         PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
-    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[0, market_index],
-                               spot_market_indexes=[0])
+    drift_client = DriftClient(connection, wallet, "mainnet", perp_market_indexes=[],
+                               spot_market_indexes=[])
     # 4. 订阅账户数据
     await drift_client.unsubscribe()
     await drift_client.subscribe()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
+    for sp in drift_user.get_user_account().spot_positions:
+        spot_market_indexes.add(sp.market_index)
+    for pp in drift_user.get_user_account().perp_positions:
+        perp_market_indexes.add(pp.market_index)
+    drift_client.account_subscriber = drift_client.account_subscription_config.get_drift_client_subscriber(
+        drift_client.program, list(perp_market_indexes), list(spot_market_indexes), oracle_infos=None
+    )
+    await drift_client.unsubscribe()
+    await drift_client.subscribe()
     # 配置事件订阅
     options = EventSubscriptionOptions(
         event_types=('FundingRateRecord', 'LiquidationRecord'),
