@@ -16,6 +16,7 @@ from binance.lib.utils import config_logging
 from binance.um_futures import UMFutures
 from binance.websocket.um_futures.websocket_client import UMFuturesWebsocketClient
 from driftpy.constants import BASE_PRECISION, PERCENTAGE_PRECISION_EXP, QUOTE_PRECISION, FUNDING_RATE_PRECISION
+from driftpy.constants.perp_markets import mainnet_perp_market_configs
 from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
 from driftpy.events.types import EventSubscriptionOptions, WebsocketLogProviderConfig
@@ -42,6 +43,7 @@ async def main():
     spot_market_indexes = set()
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
+    perp_market_indexes_symbol = {i.market_index: i.base_asset_symbol for i in mainnet_perp_market_configs}
     config_logging(logging, logging.INFO)
     with open(r'bn.json', 'r') as f:
         bn_api = json.load(f)
@@ -299,19 +301,23 @@ async def main():
             amount = abs(event.data.liquidate_perp.base_asset_amount / BASE_PRECISION)
             asyncio.ensure_future(close_drift_position(amount), loop=loop)
             close_bn_position(amount)
-        elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
+        elif event.event_type == "FundingRateRecord" and event.data.market_index in perp_market_indexes:
             funding_rate = event.data.funding_rate
             account_data = um_futures_client.account()
             # 总账户余额（可用保证金 + 已占用保证金）
             balance_bn_total = account_data['totalMarginBalance']
             balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
             funding_rate_round = round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)
+            symbol_funding = perp_market_indexes_symbol.get(event.data.market_index)
             excel_data_now = {'时间': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                              'bn费率': float(um_futures_client.funding_rate(symbol, limit=1)[0]['fundingRate']) * 100,
+                              'symbol': symbol_funding,
+                              'bn费率': float(um_futures_client.funding_rate(symbol, limit=1)[0][
+                                                  'fundingRate']) * 100 if symbol_funding == symbol[:-4] else 0,
                               'bn总额': balance_bn_total,
                               'drift费率': funding_rate_round, 'drift总额': balance_drift_total,
                               '双边总额': float(balance_bn_total) + balance_drift_total}
-            msg = f'==={symbol}费率更新===\n' + '\n-------\n'.join([f'{k}:{j}' for k, j in excel_data_now.items()])
+            msg = f'==={symbol_funding}费率更新===\n' + '\n-------\n'.join(
+                [f'{k}:{j}' for k, j in excel_data_now.items()])
             send_msg(msg)
             with open('fundingRate.json', 'r+') as f:
                 excel_data = json.load(f)
@@ -319,7 +325,7 @@ async def main():
                 f.seek(0)
                 f.truncate()
                 json.dump(excel_data, f, ensure_ascii=False)
-            if funding_rate < 0 < (amount := get_amount_open()):
+            if symbol_funding == symbol[:-4] and funding_rate < 0 < (amount := get_amount_open()):
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
 
