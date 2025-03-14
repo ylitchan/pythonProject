@@ -301,7 +301,7 @@ async def main():
             amount = abs(event.data.liquidate_perp.base_asset_amount / BASE_PRECISION)
             asyncio.ensure_future(close_drift_position(amount), loop=loop)
             close_bn_position(amount)
-        elif event.event_type == "FundingRateRecord" and event.data.market_index in perp_market_indexes:
+        elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
             account_data = um_futures_client.account()
             # 总账户余额（可用保证金 + 已占用保证金）
