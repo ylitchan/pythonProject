@@ -305,8 +305,8 @@ async def main():
             funding_rate = event.data.funding_rate
             account_data = um_futures_client.account()
             # 总账户余额（可用保证金 + 已占用保证金）
-            balance_bn_total = account_data['totalMarginBalance']
-            balance_drift_total = drift_user.get_total_collateral() / QUOTE_PRECISION
+            balance_bn_total = float(account_data['totalMarginBalance'])
+            balance_drift_total = drift_user.get_total_collateral(margin_category=None) / QUOTE_PRECISION
             funding_rate_round = round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)
             symbol_funding = perp_market_indexes_symbol.get(event.data.market_index)
             excel_data_now = {'时间': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -315,7 +315,7 @@ async def main():
                                                   'fundingRate']) * 100 if symbol_funding == symbol[:-4] else 0,
                               'bn总额': balance_bn_total,
                               'drift费率': funding_rate_round, 'drift总额': balance_drift_total,
-                              '双边总额': float(balance_bn_total) + balance_drift_total}
+                              '双边总额': balance_bn_total + balance_drift_total}
             msg = f'==={symbol_funding}费率更新===\n' + '\n-------\n'.join(
                 [f'{k}:{j}' for k, j in excel_data_now.items()])
             send_msg(msg)
