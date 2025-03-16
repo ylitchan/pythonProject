@@ -151,26 +151,26 @@ async def main():
                 min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100))
             )
 
-    def get_amount_close(balance=False):
+    def get_amount_close():
         try:
             quantityPrecision = sp.get(symbol)
             position = um_futures_client.get_position_risk()
             position = position[0]
-            positionAmt = abs(float(position['positionAmt']))
+            positionAmt = abs(float(position['positionAmt'])) * BASE_PRECISION
             perp_position = drift_user.get_perp_position(market_index)
             base_asset_amount = abs(perp_position.base_asset_amount)
-            if not balance:
-                positionAmt = round(positionAmt * positionClose, quantityPrecision)
-                base_asset_amount = round(base_asset_amount * positionClose / BASE_PRECISION,
-                                          quantityPrecision)
-                amount = min(positionAmt, base_asset_amount, 1)
+            if base_asset_amount == positionAmt:
+                # positionAmt = round(positionAmt * positionClose, quantityPrecision)
+                # base_asset_amount = round(base_asset_amount * positionClose / BASE_PRECISION,
+                #                           quantityPrecision)
+                amount = min(round(positionAmt * positionClose / BASE_PRECISION, quantityPrecision), 1)
                 return {'drift': amount, 'bn': amount}
             elif base_asset_amount > positionAmt:
-                amount = round((base_asset_amount - positionAmt * BASE_PRECISION) / BASE_PRECISION,
+                amount = round((base_asset_amount - positionAmt) / BASE_PRECISION,
                                quantityPrecision)
                 return {'drift': amount, 'bn': 0}
             else:
-                amount = round((positionAmt * BASE_PRECISION - base_asset_amount) / BASE_PRECISION,
+                amount = round((positionAmt - base_asset_amount) / BASE_PRECISION,
                                quantityPrecision)
                 return {'drift': 0, 'bn': amount}
         except:
@@ -244,7 +244,7 @@ async def main():
                 traceback.print_exc()
                 msg = f'bn减仓{symbol}失败'
                 send_msg(msg)
-                amount = get_amount_close(balance=True).get('bn', 0)
+                amount = get_amount_close().get('bn', 0)
 
     async def close_drift_position(amount):
         while amount:
@@ -267,7 +267,7 @@ async def main():
                 traceback.print_exc()
                 msg = f"drift减仓{symbol}失败"
                 send_msg(msg)
-                amount = get_amount_close(balance=True).get('drift', 0)
+                amount = get_amount_close().get('drift', 0)
 
     async def open_drift_position(positionSide, amount):
         try:
@@ -292,14 +292,13 @@ async def main():
             send_msg(msg)
             raise Exception(msg)
 
-    # close_bn_position()
     def drift_callback(event: WrappedEvent):
         """处理清算事件"""
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
-            amount = abs(event.data.liquidate_perp.base_asset_amount / BASE_PRECISION)
-            asyncio.ensure_future(close_drift_position(amount), loop=loop)
+            quantityPrecision = sp.get(symbol)
+            amount = round(abs(event.data.liquidate_perp.base_asset_amount / BASE_PRECISION), quantityPrecision)
             close_bn_position(amount)
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
