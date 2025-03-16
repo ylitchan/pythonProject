@@ -65,10 +65,10 @@ async def main():
     await drift_client.subscribe()
     # 获取当前用户账户
     drift_user = drift_client.get_user()
-    for sp in drift_user.get_user_account().spot_positions:
-        spot_market_indexes.add(sp.market_index)
-    for pp in drift_user.get_user_account().perp_positions:
-        perp_market_indexes.add(pp.market_index)
+    for spot_position in drift_user.get_user_account().spot_positions:
+        spot_market_indexes.add(spot_position.market_index)
+    for perp_position in drift_user.get_user_account().perp_positions:
+        perp_market_indexes.add(perp_position.market_index)
     drift_client.account_subscriber = drift_client.account_subscription_config.get_drift_client_subscriber(
         drift_client.program, list(perp_market_indexes), list(spot_market_indexes), oracle_infos=None
     )
