@@ -179,10 +179,10 @@ async def main():
     def get_amount_open():
         if drift_user.get_leverage() > leverage * 10e3:
             return 0
-        quantityPrecision = sp.get(symbol)
         balance_bn = float(um_futures_client.account()['availableBalance'])
         if balance_bn == 0:
             return 0
+        quantityPrecision = sp.get(symbol)
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn可活动余额{balance_bn}\ndrift可活动余额{balance_drift}')
         balance = min(balance_bn, balance_drift) * 0.97
