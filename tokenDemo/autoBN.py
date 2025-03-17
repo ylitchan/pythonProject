@@ -265,13 +265,16 @@ def filter_stocks(stock_codes):
         if len(hist) < 3: continue
         yesterday_yesterday_pct = hist.iloc[-3]['涨跌幅']
         yesterday_pct = hist.iloc[-2]['涨跌幅']
+        yesterday_yesterday_vol = hist.iloc[-3]['成交量']
+        yesterday_vol = hist.iloc[-2]['成交量']
         # 获取今日实时数据
         # spot_data = spot_df[spot_df['代码'].str.contains(code)]
         # if spot_data.empty: continue
 
         # today_vol = spot_data['成交量'].values[0]
         # today_pct = spot_data['涨跌幅'].values[0]
-        if (yesterday_pct / 100 + 1) * (1 + yesterday_yesterday_pct / 100) - 1 <= yesterday_yesterday_pct / 100 / 2:
+        if (yesterday_pct / 100 + 1) * (
+                1 + yesterday_yesterday_pct / 100) - 1 <= yesterday_yesterday_pct / 100 / 2 and yesterday_yesterday_vol >= yesterday_vol:
             selected.append(''.join(code))
     return selected
 
