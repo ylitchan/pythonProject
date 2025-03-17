@@ -37,7 +37,7 @@ async def main():
     health4open = 80
     health4close = 30
     health4transfer = 60
-    positionClose = 5 / 8
+    positionClose = 4 / 8
     health_sleep = 300
     perp_market_indexes = set()
     spot_market_indexes = set()
