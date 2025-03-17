@@ -177,8 +177,12 @@ async def main():
             return {'drift': 0, 'bn': 0}
 
     def get_amount_open():
+        if drift_user.get_leverage() > leverage * 10e3:
+            return 0
         quantityPrecision = sp.get(symbol)
         balance_bn = float(um_futures_client.account()['availableBalance'])
+        if balance_bn == 0:
+            return 0
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn可活动余额{balance_bn}\ndrift可活动余额{balance_drift}')
         balance = min(balance_bn, balance_drift) * 0.97
@@ -187,21 +191,17 @@ async def main():
                             market_index=market_index).price / QUOTE_PRECISION)
         balance_min = float(Decimal(f'0.{"0" * (quantityPrecision - 1)}1')) * markPrice / leverage
         if balance_min > balance:
-            amount_round = 0
-        else:
-            amount = str(balance * leverage / markPrice)
-            amount_round = min(
-                float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), size_max)
-            if amount_round < size_min:
-                amount_round = 0
-            else:
-                notional = amount_round * markPrice
-                if notional < 6 or calculate_health_drift(
-                        int(amount_round * BASE_PRECISION)) < health4open or calculate_health_bn(
-                    notional) < health4open:
-                    amount_round = 0
-        if amount_round == 0:
-            send_msg(f'账户余额不足')
+            return 0
+        amount = str(balance * leverage / markPrice)
+        amount_round = min(
+            float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), size_max)
+        if amount_round < size_min:
+            return 0
+        notional = amount_round * markPrice
+        if notional < 6 or calculate_health_drift(
+                int(amount_round * BASE_PRECISION)) < health4open or calculate_health_bn(
+            notional) < health4open:
+            return 0
         return amount_round
 
     def open_bn_position(positionSide, amount):
@@ -324,7 +324,9 @@ async def main():
                 f.seek(0)
                 f.truncate()
                 json.dump(excel_data, f, ensure_ascii=False)
-            if symbol_funding == symbol[:-4] and funding_rate < 0 < (amount := get_amount_open()):
+            if (amount := get_amount_open()) == 0:
+                send_msg(f'账户余额不足')
+            elif symbol_funding == symbol[:-4] and funding_rate < 0:
                 open_bn_position("SHORT", amount)
                 asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
 

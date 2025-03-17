@@ -36,8 +36,8 @@ async def main():
     pubkey = Pubkey.from_string("dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH")
     filters = [memcmp_opts]
     data_slice = DataSliceOpts(offset=0, length=10)
-    a = await connection.get_program_accounts(pubkey, filters=filters, data_slice=data_slice, encoding='base64')
-    print(a)
+    # a = await connection.get_program_accounts(pubkey, filters=filters, data_slice=data_slice, encoding='base64')
+    # print(a)
     with open('PRIVATE_KEY', 'r') as f:
         PRIVATE_KEY = f.read()
     wallet = Wallet(Keypair.from_base58_string(PRIVATE_KEY))
@@ -52,26 +52,26 @@ async def main():
     await drift_client.subscribe()
     # a = DriftUser(drift_client, Pubkey.from_string("J1zeHKeV5hYSXec1MzxzErzaKdtJbRBQ6Ggv1F4V8TdZ"),drift_client.account_subscription_config)
     # await a.subscribe()
-    for i in a.value:
-        try:
-            c = DriftUser(drift_client, i.pubkey)
-            await c.subscribe()
-            b = c.get_health()
-            print(b)
-            if c.get_total_collateral(MarginCategory.MAINTENANCE) < c.get_margin_requirement(
-                    MarginCategory.MAINTENANCE):
-                x = await drift_client.liquidate_perp(c.account_subscriber.data_and_slot.data.authority,
-                                                      c.account_subscriber.data_and_slot.data.perp_positions[
-                                                          0].market_index, max_base_asset_amount=abs(
-                        c.account_subscriber.data_and_slot.data.perp_positions[0].base_asset_amount))
-        except:
-            traceback.print_exc()
-            continue
-        finally:
-            time.sleep(0.5)
+    # for i in a.value:
+    #     try:
+    #         c = DriftUser(drift_client, i.pubkey)
+    #         await c.subscribe()
+    #         b = c.get_health()
+    #         print(b)
+    #         if c.get_total_collateral(MarginCategory.MAINTENANCE) < c.get_margin_requirement(
+    #                 MarginCategory.MAINTENANCE):
+    #             x = await drift_client.liquidate_perp(c.account_subscriber.data_and_slot.data.authority,
+    #                                                   c.account_subscriber.data_and_slot.data.perp_positions[
+    #                                                       0].market_index, max_base_asset_amount=abs(
+    #                     c.account_subscriber.data_and_slot.data.perp_positions[0].base_asset_amount))
+    #     except:
+    #         traceback.print_exc()
+    #         continue
+    #     finally:
+    #         time.sleep(0.5)
     # 获取当前用户账户
     drift_user = drift_client.get_user()
-
+    pass
     def calculate_health(base_asset_amount=0) -> int:
         if drift_user.is_being_liquidated():
             return 0
