@@ -39,7 +39,7 @@ async def main():
     health4transfer = 70
     positionClose = 4 / 8
     health_sleep = 300
-    perp_market_indexes = {market_index, }
+    perp_market_indexes = {market_index, 2}
     spot_market_indexes = {0, }
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
@@ -306,7 +306,7 @@ async def main():
             # 总账户余额（可用保证金 + 已占用保证金）
             balance_bn_total = float(account_data['totalMarginBalance'])
             balance_drift_total = drift_user.get_total_collateral(margin_category=None) / QUOTE_PRECISION
-            funding_rate_round = round(funding_rate / FUNDING_RATE_PRECISION / 24, PERCENTAGE_PRECISION_EXP)
+            funding_rate_round = round(funding_rate / FUNDING_RATE_PRECISION / 24 * 1e2, PERCENTAGE_PRECISION_EXP)
             symbol_funding = perp_market_indexes_symbol.get(event.data.market_index)
             excel_data_now = {'时间': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                               'symbol': symbol_funding,
