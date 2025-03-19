@@ -29,8 +29,8 @@ from solders.keypair import Keypair
 
 
 async def main():
-    symbol = 'ETHUSDT'
-    market_index = 2
+    symbol = 'SOLUSDT'
+    market_index = 0
     leverage = 6
     size_min = 0.1
     size_max = 0.3
@@ -39,8 +39,8 @@ async def main():
     health4transfer = 60
     positionClose = 4 / 8
     health_sleep = 300
-    perp_market_indexes = set()
-    spot_market_indexes = set()
+    perp_market_indexes = {market_index, }
+    spot_market_indexes = {0, }
     open_map = {"SHORT": "SELL", "LONG": "BUY"}
     close_map = {"SHORT": "BUY", "LONG": "SELL"}
     perp_market_indexes_symbol = {i.market_index: i.base_asset_symbol for i in mainnet_perp_market_configs}
