@@ -32,11 +32,11 @@ async def main():
     symbol = 'SOLUSDT'
     market_index = 0
     leverage = 6
-    size_min = 0.1
-    size_max = 0.3
+    size_min = 1
+    size_max = 3
     health4open = 80
     health4close = 30
-    health4transfer = 60
+    health4transfer = 70
     positionClose = 4 / 8
     health_sleep = 300
     perp_market_indexes = {market_index, }
