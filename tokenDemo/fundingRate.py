@@ -324,11 +324,6 @@ async def main():
                 f.seek(0)
                 f.truncate()
                 json.dump(excel_data, f, ensure_ascii=False)
-            if (amount := get_amount_open()) == 0:
-                send_msg(f'账户余额不足')
-            elif symbol_funding == symbol[:-4] and funding_rate < 0:
-                open_bn_position("SHORT", amount)
-                asyncio.ensure_future(open_drift_position("LONG", amount), loop=loop)
 
     event_subscriber.event_emitter.new_event += drift_callback
 
