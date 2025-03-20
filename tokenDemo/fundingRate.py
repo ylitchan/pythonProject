@@ -52,7 +52,12 @@ async def main():
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
     listenKey = um_futures_client.new_listen_key()["listenKey"]
     logging.info("Listen key : {}".format(listenKey))
-    sp = {i['symbol']: i['quantityPrecision'] - 1 for i in um_futures_client.exchange_info()['symbols']}
+    sp = {i['symbol']: i['quantityPrecision'] for i in um_futures_client.exchange_info()['symbols']}
+    quantityPrecision = sp.get(symbol)
+    if quantityPrecision == 0:
+        quantityPrecision = Decimal('1')
+    else:
+        quantityPrecision = Decimal(f'0.{"1" * quantityPrecision}')
     url = 'https://mainnet.helius-rpc.com/?api-key=346cd7c9-73a9-4916-a150-4157181b99dc'  # replace w/ any rpc
     connection = AsyncClient(url)
     with open('PRIVATE_KEY', 'r') as f:
@@ -153,25 +158,22 @@ async def main():
 
     def get_amount_close():
         try:
-            quantityPrecision = sp.get(symbol)
             position = um_futures_client.get_position_risk()
             position = position[0]
             positionAmt = abs(float(position['positionAmt'])) * BASE_PRECISION
             perp_position = drift_user.get_perp_position(market_index)
             base_asset_amount = abs(perp_position.base_asset_amount)
             if base_asset_amount == positionAmt:
-                # positionAmt = round(positionAmt * positionClose, quantityPrecision)
-                # base_asset_amount = round(base_asset_amount * positionClose / BASE_PRECISION,
-                #                           quantityPrecision)
-                amount = min(round(positionAmt * positionClose / BASE_PRECISION, quantityPrecision), 1)
+                amount = float(Decimal(positionAmt * positionClose / BASE_PRECISION).quantize(quantityPrecision,
+                                                                                              rounding=ROUND_DOWN))
                 return {'drift': amount, 'bn': amount}
             elif base_asset_amount > positionAmt:
-                amount = round((base_asset_amount - positionAmt) / BASE_PRECISION,
-                               quantityPrecision)
+                amount = float(Decimal((base_asset_amount - positionAmt) / BASE_PRECISION).quantize(quantityPrecision,
+                                                                                                    rounding=ROUND_DOWN))
                 return {'drift': amount, 'bn': 0}
             else:
-                amount = round((positionAmt - base_asset_amount) / BASE_PRECISION,
-                               quantityPrecision)
+                amount = float(Decimal((positionAmt - base_asset_amount) / BASE_PRECISION).quantize(quantityPrecision,
+                                                                                                    rounding=ROUND_DOWN))
                 return {'drift': 0, 'bn': amount}
         except:
             return {'drift': 0, 'bn': 0}
@@ -182,19 +184,15 @@ async def main():
         balance_bn = float(um_futures_client.account()['availableBalance'])
         if balance_bn == 0:
             return 0
-        quantityPrecision = sp.get(symbol)
         balance_drift = drift_user.get_free_collateral() / QUOTE_PRECISION
         send_msg(f'bn可活动余额{balance_bn}\ndrift可活动余额{balance_drift}')
         balance = min(balance_bn, balance_drift) * 0.97
         markPrice = max(float(um_futures_client.mark_price(symbol)['markPrice']),
                         drift_client.get_oracle_price_data_for_perp_market(
                             market_index=market_index).price / QUOTE_PRECISION)
-        balance_min = float(Decimal(f'0.{"0" * (quantityPrecision - 1)}1')) * markPrice / leverage
-        if balance_min > balance:
-            return 0
         amount = str(balance * leverage / markPrice)
         amount_round = min(
-            float(Decimal(amount).quantize(Decimal(f'0.{"1" * quantityPrecision}'), rounding=ROUND_DOWN)), size_max)
+            float(Decimal(amount).quantize(quantityPrecision, rounding=ROUND_DOWN)), size_max)
         if amount_round < size_min:
             return 0
         notional = amount_round * markPrice
@@ -297,8 +295,7 @@ async def main():
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
-            quantityPrecision = sp.get(symbol)
-            amount = round(abs(event.data.liquidate_perp.base_asset_amount / BASE_PRECISION), quantityPrecision)
+            amount = get_amount_close()
             close_bn_position(amount)
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
