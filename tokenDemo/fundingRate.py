@@ -15,7 +15,7 @@ from anchorpy import Wallet
 from binance.lib.utils import config_logging
 from binance.um_futures import UMFutures
 from binance.websocket.um_futures.websocket_client import UMFuturesWebsocketClient
-from driftpy.constants import BASE_PRECISION, PERCENTAGE_PRECISION_EXP, QUOTE_PRECISION, FUNDING_RATE_PRECISION
+from driftpy.constants import BASE_PRECISION, PERCENTAGE_PRECISION_EXP, QUOTE_PRECISION
 from driftpy.constants.perp_markets import mainnet_perp_market_configs
 from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
@@ -115,7 +115,7 @@ async def main():
             quote_asset_amount=-4829573078,
             quote_break_even_amount=-4801819309, quote_entry_amount=-4797405660, open_bids=0, open_asks=0,
             settled_pnl=94090387, lp_shares=0, last_base_asset_amount_per_lp=0, last_quote_asset_amount_per_lp=0,
-            remainder_base_asset_amount=0, market_index=2, open_orders=0, per_lp_base=0
+            remainder_base_asset_amount=0, market_index=market_index, open_orders=0, per_lp_base=0
         )
         base_asset_value_cal = drift_user.calculate_weighted_perp_position_liability(
             perp_position=perp_position_cal,
@@ -303,7 +303,7 @@ async def main():
             # 总账户余额（可用保证金 + 已占用保证金）
             balance_bn_total = float(account_data['totalMarginBalance'])
             balance_drift_total = drift_user.get_total_collateral(margin_category=None) / QUOTE_PRECISION
-            funding_rate_round = round(funding_rate / event.data.oracle_price_twap / FUNDING_RATE_PRECISION * 1e2,
+            funding_rate_round = round(funding_rate / event.data.oracle_price_twap * 1e2,
                                        PERCENTAGE_PRECISION_EXP)
             symbol_funding = perp_market_indexes_symbol.get(event.data.market_index)
             excel_data_now = {'时间': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
