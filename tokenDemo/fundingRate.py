@@ -164,16 +164,18 @@ async def main():
             perp_position = drift_user.get_perp_position(market_index)
             base_asset_amount = abs(perp_position.base_asset_amount)
             if base_asset_amount == positionAmt:
-                amount = float(Decimal(positionAmt * positionClose / BASE_PRECISION).quantize(quantityPrecision,
-                                                                                              rounding=ROUND_DOWN))
+                amount = float(Decimal(str(positionAmt * positionClose / BASE_PRECISION)).quantize(quantityPrecision,
+                                                                                                   rounding=ROUND_DOWN))
                 return {'drift': amount, 'bn': amount}
             elif base_asset_amount > positionAmt:
-                amount = float(Decimal((base_asset_amount - positionAmt) / BASE_PRECISION).quantize(quantityPrecision,
-                                                                                                    rounding=ROUND_DOWN))
+                amount = float(
+                    Decimal(str((base_asset_amount - positionAmt) / BASE_PRECISION)).quantize(quantityPrecision,
+                                                                                              rounding=ROUND_DOWN))
                 return {'drift': amount, 'bn': 0}
             else:
-                amount = float(Decimal((positionAmt - base_asset_amount) / BASE_PRECISION).quantize(quantityPrecision,
-                                                                                                    rounding=ROUND_DOWN))
+                amount = float(
+                    Decimal(str((positionAmt - base_asset_amount) / BASE_PRECISION)).quantize(quantityPrecision,
+                                                                                              rounding=ROUND_DOWN))
                 return {'drift': 0, 'bn': amount}
         except:
             return {'drift': 0, 'bn': 0}
@@ -251,7 +253,7 @@ async def main():
                     market_type=MarketType.Perp(),
                     order_type=OrderType.Market(),
                     market_index=market_index,
-                    base_asset_amount=amount * BASE_PRECISION,
+                    base_asset_amount=int(amount * BASE_PRECISION),
                     direction=PositionDirection.Short(),
                     price=0,
                     reduce_only=True,
@@ -295,7 +297,8 @@ async def main():
         print(datetime.now(), 'drift事件', event.event_type, '\n')
         if event.event_type == "LiquidationRecord" and event.data.user == drift_user.user_public_key:
             send_msg(f'drift清算{symbol}')
-            amount = get_amount_close()
+            amount = float(Decimal(str(abs(event.data.liquidate_perp.base_asset_amount / BASE_PRECISION))).quantize(
+                quantityPrecision, rounding=ROUND_DOWN))
             close_bn_position(amount)
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
             funding_rate = event.data.funding_rate
