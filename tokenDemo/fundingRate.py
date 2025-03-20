@@ -15,7 +15,7 @@ from anchorpy import Wallet
 from binance.lib.utils import config_logging
 from binance.um_futures import UMFutures
 from binance.websocket.um_futures.websocket_client import UMFuturesWebsocketClient
-from driftpy.constants import BASE_PRECISION, PERCENTAGE_PRECISION_EXP, QUOTE_PRECISION, FUNDING_RATE_BUFFER
+from driftpy.constants import BASE_PRECISION, PERCENTAGE_PRECISION_EXP, QUOTE_PRECISION
 from driftpy.constants.perp_markets import mainnet_perp_market_configs
 from driftpy.drift_client import DriftClient
 from driftpy.events.event_subscriber import EventSubscriber
@@ -301,12 +301,13 @@ async def main():
                 quantityPrecision, rounding=ROUND_DOWN))
             close_bn_position(amount)
         elif event.event_type == "FundingRateRecord" and event.data.market_index == market_index:
+            print(event)
             funding_rate = event.data.funding_rate
             account_data = um_futures_client.account()
             # 总账户余额（可用保证金 + 已占用保证金）
             balance_bn_total = float(account_data['totalMarginBalance'])
             balance_drift_total = drift_user.get_total_collateral(margin_category=None) / QUOTE_PRECISION
-            funding_rate_round = round(funding_rate / event.data.oracle_price_twap / FUNDING_RATE_BUFFER,
+            funding_rate_round = round(funding_rate / event.data.oracle_price_twap / 10,
                                        PERCENTAGE_PRECISION_EXP)
             symbol_funding = perp_market_indexes_symbol.get(event.data.market_index)
             excel_data_now = {'时间': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
