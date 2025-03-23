@@ -29,11 +29,11 @@ from solders.keypair import Keypair
 
 
 async def main():
-    symbol = 'SOLUSDT'
-    market_index = 0
+    symbol = 'ETHUSDT'
+    market_index = 2
     leverage = 6
-    size_min = 1
-    size_max = 3
+    size_min = 0.1
+    size_max = 0.3
     health4open = 80
     health4close = 30
     health4transfer = 70
