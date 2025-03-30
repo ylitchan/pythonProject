@@ -84,6 +84,17 @@ async def get_kline(semaphore, symbol, t: str):
         return kline
 
 
+def calculate_ema_pandas(prices, period=None):
+    """
+    使用pandas计算EMA
+    """
+    df = pd.Series(prices)
+    if not period:
+        period = len(prices)
+    ema = df.ewm(span=period, adjust=False).mean()
+    return ema.tolist()[-1]
+
+
 async def rzq_token(semaphore, symbol, alert, success, alert_m):
     try:
         kline = await get_kline(semaphore, symbol, "1Dutc")
@@ -112,15 +123,15 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
                 [k[5] for k in kline[:index_e]] + [k[5] for k in kline[index_e + 1:]]) * 2:
             return
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
-        zf = round(sum(map(lambda k: k[4] / k[1] - 1, kline[index_s:-1])) * 100, 2)
-        zf_m = zf / (len(kline) - 1 - index_s)
+        kline_zf = list(map(lambda k: (k[4] / k[1] - 1) * 100, kline[index_s:-1]))
+        zf_m = calculate_ema_pandas(kline_zf)
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
-        if expectation < 0:
+        if expectation <= 0:
             return
         if price_zy > kline[-1][2]:
             price_zs = kline[index_e][3]
-            data = {symbol: (price_close, zf, expectation, price_zy, price_zs)}
+            data = {symbol: (price_close, round(zf_m, 2), expectation, price_zy, price_zs)}
             alert.update(data)
             alert_m.update(data)
             return data
