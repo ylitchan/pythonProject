@@ -359,7 +359,7 @@ async def provider():
             if onBehalfOfCollateralRatio <= 10e19 or onBehalfOfCollateralRatio >= badCollateralRatio or assetValue * 0.1 / 10e27 <= w3.eth.gas_price * 1.3:
                 return
             target_address_set.add((target_address, onBehalfOfCollateralRatio, depositedAsset))
-            send_msg(f'清算地址:{target_address}\n抵押率:{onBehalfOfCollateralRatio}')
+            send_msg(f'清算地址:{target_address}\n抵押率:{onBehalfOfCollateralRatio}\n资产:{depositedAsset}')
         except:
             return
 
