@@ -78,7 +78,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         #     data = {symbol: (kline[-1][4], 0, 100, 3000, 3000)}
         #     alert.update(data)
         #     return data
-        if len(kline) < 20 or kline[-1][4] <= kline[-1][1]:
+        if len(kline) < 20 or kline[-1][4] <= kline[-1][1] or kline[-2][5] > kline[-1][5]:
             return
         index_e = 0
         for i, k in enumerate(kline[-2::-1]):
