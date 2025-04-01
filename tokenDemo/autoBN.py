@@ -103,7 +103,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         #     data = {symbol: (kline[-1][4], 0, 100, 3000, 3000)}
         #     alert.update(data)
         #     return data
-        if kline[-1][4] <= kline[-1][1]:
+        if len(kline) < 20 or kline[-1][4] <= kline[-1][1]:
             return
         index_d = 0
         for i, k in enumerate(kline[::-1]):
@@ -305,10 +305,10 @@ def monitor_stocks():
 
 
 async def main():
-    # monitor_stocks()
+    monitor_stocks()
     await rzq_market('BN')
     # 设置任务调度
-    scheduler.add_job(monitor_stocks, 'cron', hour='9', minute='30', second='00', day_of_week='mon-fri',
+    scheduler.add_job(monitor_stocks, 'cron', hour='9', minute='00', second='00', day_of_week='mon-fri',
                       timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
                       args=('BN',))
