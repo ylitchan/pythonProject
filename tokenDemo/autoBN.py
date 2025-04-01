@@ -52,31 +52,6 @@ def trade(symbol, price, stopPrice, symbols_info):
         return
 
 
-def find_continuous_subsequences(nums, direction):
-    n = len(nums)
-    # 临时存储当前递减的子序列
-    current_subseq = []
-    if direction:
-        for i in range(n):
-            # 如果当前子序列为空或递减
-            if not current_subseq or nums[i] > current_subseq[-1]:
-                current_subseq.append(nums[i])
-            else:
-                ii, kk = find_continuous_subsequences(nums[i - 1:], 0)
-                kk_asc = kk[:max(8 - len(current_subseq), 0)][::-1]
-                return n - ii - i + len(kk) - len(kk_asc), n - i, kk_asc
-        return 0, n - 1, []
-    else:
-        for i in range(n):
-            # 如果当前子序列为空或递减
-            if (  # nums[i] >= statistics.mean(nums[i:i + 7]) and
-                    nums[i] < nums[i - 1] if i > 0 else True):
-                current_subseq.append(nums[i])
-            else:
-                return i - 1, current_subseq
-        return n - 1, current_subseq
-
-
 async def get_kline(semaphore, symbol, t: str):
     async with semaphore:
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
@@ -105,23 +80,23 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         #     return data
         if len(kline) < 20 or kline[-1][4] <= kline[-1][1]:
             return
-        index_d = 0
-        for i, k in enumerate(kline[::-1]):
-            if k[4] <= k[1]:
-                index_d = i
+        index_e = 0
+        for i, k in enumerate(kline[-2::-1]):
+            if k[4] > k[1] and k[5] >= max(
+                    [k[5] for k in kline[:-i - 2]] + [k[5] for k in kline[-i - 1:]]) * 2:
+                index_e = -i - 2
+                index_s = index_e
+                for ii, kk in enumerate(kline[-i - 3::-1]):
+                    if kk[4] <= kk[1]:
+                        index_s = index_e - ii
+                        break
                 break
-        if not index_d:
+        if not index_e or list(filter(lambda x: kline[index_e][3] > x[4], kline[index_e + 1:-1])):
+            return
+        price_close = kline[-1][4]
+        if kline[-2][2] > price_close:
             return
         kline_close = [k[4] for k in kline]
-        index_s, index_e, kline_close_asc = find_continuous_subsequences(kline_close[::-1][index_d:], 1)
-        if index_e == 0 or list(filter(lambda x: kline[index_e][3] > x[4], kline[index_e + 1:-1])):
-            return
-        if kline[index_s][4] <= kline[index_s][1]:
-            index_s += 1
-        price_close = kline[-1][4]
-        if kline[-2][2] > price_close or kline[index_e][5] < max(
-                [k[5] for k in kline[:index_e]] + [k[5] for k in kline[index_e + 1:]]) * 2:
-            return
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
         kline_zf = list(map(lambda k: (k[4] / k[1] - 1) * 100, kline[index_s:-1]))
         zf_m = calculate_ema_pandas(kline_zf)
@@ -305,7 +280,7 @@ def monitor_stocks():
 
 
 async def main():
-    monitor_stocks()
+    # monitor_stocks()
     await rzq_market('BN')
     # 设置任务调度
     scheduler.add_job(monitor_stocks, 'cron', hour='9', minute='00', second='00', day_of_week='mon-fri',
