@@ -248,7 +248,7 @@ def filter_stocks(stock_codes):
         except:
             traceback.print_exc()
             continue
-        if len(hist) < 3: continue
+        if len(hist) < 3 or hist.iloc[-2]['涨跌幅'] > 0: continue
         yesterday_close = hist.iloc[-2]['收盘']
         yesterday_open = hist.iloc[-2]['开盘']
         yesterday_yesterday_vol = hist.iloc[-3]['成交量']
