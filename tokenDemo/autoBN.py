@@ -74,10 +74,6 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
     try:
         kline = await get_kline(semaphore, symbol, "1Dutc")
         success.add(symbol)
-        # if symbol == 'ETHUSDT' and kline[-1][4] <= 3000:
-        #     data = {symbol: (kline[-1][4], 0, 100, 3000, 3000)}
-        #     alert.update(data)
-        #     return data
         if len(kline) < 20 or kline[-1][4] <= kline[-1][1]:  # or kline[-1][5] < kline[-2][5]:
             return
         index_e = 0
