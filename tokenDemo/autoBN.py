@@ -77,12 +77,12 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         if len(kline) < 20 or kline[-1][4] <= kline[-1][1]:  # or kline[-1][5] < kline[-2][5]:
             return
         index_e = 0
-        for i, k in enumerate(kline[-2::-1]):
+        for i, k in enumerate(kline[-3::-1]):
             if k[4] > k[1] and k[5] >= max(
-                    [k[5] for k in kline[:-i - 2]] + [k[5] for k in kline[-i - 1:]]) * 2:
-                index_e = -i - 2
+                    [k[5] for k in kline[:-i - 3]] + [k[5] for k in kline[-i - 2:]]) * 2:
+                index_e = -i - 3
                 index_s = index_e
-                for ii, kk in enumerate(kline[-i - 3::-1]):
+                for ii, kk in enumerate(kline[index_e - 1::-1]):
                     if kk[4] <= kk[1]:
                         index_s = index_e - ii
                         break
