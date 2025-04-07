@@ -36,6 +36,7 @@ async def main():
     health4close = 30
     health4transfer = 70
     positionClose = 4 / 8
+    global health_sleep
     health_sleep = 300
     perp_market_indexes = {market_index, 2}
     spot_market_indexes = {0, }
