@@ -88,7 +88,33 @@ def get_user_data():
     # 格式化为字符串
     vesting['end_time'] = local_time.strftime("%Y/%m/%d %H:%M:%S")
     vesting['usdValue'] = data[-1]['stats']['net_usd_value']
-    msg = f'Farming:\n{json.dumps(farming, ensure_ascii=False, indent=4)}\n-------\nVesting:\n{json.dumps(vesting, ensure_ascii=False, indent=4)}'
+    response = requests.get("https://api.debank.com/user", params={
+        'id': "0x2ec65b1c8ddd841b025ee3d134015ae907ba1a73"
+    }, headers={
+        'User-Agent': "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36 Edg/135.0.0.0",
+        'Accept-Encoding': "gzip, deflate, br, zstd",
+        'pragma': "no-cache",
+        'cache-control': "no-cache",
+        'sec-ch-ua-platform': "\"Windows\"",
+        'account': "{\"random_at\":1744602342,\"random_id\":\"0480933ec4d24e31bbd3a95a0234e443\",\"user_addr\":null}",
+        'x-api-ver': "v2",
+        'sec-ch-ua': "\"Microsoft Edge\";v=\"135\", \"Not-A.Brand\";v=\"8\", \"Chromium\";v=\"135\"",
+        'sec-ch-ua-mobile': "?0",
+        'source': "web",
+        'x-api-sign': "c0dfaab68fa12423fa5bf4011545ef81ea596d290eced99bfee25f5244d67a51",
+        'x-api-nonce': "n_N3J5FopDbFM9Hu69BbKMr0JnEMrCbmlRV88UpaF6",
+        'x-api-ts': "1744615702",
+        'origin': "https://debank.com",
+        'sec-fetch-site': "same-site",
+        'sec-fetch-mode': "cors",
+        'sec-fetch-dest': "empty",
+        'referer': "https://debank.com/",
+        'accept-language': "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        'dnt': "1",
+        'sec-gpc': "1",
+        'priority': "u=1, i"
+    }, impersonate='chrome110')
+    msg = f"Farming:\n{json.dumps(farming, ensure_ascii=False, indent=4)}\n-------\nVesting:\n{json.dumps(vesting, ensure_ascii=False, indent=4)}\n-------\nTotal:\nusdValue:{response.json()['data']['user']['stats']['usd_value']}"
     send_msg(msg)
 
 
