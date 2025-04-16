@@ -69,7 +69,7 @@ def get_close():
 def get_user_data():
     earned = contract_eUSD_3CRV_LP_Staking.functions.earned('0x2EC65B1C8Ddd841b025Ee3D134015Ae907ba1A73').call()
     balance = contract_eUSD_3CRV_LP_Staking.functions.balanceOf('0x2EC65B1C8Ddd841b025Ee3D134015Ae907ba1A73').call()
-    msg = f"earned:\n{int(earned / 1e18)}esLBR\n-------\nbalance:\n{int(balance / 1e18)}LBR"
+    msg = f"earned:\n{int(earned / 1e18)}esLBR\n-------\nbalance:\n{int(balance / 1e18)}eUSD/3CRV"
     send_msg(msg)
 
 

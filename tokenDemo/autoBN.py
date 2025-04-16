@@ -199,7 +199,7 @@ def get_upper_limit(code, stock_info):
         return round(prev_close * 1.1, 2)
 
 
-def get_last_trading_days(days=2):
+def get_last_trading_days(days=3):
     # 获取最近的交易日列表
     trade_dates = ak.tool_trade_date_hist_sina()
     trade_dates = pd.to_datetime(trade_dates["trade_date"])  # 转换为 datetime
@@ -215,6 +215,7 @@ def get_last_trading_days(days=2):
 def filter_stocks():
     # 获取最近交易日（这里假设昨日是20231009，实际应自动获取）
     start_date, end_date = get_last_trading_days()
+    # start_date, end_date = ('20250410','20250411')
     zt_df = ak.stock_zt_pool_em(date=start_date)
     if zt_df.empty:
         print(f"没有在 {start_date} 找到涨停股票。")
@@ -232,18 +233,18 @@ def filter_stocks():
             traceback.print_exc()
             continue
         print(code, hist.iloc[-1]['涨跌幅'])
-        if len(hist) < 2 or hist.iloc[-1]['涨跌幅'] > 0: continue
+        if len(hist) < 3 or hist.iloc[-2]['涨跌幅'] > 0: continue
         today_close = hist.iloc[-1]['收盘']
         today_open = hist.iloc[-1]['开盘']
-        yesterday_vol = hist.iloc[-2]['成交量']
-        today_vol = hist.iloc[-1]['成交量']
+        yesterday_close = hist.iloc[-2]['收盘']
+        yesterday_open = hist.iloc[-2]['开盘']
         # 获取今日实时数据
         # spot_data = spot_df[spot_df['代码'].str.contains(code)]
         # if spot_data.empty: continue
 
         # today_vol = spot_data['成交量'].values[0]
         # today_pct = spot_data['涨跌幅'].values[0]
-        if today_close > today_open and yesterday_vol >= today_vol:
+        if today_close > max(today_open, yesterday_close) and yesterday_close >= yesterday_open:
             selected.append(''.join(code))
     return selected
 
@@ -262,10 +263,10 @@ def monitor_stocks():
 
 
 async def main():
-    # monitor_stocks()
+    monitor_stocks()
     await rzq_market('BN')
     # 设置任务调度
-    scheduler.add_job(monitor_stocks, 'cron', hour='15', minute='00', second='00', day_of_week='mon-fri',
+    scheduler.add_job(monitor_stocks, 'cron', hour='14', minute='52', second='00', day_of_week='mon-fri',
                       timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
                       args=('BN',))
