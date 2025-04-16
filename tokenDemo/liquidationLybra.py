@@ -342,6 +342,20 @@ def send_msg(msg):
         return
 
 
+def get_close():
+    current_time = int(datetime.now().timestamp())
+    response = requests.get("https://prices.curve.fi/v1/ohlc/ethereum/0x880F2fB3704f1875361DE6ee59629c6c6497a5E3",
+                            params={
+                                'main_token': "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                                'reference_token': "0x97de57eC338AB5d51557DA3434828C5DbFaDA371",
+                                'agg_number': "15",
+                                'agg_units': "minute",
+                                'start': current_time - 15 * 60,
+                                'end': current_time
+                            })
+    return response.json()['data'][-1]['close']
+
+
 async def provider():
     print(datetime.now(), '开始扫描')
     target_address_set = set()
@@ -367,11 +381,15 @@ async def provider():
         try:
             # 查询余额
             eusdAmount = contract_eusd.functions.balanceOf(WALLET_ADDRESS).call()
+            if eusdAmount < 50:
+                return
             target_address, onBehalfOfCollateralRatio, depositedAsset = arg
             if superLiquidation and onBehalfOfCollateralRatio < 125 * 1e18:
                 assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset))
             else:
                 assetAmount = int(min(eusdAmount * 1e18 / assetPrice, depositedAsset / 2))
+            if assetAmount * assetPrice * 0.1 / 10e27 <= w3.eth.gas_price * 1.3 * 4:
+                return
             if superLiquidation:
                 tx = contract_lybra.functions.superLiquidation(
                     WALLET_ADDRESS, target_address, assetAmount
@@ -418,10 +436,11 @@ async def provider():
             await asyncio.sleep(120)
             continue
     await asyncio.gather(*[onBehalfOfAddress(target_address) for target_address in address_borrowed])
+    if get_close() > 1.09:
+        return
     target_address_set = sorted(target_address_set, key=lambda x: x[-1], reverse=True)
     for a in target_address_set:
         keeper(a)
-        break
 
 
 async def main():
