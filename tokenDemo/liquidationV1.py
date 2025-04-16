@@ -499,7 +499,8 @@ async def provider():
             if onBehalfOfCollateralRatio >= badCollateralRatio:
                 return
             target_address_set.add((target_address, onBehalfOfCollateralRatio, depositedAsset))
-            send_msg(f'V1清算地址:{target_address}')
+            send_msg(f'V1清算地址:{target_address}\n抵押率:{onBehalfOfCollateralRatio}\n资产:{depositedAsset}')
+
         except:
             return
 
