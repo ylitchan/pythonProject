@@ -90,7 +90,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         if not index_e or list(filter(lambda x: kline[index_e][3] > x[4], kline[index_e + 1:-1])):
             return
         price_close = kline[-1][4]
-        if kline[-2][2] > price_close:
+        if kline[-2][2] >= price_close:
             return
         kline_close = [k[4] for k in kline]
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
@@ -233,7 +233,7 @@ def filter_stocks():
             traceback.print_exc()
             continue
         print(code, hist.iloc[-1]['涨跌幅'])
-        if len(hist) < 3 or hist.iloc[-2]['涨跌幅'] > 0: continue
+        if len(hist) < 3 or hist.iloc[-2]['涨跌幅'] >= 0: continue
         today_close = hist.iloc[-1]['收盘']
         today_open = hist.iloc[-1]['开盘']
         yesterday_close = hist.iloc[-2]['收盘']
