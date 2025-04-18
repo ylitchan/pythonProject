@@ -199,7 +199,7 @@ def get_upper_limit(code, stock_info):
         return round(prev_close * 1.1, 2)
 
 
-def get_last_trading_days(today=datetime.datetime.today(), days=20):
+def get_last_trading_days(today=datetime.datetime.today(), days=60):
     # 获取最近的交易日列表
     trade_dates = ak.tool_trade_date_hist_sina()
     trade_dates = pd.to_datetime(trade_dates["trade_date"])  # 转换为 datetime
@@ -215,7 +215,7 @@ def get_last_trading_days(today=datetime.datetime.today(), days=20):
 def filter_stocks():
     # 获取最近交易日（这里假设昨日是20231009，实际应自动获取）
     start_date, end_date, zt_date = get_last_trading_days()
-    # start_date, end_date, zt_date = get_last_trading_days(datetime.datetime.strptime('20250417', '%Y%m%d'))
+    # start_date, end_date, zt_date = get_last_trading_days(datetime.datetime.strptime('20250415', '%Y%m%d'))
     zt_df = ak.stock_zt_pool_em(date=zt_date)
     if zt_df.empty:
         print(f"没有在 {zt_date} 找到涨停股票。")
@@ -233,7 +233,7 @@ def filter_stocks():
             traceback.print_exc()
             continue
         print(code, hist.iloc[-1]['涨跌幅'])
-        if len(hist) < 20 or hist.iloc[-2]['涨跌幅'] >= 0 or hist.iloc[:-3]['收盘'].max() > hist.iloc[-3][
+        if len(hist) < 60 or hist.iloc[-2]['涨跌幅'] >= 0 or hist.iloc[:-3]['收盘'].max() > hist.iloc[-3][
             '收盘']: continue
         today_close = hist.iloc[-1]['收盘']
         today_open = hist.iloc[-1]['开盘']
