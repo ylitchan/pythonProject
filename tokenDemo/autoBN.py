@@ -199,26 +199,26 @@ def get_upper_limit(code, stock_info):
         return round(prev_close * 1.1, 2)
 
 
-def get_last_trading_days(days=3):
+def get_last_trading_days(today=datetime.datetime.today(), days=20):
     # 获取最近的交易日列表
     trade_dates = ak.tool_trade_date_hist_sina()
     trade_dates = pd.to_datetime(trade_dates["trade_date"])  # 转换为 datetime
     # 找到最近的三个交易日
-    today = datetime.datetime.today()
     recent_trading_days = trade_dates[trade_dates <= today].sort_values(ascending=False).iloc[:days]
     start_date = recent_trading_days.min().strftime("%Y%m%d")
     end_date = recent_trading_days.max().strftime("%Y%m%d")
-    return start_date, end_date
+    zt_date = recent_trading_days.iloc[2].strftime("%Y%m%d")
+    return start_date, end_date, zt_date
 
 
 # 步骤2：筛选符合条件的股票
 def filter_stocks():
     # 获取最近交易日（这里假设昨日是20231009，实际应自动获取）
-    start_date, end_date = get_last_trading_days()
-    # start_date, end_date = ('20250410','20250411')
-    zt_df = ak.stock_zt_pool_em(date=start_date)
+    start_date, end_date, zt_date = get_last_trading_days()
+    # start_date, end_date, zt_date = get_last_trading_days(datetime.datetime.strptime('20250415', '%Y%m%d'))
+    zt_df = ak.stock_zt_pool_em(date=zt_date)
     if zt_df.empty:
-        print(f"没有在 {start_date} 找到涨停股票。")
+        print(f"没有在 {zt_date} 找到涨停股票。")
         return []
     stock_codes = zt_df[['代码', '名称']].values.tolist()
     print(f"昨日涨停股：{stock_codes}")
@@ -233,7 +233,7 @@ def filter_stocks():
             traceback.print_exc()
             continue
         print(code, hist.iloc[-1]['涨跌幅'])
-        if len(hist) < 3 or hist.iloc[-2]['涨跌幅'] >= 0: continue
+        if len(hist) < 20 or hist.iloc[-2]['涨跌幅'] >= 0 or hist['收盘'].max() > hist.iloc[-3]['收盘']: continue
         today_close = hist.iloc[-1]['收盘']
         today_open = hist.iloc[-1]['开盘']
         yesterday_close = hist.iloc[-2]['收盘']
