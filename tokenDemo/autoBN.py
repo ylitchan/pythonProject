@@ -40,7 +40,8 @@ def trade(symbol, price, stopPrice, symbols_info):
                     "side": "SELL",
                     "quantity": symbol_free_round,
                     "price": price,
-                    "stopPrice": stopPrice
+                    "stopPrice": max(stopPrice, float(
+                        Decimal(6 / symbol_free_round).quantize(Decimal(f'{stopPrice}'), rounding=ROUND_DOWN)))
                 }
                 spotBN.new_oco_order(**params)
                 return symbol
@@ -101,7 +102,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         if expectation <= 0:
             return
         if price_zy > kline[-1][2]:
-            price_zs = kline[index_e][3]
+            price_zs = max(kline[index_e][3], round(price_close * (1 - expectation / 100 * 2), max_decimal))
             data = {symbol: (price_close, round(zf_m, 2), expectation, price_zy, price_zs)}
             alert.update(data)
             alert_m.update(data)
@@ -245,7 +246,7 @@ def filter_stocks():
 
         # today_vol = spot_data['成交量'].values[0]
         # today_pct = spot_data['涨跌幅'].values[0]
-        if today_close > max(today_open, yesterday_close) and yesterday_close > yesterday_open:
+        if today_close > max(today_open, yesterday_close) and yesterday_close >= yesterday_open:
             selected.append(''.join(code))
     return selected
 
