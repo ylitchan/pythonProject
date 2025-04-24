@@ -245,7 +245,7 @@ def filter_stocks():
 
         # today_vol = spot_data['成交量'].values[0]
         # today_pct = spot_data['涨跌幅'].values[0]
-        if today_close > max(today_open, yesterday_close) and yesterday_close > yesterday_open:
+        if today_close > max(today_open, yesterday_close) and yesterday_close >= yesterday_open:
             selected.append(''.join(code))
     return selected
 
