@@ -208,7 +208,7 @@ def get_last_trading_days(today=datetime.datetime.today(), days=60):
     recent_trading_days = trade_dates[trade_dates <= today].sort_values(ascending=False).iloc[:days]
     start_date = recent_trading_days.min().strftime("%Y%m%d")
     end_date = recent_trading_days.max().strftime("%Y%m%d")
-    zt_date = recent_trading_days.iloc[2].strftime("%Y%m%d")
+    zt_date = recent_trading_days.iloc[1].strftime("%Y%m%d")
     return start_date, end_date, zt_date
 
 
@@ -234,19 +234,19 @@ def filter_stocks():
             traceback.print_exc()
             continue
         print(code, hist.iloc[-1]['涨跌幅'])
-        if len(hist) < 60 or hist.iloc[-2]['涨跌幅'] >= 0 or hist.iloc[:-3]['收盘'].max() > hist.iloc[-3][
+        if len(hist) < 60 or hist.iloc[-1]['涨跌幅'] >= 0 or hist.iloc[:-2]['收盘'].max() > hist.iloc[-2][
             '收盘']: continue
         today_close = hist.iloc[-1]['收盘']
         today_open = hist.iloc[-1]['开盘']
-        yesterday_close = hist.iloc[-2]['收盘']
-        yesterday_open = hist.iloc[-2]['开盘']
+        # yesterday_close = hist.iloc[-2]['收盘']
+        # yesterday_open = hist.iloc[-2]['开盘']
         # 获取今日实时数据
         # spot_data = spot_df[spot_df['代码'].str.contains(code)]
         # if spot_data.empty: continue
 
         # today_vol = spot_data['成交量'].values[0]
         # today_pct = spot_data['涨跌幅'].values[0]
-        if today_close > max(today_open, yesterday_close) and yesterday_close >= yesterday_open:
+        if today_close >= today_open:
             selected.append(''.join(code))
     return selected
 
