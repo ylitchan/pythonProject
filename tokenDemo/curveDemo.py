@@ -53,7 +53,7 @@ async def main():
             get_close()
         except:
             traceback.print_exc()
-        await asyncio.sleep(3600)
+        await asyncio.sleep(600)
 
 
 asyncio.run(main())
