@@ -222,7 +222,7 @@ def filter_stocks():
         print(f"没有在 {zt_date} 找到涨停股票。")
         return []
     stock_codes = zt_df[['代码', '名称']].values.tolist()
-    print(f"昨日涨停股：{stock_codes}")
+    print(f"{zt_date}涨停股：{stock_codes}")
     selected = []
     # spot_df = ak.stock_zh_a_spot()
     for code in stock_codes:

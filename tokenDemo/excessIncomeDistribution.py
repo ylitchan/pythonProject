@@ -148,7 +148,7 @@ if __name__ == "__main__":
     w3 = Web3(Web3.HTTPProvider(NODE_URL))
     w3.eth.account.enable_unaudited_hdwallet_features()
     # WALLET_ADDRESS = '0x802d78fd3045b64bf2680aaa9a5ae0f4f5241836'  # 要修改的钱包地址
-    with open('PRIVATE_MNEMONIC', 'r') as f:
+    with open('PRIVATE_MNEMONIC2', 'r') as f:
         PRIVATE_MNEMONIC = f.read()
     ACCOUNT = w3.eth.account.from_mnemonic(PRIVATE_MNEMONIC)  # .from_key(PRIVATE_KEY)
     WALLET_ADDRESS = ACCOUNT.address

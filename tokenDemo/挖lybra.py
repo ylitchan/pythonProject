@@ -63,7 +63,7 @@ def get_close():
                                  'end': current_time
                              })
     price_close2 = response2.json()['data'][-1]['close']
-    send_msg(f'eUSD/USDC价格:\n{price_close}\neUSD V1/USDC价格:\n{price_close2}')
+    send_msg(f'V2:\n{round(price_close,2)}\nV1:\n{round(price_close2,2)}')
 
 
 def get_user_data():
@@ -76,11 +76,11 @@ def get_user_data():
 async def main():
     while True:
         try:
-            get_close()
             get_user_data()
+            get_close()
         except:
             traceback.print_exc()
-        await asyncio.sleep(3600)
+        await asyncio.sleep(300)
 
 
 asyncio.run(main())
