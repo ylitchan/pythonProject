@@ -268,7 +268,7 @@ async def main():
     monitor_stocks()
     await rzq_market('BN')
     # 设置任务调度
-    scheduler.add_job(monitor_stocks, 'cron', hour='14', minute='52', second='00', day_of_week='mon-fri',
+    scheduler.add_job(monitor_stocks, 'cron', hour='14', minute='52-57', second='00', day_of_week='mon-fri',
                       timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
                       args=('BN',))
