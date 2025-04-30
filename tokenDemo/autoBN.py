@@ -103,7 +103,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             return
         if price_zy > kline[-1][2]:
             price_zs = kline[index_e][3]
-            data = {symbol: (price_close, round(zf_m, 2), expectation, price_zy, price_zs)}
+            risk = round((price_zs / kline[-2][2] - 1) * 100, 2)
+            data = {symbol: (price_close, expectation, risk, price_zy, price_zs)}
             alert.update(data)
             alert_m.update(data)
             return data
@@ -160,11 +161,11 @@ async def rzq_market(market):
                 if j in POSITIONS:
                     alert_final.append(
                         f'开仓{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
+                        f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
                 else:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n涨幅:{alert_m[j][1]}\n预期:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
+                        f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}{len(alert)}做多===\n' + '\n-------\n'.join(alert_final)}
