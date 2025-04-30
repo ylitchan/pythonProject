@@ -95,10 +95,10 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             return
         kline_close = [k[4] for k in kline]
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
-        kline_zf = list(map(lambda k: (k[4] / k[1] - 1) * 100, kline[index_s:-1]))
+        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_s:-1]))
         size_z = len(list(filter(lambda k: k[4] > k[1], kline[index_s:-1]))) / len(kline[index_s:-1])
         zf_m = calculate_ema_pandas(kline_zf) * size_z
-        price_zy = round(kline[-2][4] + kline[-2][4] * zf_m / 100, max_decimal)
+        price_zy = round(kline[-2][4] + kline[-2][4] * zf_m, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if expectation <= 0:
             return
