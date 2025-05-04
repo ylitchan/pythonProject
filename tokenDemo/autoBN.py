@@ -14,12 +14,14 @@ from binance.spot import Spot
 from jsonpath_ng import parse
 
 
-def trade(symbol, price, stopPrice, symbols_info):
+def trade(symbol, price, stopPrice, symbols_info, slot):
     try:
         if (usdt_free := float(spotBN.user_asset(asset='USDT')[0]['free'])) < 6:
             return
-        elif usdt_free >= 12:
-            usdt_free = usdt_free / 2
+        elif (usdt_slot := usdt_free * slot) >= 6:
+            usdt_free = usdt_slot
+        else:
+            return
         minQty = symbols_info.get(symbol).get('minQty')
         quotePrecision = symbols_info.get(symbol).get('quotePrecision')
         params = {
@@ -95,17 +97,22 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             return
         kline_close = [k[4] for k in kline]
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
-        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_s:-1]))
-        size_z = len(list(filter(lambda k: k[4] > k[1], kline[index_s:-1]))) / len(kline[index_s:-1])
-        zf_m = calculate_ema_pandas(kline_zf) * size_z
-        price_zy = round(kline[-2][4] + kline[-2][4] * zf_m, max_decimal)
+        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_e:-1]))
+        size_z = len(list(filter(lambda k: k[4] > k[1], kline[index_e:-1]))) / len(kline[index_e:-1])
+        zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf])
+        zf_d = calculate_ema_pandas([k if k < 0 else 0 for k in kline_zf])
+        price_zy = round(kline[-2][4] + kline[-2][4] * zf_z, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if expectation <= 0:
             return
         if price_zy > kline[-1][2]:
-            risk = (kline[index_e][3] / kline[-2][2] - 1) * ((1 - size_z) or 1)
-            price_zs = round(kline[-2][2] + kline[-2][2] * risk, max_decimal)
-            data = {symbol: (price_close, expectation, round(risk * 100, 2), price_zy, price_zs)}
+            price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
+            risk = round((price_zs / kline[-2][2] - 1) * 100, 2)
+            slot = (expectation * size_z - risk * (1 - size_z)) / expectation
+            if slot <= 0:
+                return
+            data = {symbol: (price_close, expectation, risk, price_zy, price_zs,
+                             (expectation * size_z - risk * (1 - size_z)) / expectation)}
             alert.update(data)
             alert_m.update(data)
             return data
@@ -157,16 +164,17 @@ async def rzq_market(market):
                 if j not in alert_m:
                     continue
                 if j not in POSITIONS:
-                    if trade(symbol=j, price=alert_m[j][3], stopPrice=alert_m[j][4], symbols_info=symbols_info):
+                    if trade(symbol=j, price=alert_m[j][3], stopPrice=alert_m[j][4], symbols_info=symbols_info,
+                             slot=alert_m[j][5]):
                         POSITIONS.update({j: alert_m[j]})
                 if j in POSITIONS:
                     alert_final.append(
                         f'开仓{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
+                        f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}\n仓位:{alert_m[j][5]}')
                 else:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}')
+                        f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}\n仓位:{alert_m[j][5]}')
             json_msg = {
                 "msgtype": "text",
                 "text": {'content': f'==={market}{len(alert)}做多===\n' + '\n-------\n'.join(alert_final)}
