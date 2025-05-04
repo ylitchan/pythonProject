@@ -111,8 +111,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             slot = (expectation * size_z - risk * (1 - size_z)) / expectation
             if slot <= 0:
                 return
-            data = {symbol: (price_close, expectation, risk, price_zy, price_zs,
-                             (expectation * size_z - risk * (1 - size_z)) / expectation)}
+            data = {symbol: (price_close, expectation, risk, price_zy, price_zs, slot)}
             alert.update(data)
             alert_m.update(data)
             return data
