@@ -98,7 +98,6 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         kline_close = [k[4] for k in kline]
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_e:-1]))
-        size_z = len(list(filter(lambda k: k[4] > k[1], kline[index_e:-1]))) / len(kline[index_e:-1])
         zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf])
         zf_d = calculate_ema_pandas([k if k < 0 else 0 for k in kline_zf])
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_z, max_decimal)
@@ -108,6 +107,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         if price_zy > kline[-1][2]:
             price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
             risk = round((price_zs / kline[-2][2] - 1) * 100, 2)
+            size_z = len(list(filter(lambda k: k[4] > k[1], kline[index_e:-1]))) / len(kline[index_e:-1])
+            size_z = calculate_ema_pandas([size_z if k > 0 else 1 - size_z for k in kline_zf])
             slot = (expectation * size_z + risk * (1 - size_z)) / expectation
             if slot <= 0:
                 return
@@ -158,7 +159,7 @@ async def rzq_market(market):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][2], reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: abs(alert[x][1] / alert[x][2]), reverse=True))
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
@@ -264,13 +265,14 @@ def filter_stocks():
 def monitor_stocks():
     filtered = filter_stocks()
     print(f"符合量能条件的股票：{filtered}")
-    json_msg = {
-        "msgtype": "text",
-        "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
-    }
-    session.post(
-        url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-        json=json_msg)
+    if filtered:
+        json_msg = {
+            "msgtype": "text",
+            "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
+        }
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            json=json_msg)
 
 
 async def main():
