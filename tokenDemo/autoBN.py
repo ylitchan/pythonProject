@@ -108,7 +108,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         if price_zy > kline[-1][2]:
             price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
             risk = round((price_zs / kline[-2][2] - 1) * 100, 2)
-            slot = (expectation * size_z - risk * (1 - size_z)) / expectation
+            slot = (expectation * size_z + risk * (1 - size_z)) / expectation
             if slot <= 0:
                 return
             data = {symbol: (price_close, expectation, risk, price_zy, price_zs, slot)}
