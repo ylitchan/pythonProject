@@ -211,7 +211,9 @@ def get_upper_limit(code, stock_info):
         return round(prev_close * 1.1, 2)
 
 
-def get_last_trading_days(today=datetime.datetime.today(), days=60):
+def get_last_trading_days(today=None, days=60):
+    if not today:
+        today = datetime.datetime.today()
     # 获取最近的交易日列表
     trade_dates = ak.tool_trade_date_hist_sina()
     trade_dates = pd.to_datetime(trade_dates["trade_date"])  # 转换为 datetime
