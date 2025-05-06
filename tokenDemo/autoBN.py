@@ -15,28 +15,48 @@ from jsonpath_ng import parse
 
 
 def trade(symbol, price, stopPrice, symbols_info, slot):
+    """
+    执行交易操作，包括买入和卖出订单的创建
+
+    :param symbol: 交易对符号
+    :param price: 卖出价格
+    :param stopPrice: 止损价格
+    :param symbols_info: 交易对信息字典
+    :param slot: 仓位比例
+    :return: 若交易成功返回交易对符号，否则返回 None
+    """
     try:
+        # 获取 USDT 可用余额，若余额小于 6 则不进行交易
         if (usdt_free := float(spotBN.user_asset(asset='USDT')[0]['free'])) < 6:
             return
+        # 根据仓位比例计算可用 USDT 金额，若计算后金额大于等于 6 则更新可用余额
         elif (usdt_slot := usdt_free * slot) >= 6:
             usdt_free = usdt_slot
         else:
             return
+        # 获取交易对的最小交易数量精度
         minQty = symbols_info.get(symbol).get('minQty')
+        # 获取交易对的报价精度
         quotePrecision = symbols_info.get(symbol).get('quotePrecision')
+        # 构建买入订单参数
         params = {
             "symbol": symbol,
             "side": "BUY",
             "type": "MARKET",
             "quoteOrderQty": round(usdt_free, quotePrecision)
         }
+        # 发送买入订单请求
         spotBN.new_order(**params)
+        # 等待 3 秒，确保订单处理完成
         time.sleep(3)
         while True:
             try:
+                # 获取交易对资产的可用余额
                 symbol_free = spotBN.user_asset(asset=symbol[:-4])[0]['free']
+                # 对可用余额进行精度处理
                 symbol_free_round = float(
                     Decimal(symbol_free).quantize(Decimal(f'0.{"1" * minQty}'), rounding=ROUND_DOWN))
+                # 构建卖出订单参数
                 params = {
                     "symbol": symbol,
                     "side": "SELL",
@@ -45,58 +65,100 @@ def trade(symbol, price, stopPrice, symbols_info, slot):
                     "stopPrice": max(stopPrice, float(
                         Decimal(6 / symbol_free_round).quantize(Decimal(f'{stopPrice}'), rounding=ROUND_DOWN)))
                 }
+                # 发送卖出订单请求
                 spotBN.new_oco_order(**params)
                 return symbol
             except:
+                # 打印异常堆栈信息
                 traceback.print_exc()
+                # 等待 2 秒后重试
                 time.sleep(2)
     except:
+        # 打印异常堆栈信息
         traceback.print_exc()
         return
 
 
 async def get_kline(semaphore, symbol, t: str):
+    """
+    异步获取指定交易对的 K 线数据
+
+    :param semaphore: 异步信号量，用于控制并发数量
+    :param symbol: 交易对符号
+    :param t: K 线时间周期，如 "1Dutc"
+    :return: K 线数据列表，元素为浮点数列表
+    """
     async with semaphore:
+        # 异步调用 spotBN.klines 方法获取 K 线数据
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
+        # 将 K 线数据中的元素转换为浮点数
         kline = [list(map(float, sublist)) for sublist in kline]
         return kline
 
 
 def calculate_ema_pandas(prices, period=None):
     """
-    使用pandas计算EMA
+    使用 pandas 计算指数移动平均线 (EMA)
+
+    :param prices: 价格数据列表
+    :param period: 计算 EMA 的周期，默认为价格数据列表的长度
+    :return: 最后一个 EMA 值
     """
+    # 将价格数据转换为 pandas Series 对象
     df = pd.Series(prices)
     if not period:
         period = len(prices)
+    # 计算 EMA
     ema = df.ewm(span=period, adjust=False).mean()
+    # 返回最后一个 EMA 值
     return ema.tolist()[-1]
 
 
 async def rzq_token(semaphore, symbol, alert, success, alert_m):
+    """
+    异步分析指定交易对的 K 线数据，筛选符合条件的交易对
+
+    :param semaphore: 异步信号量，用于控制并发数量
+    :param symbol: 交易对符号
+    :param alert: 存储符合条件的交易对信息的字典
+    :param success: 存储成功获取 K 线数据的交易对集合
+    :param alert_m: 存储需要进一步处理的交易对信息的字典
+    :return: 若不符合条件则返回 None，否则返回符合条件的交易对信息字典
+    """
     try:
+        # 异步获取指定交易对的 K 线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
+        # 将成功获取 K 线数据的交易对添加到集合中
         success.add(symbol)
+        # 若 K 线数据长度小于 20 或收盘价小于等于开盘价，则不进行后续分析
         if len(kline) < 20 or kline[-1][4] <= kline[-1][1]:  # or kline[-1][5] < kline[-2][5]:
             return
         index_e = 0
+        # 遍历 K 线数据，寻找符合条件的起始索引
         for i, k in enumerate(kline[-3::-1]):
             if k[4] > k[1] and k[5] >= max(
                     [k[5] for k in kline[:-i - 3]] + [k[5] for k in kline[-i - 2:]]) * 2:
                 index_e = -i - 3
                 index_s = index_e
+                # 从起始索引往前遍历，寻找符合条件的结束索引
                 for ii, kk in enumerate(kline[index_e - 1::-1]):
                     if kk[4] <= kk[1]:
                         index_s = index_e - ii
                         break
                 break
+        # 若未找到符合条件的索引或存在不符合条件的 K 线数据，则不进行后续分析
         if not index_e or list(filter(lambda x: kline[index_e][3] > x[4], kline[index_e + 1:-1])):
             return
+        # 获取最新收盘价
         price_close = kline[-1][4]
+        # 若前一日最高价大于等于最新收盘价，则不进行后续分析
         if kline[-2][2] >= price_close:
             return
+        # 获取 K 线数据中的收盘价列表
         kline_close = [k[4] for k in kline]
+        # 计算收盘价的最大小数位数
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
+        # 计算 K 线数据的涨跌幅列表
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_e:-1]))
         zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf]) * 0.8
         zf_d = calculate_ema_pandas([k if k < 0 else 0 for k in kline_zf]) * 0.8
@@ -222,6 +284,7 @@ def get_last_trading_days(today=None, days=60):
     start_date = recent_trading_days.min().strftime("%Y%m%d")
     end_date = recent_trading_days.max().strftime("%Y%m%d")
     zt_date = recent_trading_days.iloc[1].strftime("%Y%m%d")
+    # 返回起始日期、结束日期和涨停股查询日期
     return start_date, end_date, zt_date
 
 
@@ -229,9 +292,13 @@ def get_last_trading_days(today=None, days=60):
 def filter_stocks():
     # 获取最近交易日（这里假设昨日是20231009，实际应自动获取）
     start_date, end_date, zt_date = get_last_trading_days()
+    # 可取消注释以下行，指定特定日期获取相关信息
     # start_date, end_date, zt_date = get_last_trading_days(datetime.datetime.strptime('20250415', '%Y%m%d'))
+    # 使用 akshare 库获取指定日期的涨停股信息
     zt_df = ak.stock_zt_pool_em(date=zt_date)
+    # 检查获取的涨停股信息 DataFrame 是否为空
     if zt_df.empty:
+        # 若为空，打印提示信息，表示在指定日期未找到涨停股票
         print(f"没有在 {zt_date} 找到涨停股票。")
         return []
     stock_codes = zt_df[['代码', '名称']].values.tolist()
