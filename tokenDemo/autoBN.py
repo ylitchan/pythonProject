@@ -131,6 +131,7 @@ async def rzq_market(market):
     now = datetime.datetime.now()
     symbols = []
     alert = alert_all.get(market, {})
+    POSITIONS = alert_all.get("POSITIONS", {})
     for i in range(10):
         try:
             # 获取所有交易对信息
@@ -139,7 +140,8 @@ async def rzq_market(market):
             symbols_info = {symbol['symbol']: {'quotePrecision': symbol['quotePrecision'],
                                                'minQty': get_minQty([y.value for y in parse('$..minQty').find(symbol)])}
                             for symbol in exchange_info['symbols'] if
-                            symbol['symbol'] not in alert and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol[
+                            symbol['symbol'] not in POSITIONS and 'USDT' in symbol['quoteAsset'] and 'TRADING' in
+                            symbol[
                                 'status']}
             symbols = list(symbols_info.keys())
             break
@@ -148,7 +150,6 @@ async def rzq_market(market):
             await asyncio.sleep(2)
     semaphore = asyncio.Semaphore(10)  # 限制 2 个并发
     print(now, f'{market}任务开始', len(symbols))
-    POSITIONS = alert_all.get("POSITIONS", {})
     if now.hour == 8 and now.minute < 2:
         alert.clear()
         POSITIONS.clear()
