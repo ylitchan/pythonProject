@@ -160,8 +160,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
         # 计算 K 线数据的涨跌幅列表
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_e:-1]))
-        zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf]) * 0.8
-        zf_d = calculate_ema_pandas([k if k < 0 else 0 for k in kline_zf]) * 0.8
+        zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf]) * 0.9
+        zf_d = calculate_ema_pandas([k if k < 0 else 0 for k in kline_zf]) * 0.9
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_z, max_decimal)
         expectation = round((price_zy / kline[-2][2] - 1) * 100, 2)
         if expectation <= 0:
