@@ -221,7 +221,7 @@ async def rzq_market(market):
     try:
         print(market, f"""{len(success)}/{len(symbols)}""")
         if alert_m:
-            alert_sort = enumerate(sorted(alert, key=lambda x: abs(alert[x][1] / alert[x][2]), reverse=True))
+            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][5], reverse=True))
             for i, j in alert_sort:
                 if j not in alert_m:
                     continue
