@@ -192,9 +192,11 @@ async def rzq_market(market):
     symbols = []
     alert = alert_all.get(market, {})
     POSITIONS = alert_all.get("POSITIONS", {})
+    TRADING = alert_all.get("TRADING", [])
     if now.hour == 8 and now.minute < 2:
         alert.clear()
         POSITIONS.clear()
+        TRADING.clear()
     for i in range(10):
         try:
             # 获取所有交易对信息
@@ -233,17 +235,19 @@ async def rzq_market(market):
                     alert_final.append(
                         f'开仓{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
                         f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}\n仓位:{alert_m[j][5]}')
-                else:
+                elif j not in TRADING:
                     alert_final.append(
                         f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
                         f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}\n仓位:{alert_m[j][5]}')
-            json_msg = {
-                "msgtype": "text",
-                "text": {'content': f'==={market}{len(alert)}做多===\n' + '\n-------\n'.join(alert_final)}
-            }
-            session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-                json=json_msg)
+                    TRADING.append(j)
+            if alert_final:
+                json_msg = {
+                    "msgtype": "text",
+                    "text": {'content': f'==={market}{len(alert)}做多===\n' + '\n-------\n'.join(alert_final)}
+                }
+                session.post(
+                    url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+                    json=json_msg)
         elif not success and symbols:
             alert_final = [f"""{len(success)}/{len(symbols)}"""]
             json_msg = {
@@ -367,5 +371,5 @@ if __name__ == "__main__":
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
     spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
-    alert_all = {'BN': {}, 'POSITIONS': {}}
+    alert_all = {'BN': {}, 'POSITIONS': {}, 'TRADING': []}
     asyncio.run(main())
