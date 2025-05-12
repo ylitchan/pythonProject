@@ -161,13 +161,15 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         # 计算 K 线数据的涨跌幅列表
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_e:-1]))
         zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf]) * 0.9
-        zf_d = calculate_ema_pandas([k if k < 0 else 0 for k in kline_zf])
+        zf_d = calculate_ema_pandas([(k[3] - k[1]) / k[1] for k in kline[index_e:-1]])
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_z, max_decimal)
         expectation = round((price_zy / kline[-1][2] - 1) * 100, 2)
         if expectation <= 0:
             return
         if price_zy > kline[-1][2]:
             price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
+            if price_zs >= kline[-1][3]:
+                return
             risk = round((price_zs / kline[-1][2] - 1) * 100, 2)
             size_z = calculate_ema_pandas([1 if k > 0 else 0 for k in kline_zf])
             slot = (expectation * size_z + risk * (1 - size_z)) / expectation
