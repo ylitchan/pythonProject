@@ -170,6 +170,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
             risk = round((price_zs / kline[-1][2] - 1) * 100, 2)
             size_z = calculate_ema_pandas([1 if k > 0 else 0 for k in kline_zf])
+            if size_z == 1:
+                size_z = 0.9
             slot = (expectation * size_z + risk * (1 - size_z)) / expectation
             if slot <= 0:
                 return
