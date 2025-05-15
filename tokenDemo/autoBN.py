@@ -147,7 +147,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
                         break
                 break
         # 若未找到符合条件的索引或存在不符合条件的 K 线数据，则不进行后续分析
-        if not index_e or list(filter(lambda x: kline[index_e][3] > x[4], kline[index_e + 1:-1])):
+        if not index_e:  # or list(filter(lambda x: kline[index_e][3] > x[4], kline[index_e + 1:-1])):
             return
         # 获取最新收盘价
         price_close = kline[-1][4]
