@@ -152,7 +152,10 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         # 获取最新收盘价
         price_close = kline[-1][4]
         # 若前一日最高价大于等于最新收盘价，则不进行后续分析
-        if kline[-2][2] >= price_close:
+        if kline[-2][2] >= max([k[2] for k in kline[index_e:-2]]):
+            return
+        if max(list(map(lambda k: k[4] / k[1] - 1, kline[index_e + 1:-3]))) > 0 or min(
+                list(map(lambda k: k[4] / k[1] - 1, kline[-3:-1]))) <= 0:
             return
         # 获取 K 线数据中的收盘价列表
         kline_close = [k[4] for k in kline]
@@ -288,7 +291,7 @@ def get_last_trading_days(today=None, days=60):
     recent_trading_days = trade_dates[trade_dates <= today].sort_values(ascending=False).iloc[:days]
     start_date = recent_trading_days.min().strftime("%Y%m%d")
     end_date = recent_trading_days.max().strftime("%Y%m%d")
-    zt_date = recent_trading_days.iloc[1].strftime("%Y%m%d")
+    zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[4:10]]
     # 返回起始日期、结束日期和涨停股查询日期
     return start_date, end_date, zt_date
 
@@ -296,43 +299,44 @@ def get_last_trading_days(today=None, days=60):
 # 步骤2：筛选符合条件的股票
 def filter_stocks():
     # 获取最近交易日（这里假设昨日是20231009，实际应自动获取）
-    start_date, end_date, zt_date = get_last_trading_days()
+    start_date, end_date, zt_dates = get_last_trading_days()
     # 可取消注释以下行，指定特定日期获取相关信息
-    # start_date, end_date, zt_date = get_last_trading_days(datetime.datetime.strptime('20250415', '%Y%m%d'))
+    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250512', '%Y%m%d'))
     # 使用 akshare 库获取指定日期的涨停股信息
-    zt_df = ak.stock_zt_pool_em(date=zt_date)
-    # 检查获取的涨停股信息 DataFrame 是否为空
-    if zt_df.empty:
-        # 若为空，打印提示信息，表示在指定日期未找到涨停股票
-        print(f"没有在 {zt_date} 找到涨停股票。")
-        return []
-    stock_codes = zt_df[['代码', '名称']].values.tolist()
-    print(f"{zt_date}涨停股：{stock_codes}")
     selected = []
-    # spot_df = ak.stock_zh_a_spot()
-    for code in stock_codes:
-        try:
-            # 获取历史数据（昨日量能）
-            hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
-                                      adjust="qfq")
-        except:
-            traceback.print_exc()
+    for i, zt_date in enumerate(zt_dates):
+        zt_df = ak.stock_zt_pool_em(date=zt_date)
+        # 检查获取的涨停股信息 DataFrame 是否为空
+        if zt_df.empty:
+            # 若为空，打印提示信息，表示在指定日期未找到涨停股票
+            print(f"没有在 {zt_date} 找到涨停股票。")
             continue
-        print(code, hist.iloc[-1]['涨跌幅'])
-        if len(hist) < 60 or hist.iloc[-1]['涨跌幅'] >= 0 or hist.iloc[:-2]['收盘'].max() > hist.iloc[-2][
-            '收盘']: continue
-        today_close = hist.iloc[-1]['收盘']
-        today_open = hist.iloc[-1]['开盘']
-        # yesterday_close = hist.iloc[-2]['收盘']
-        # yesterday_open = hist.iloc[-2]['开盘']
-        # 获取今日实时数据
-        # spot_data = spot_df[spot_df['代码'].str.contains(code)]
-        # if spot_data.empty: continue
+        stock_codes = zt_df[['代码', '名称']].values.tolist()
+        print(f"{zt_date}涨停股：{stock_codes}")
+        # spot_df = ak.stock_zh_a_spot()
+        for code in stock_codes:
+            try:
+                # 获取历史数据（昨日量能）
+                hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
+                                          adjust="qfq")
+            except:
+                traceback.print_exc()
+                continue
+            print(code, hist.iloc[-1]['涨跌幅'])
+            if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[-i - 4:-2]['涨跌幅'].max() > 0 or \
+                    hist.iloc[:-i - 5]['收盘'].max() > hist.iloc[-i - 5]['收盘']: continue
+            today_close = hist.iloc[-1]['收盘']
+            today_open = hist.iloc[-1]['开盘']
+            # yesterday_close = hist.iloc[-2]['收盘']
+            # yesterday_open = hist.iloc[-2]['开盘']
+            # 获取今日实时数据
+            # spot_data = spot_df[spot_df['代码'].str.contains(code)]
+            # if spot_data.empty: continue
 
-        # today_vol = spot_data['成交量'].values[0]
-        # today_pct = spot_data['涨跌幅'].values[0]
-        if today_close >= today_open:
-            selected.append(''.join(code))
+            # today_vol = spot_data['成交量'].values[0]
+            # today_pct = spot_data['涨跌幅'].values[0]
+            if today_close > today_open and hist.iloc[-1]['最高'] < hist.iloc[:-1]['最高'].max():
+                selected.append(''.join(code))
     return selected
 
 
@@ -356,7 +360,7 @@ async def main():
     # 设置任务调度
     scheduler.add_job(monitor_stocks, 'cron', hour='14', minute='52-57', second='00', day_of_week='mon-fri',
                       timezone='Asia/Shanghai')
-    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
+    scheduler.add_job(rzq_market, 'cron', hour='08', minute='01', second='00', timezone='Asia/Shanghai',
                       args=('BN',))
     # 启动调度器
     scheduler.start()
