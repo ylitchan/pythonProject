@@ -304,7 +304,7 @@ def filter_stocks():
     # 获取最近交易日（这里假设昨日是20231009，实际应自动获取）
     start_date, end_date, zt_dates = get_last_trading_days()
     # 可取消注释以下行，指定特定日期获取相关信息
-    start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250508', '%Y%m%d'))
+    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250508', '%Y%m%d'))
     # 使用 akshare 库获取指定日期的涨停股信息
     selected = set()
     for i, zt_date in enumerate(zt_dates):
@@ -342,7 +342,7 @@ def filter_stocks():
 
             # today_vol = spot_data['成交量'].values[0]
             # today_pct = spot_data['涨跌幅'].values[0]
-            if hist.iloc[-2:]['最高'].max() < hist.iloc[:-i - 2]['最高'].max():
+            if hist.iloc[-2:]['最高'].max() < hist.iloc[-i - 4:-i - 2]['最高'].max():
                 selected.add(''.join(code))
     return selected
 
