@@ -131,43 +131,45 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         # 将成功获取 K 线数据的交易对添加到集合中
         success.add(symbol)
         # 若 K 线数据长度小于 20 或收盘价小于等于开盘价，则不进行后续分析
-        if len(kline) < 20 or kline[-1][4] <= kline[-1][1]:  # or kline[-1][5] < kline[-2][5]:
+        if len(kline) < 20:
             return
         index_e = 0
+        # 计算 K 线数据的涨跌幅列表
+        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
+        # 获取 K 线数据中的收盘价列表
+        kline_close = [k[4] for k in kline]
         # 遍历 K 线数据，寻找符合条件的起始索引
-        for i, k in enumerate(kline[-4::-1]):
-            if k[4] > k[1] and k[5] >= max(
-                    [k[5] for k in kline[:-i - 4]] + [k[5] for k in kline[-i - 3:]]) * 2:
-                index_e = -i - 4
+        for i, k in enumerate(kline[-5:-9:-1]):
+            if k[4] > k[1] and kline_zf[-i - 5] > max(kline_zf[:-i - 5]) and k[4] >= max(kline_close[:-i - 5]):
+                index_e = -i - 5
                 index_s = index_e
                 # 从起始索引往前遍历，寻找符合条件的结束索引
                 for ii, kk in enumerate(kline[index_e - 1::-1]):
-                    if kk[4] <= kk[1]:
+                    if index_e - ii == -20:
+                        index_s = -20
+                    elif kk[4] <= kk[1] and kline_zf[index_e - ii - 1] <= 0:
                         index_s = index_e - ii
                         break
                 break
         # 若未找到符合条件的索引或存在不符合条件的 K 线数据，则不进行后续分析
-        if not index_e:  # or list(filter(lambda x: kline[index_e][3] > x[4], kline[index_e + 1:-1])):
+        if not index_e or kline_zf[-2] <= 0 or kline_zf[
+            -3] <= 0:  # or list(filter(lambda x: kline[index_e][3] > x[4], kline[index_e + 1:-1])):
             return
         # 获取最新收盘价
         price_close = kline[-1][4]
         # 若前一日最高价大于等于最新收盘价，则不进行后续分析
-        if price_close < kline[-2][2] or kline[-1][2] >= max([k[2] for k in kline[index_e:index_e + 2]]):
+        if max(kline[-2][2], kline[-3][2]) >= max([k[2] for k in kline[index_e:index_e + 2]]):
             return
-        # 计算 K 线数据的涨跌幅列表
-        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_e:-1]))
-        if kline_zf[-1] <= 0:
+        if index_e == -5 and kline_zf[index_e + 1] > 0:
             return
-        if index_e == -4 and kline_zf[1] > 0:
+        elif index_e < -5 and max(kline_zf[index_e + 2:-3]) > 0:
             return
-        elif index_e < -4 and max(kline_zf[2:-1]) > 0:
-            return
-        # 获取 K 线数据中的收盘价列表
-        kline_close = [k[4] for k in kline]
         # 计算收盘价的最大小数位数
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
+        # 计算 K 线数据的涨跌幅列表
+        kline_zf = kline_zf[index_s:-1]
         zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf]) * 0.9
-        zf_d = calculate_ema_pandas([(k[3] - k[1]) / k[1] for k in kline[index_e:-1]])
+        zf_d = calculate_ema_pandas([(k[3] - k[1]) / k[1] for k in kline[index_s:-1]])
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_z, max_decimal)
         expectation = round((price_zy / kline[-1][2] - 1) * 100, 2)
         if expectation <= 0:
@@ -294,7 +296,7 @@ def get_last_trading_days(today=None, days=60):
     recent_trading_days = trade_dates[trade_dates <= today].sort_values(ascending=False).iloc[:days]
     start_date = recent_trading_days.min().strftime("%Y%m%d")
     end_date = recent_trading_days.max().strftime("%Y%m%d")
-    zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
+    zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:7]]
     # 返回起始日期、结束日期和涨停股查询日期
     return start_date, end_date, zt_date
 
