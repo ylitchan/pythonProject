@@ -135,10 +135,10 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             return
         index_e = 0
         # 遍历 K 线数据，寻找符合条件的起始索引
-        for i, k in enumerate(kline[-3::-1]):
+        for i, k in enumerate(kline[-4::-1]):
             if k[4] > k[1] and k[5] >= max(
-                    [k[5] for k in kline[:-i - 3]] + [k[5] for k in kline[-i - 2:]]) * 2:
-                index_e = -i - 3
+                    [k[5] for k in kline[:-i - 4]] + [k[5] for k in kline[-i - 3:]]) * 2:
+                index_e = -i - 4
                 index_s = index_e
                 # 从起始索引往前遍历，寻找符合条件的结束索引
                 for ii, kk in enumerate(kline[index_e - 1::-1]):
@@ -152,17 +152,20 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         # 获取最新收盘价
         price_close = kline[-1][4]
         # 若前一日最高价大于等于最新收盘价，则不进行后续分析
-        if price_close < kline[-2][2] or kline[-1][2] >= max([k[2] for k in kline[index_e:-1]]):
+        if price_close < kline[-2][2] or kline[-1][2] >= max([k[2] for k in kline[index_e:index_e + 2]]):
             return
-        if max(list(map(lambda k: k[4] / k[1] - 1, kline[index_e + 1:-2]))) > 0 or min(
-                list(map(lambda k: k[4] / k[1] - 1, kline[-2:-1]))) <= 0:
+        # 计算 K 线数据的涨跌幅列表
+        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_e:-1]))
+        if kline_zf[-1] <= 0:
+            return
+        if index_e == -4 and kline_zf[1] > 0:
+            return
+        elif index_e < -4 and max(kline_zf[2:-1]) > 0:
             return
         # 获取 K 线数据中的收盘价列表
         kline_close = [k[4] for k in kline]
         # 计算收盘价的最大小数位数
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
-        # 计算 K 线数据的涨跌幅列表
-        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline[index_e:-1]))
         zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf]) * 0.9
         zf_d = calculate_ema_pandas([(k[3] - k[1]) / k[1] for k in kline[index_e:-1]])
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_z, max_decimal)
@@ -323,8 +326,12 @@ def filter_stocks():
                 traceback.print_exc()
                 continue
             print(code, hist.iloc[-1]['涨跌幅'])
-            if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[-i - 4:-2]['涨跌幅'].max() > 0 or \
-                    hist.iloc[:-i - 5]['收盘'].max() > hist.iloc[-i - 5]['收盘']: continue
+            if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[:-i - 5]['收盘'].max() > \
+                    hist.iloc[-i - 5]['收盘']: continue
+            if -i - 4 == -3 and hist.iloc[- 3]['涨跌幅'].max() > 0:
+                continue
+            elif -i - 4 < -3 and hist.iloc[-i - 3:-2]['涨跌幅'].max() > 0:
+                continue
             # today_close = hist.iloc[-1]['收盘']
             # today_open = hist.iloc[-1]['开盘']
             # yesterday_close = hist.iloc[-2]['收盘']
@@ -335,7 +342,7 @@ def filter_stocks():
 
             # today_vol = spot_data['成交量'].values[0]
             # today_pct = spot_data['涨跌幅'].values[0]
-            if hist.iloc[-1]['最高'] < hist.iloc[:-1]['最高'].max():
+            if hist.iloc[-2:]['最高'].max() < hist.iloc[:-i - 3]['最高'].max():
                 selected.append(''.join(code))
     return selected
 
