@@ -138,10 +138,10 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         # 计算 K 线数据的涨跌幅列表
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
         # 获取 K 线数据中的收盘价列表
-        kline_close = [k[4] for k in kline]
+        kline_vol = [k[5] for k in kline]
         # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
         for i, k in enumerate(kline[-5:-9:-1]):
-            if k[4] > k[1] and kline_zf[-i - 5] > max(kline_zf[:-i - 5]) and k[4] >= max(kline_close[:-i - 5]):
+            if k[4] > k[1] and kline_zf[-i - 5] > max(kline_zf[:-i - 5]) and k[5] >= max(kline_vol[:-i - 5]) * 2:
                 index_e = -i - 5
                 # 初始化起始索引
                 index_s = index_e
@@ -165,6 +165,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             return
         elif index_e < -5 and max(kline_zf[index_e + 2:-3]) > 0:
             return
+        # 获取 K 线数据中的收盘价列表
+        kline_close = [k[4] for k in kline]
         # 计算收盘价的最大小数位数
         max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
         # 截取符合条件的涨跌幅列表
