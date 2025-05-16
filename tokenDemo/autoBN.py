@@ -325,8 +325,8 @@ def filter_stocks():
             print(code, hist.iloc[-1]['涨跌幅'])
             if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[-i - 4:-2]['涨跌幅'].max() > 0 or \
                     hist.iloc[:-i - 5]['收盘'].max() > hist.iloc[-i - 5]['收盘']: continue
-            today_close = hist.iloc[-1]['收盘']
-            today_open = hist.iloc[-1]['开盘']
+            # today_close = hist.iloc[-1]['收盘']
+            # today_open = hist.iloc[-1]['开盘']
             # yesterday_close = hist.iloc[-2]['收盘']
             # yesterday_open = hist.iloc[-2]['开盘']
             # 获取今日实时数据
@@ -335,7 +335,7 @@ def filter_stocks():
 
             # today_vol = spot_data['成交量'].values[0]
             # today_pct = spot_data['涨跌幅'].values[0]
-            if today_close > today_open and hist.iloc[-1]['最高'] < hist.iloc[:-1]['最高'].max():
+            if hist.iloc[-1]['最高'] < hist.iloc[:-1]['最高'].max():
                 selected.append(''.join(code))
     return selected
 
