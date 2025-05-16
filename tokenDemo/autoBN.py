@@ -152,10 +152,10 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         # 获取最新收盘价
         price_close = kline[-1][4]
         # 若前一日最高价大于等于最新收盘价，则不进行后续分析
-        if kline[-2][2] >= max([k[2] for k in kline[index_e:-2]]):
+        if price_close < kline[-2][2] or kline[-1][2] >= max([k[2] for k in kline[index_e:-1]]):
             return
-        if max(list(map(lambda k: k[4] / k[1] - 1, kline[index_e + 1:-3]))) > 0 or min(
-                list(map(lambda k: k[4] / k[1] - 1, kline[-3:-1]))) <= 0:
+        if max(list(map(lambda k: k[4] / k[1] - 1, kline[index_e + 1:-2]))) > 0 or min(
+                list(map(lambda k: k[4] / k[1] - 1, kline[-2:-1]))) <= 0:
             return
         # 获取 K 线数据中的收盘价列表
         kline_close = [k[4] for k in kline]
@@ -360,7 +360,7 @@ async def main():
     # 设置任务调度
     scheduler.add_job(monitor_stocks, 'cron', hour='14', minute='52-57', second='00', day_of_week='mon-fri',
                       timezone='Asia/Shanghai')
-    scheduler.add_job(rzq_market, 'cron', hour='08', minute='01', second='00', timezone='Asia/Shanghai',
+    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
                       args=('BN',))
     # 启动调度器
     scheduler.start()
