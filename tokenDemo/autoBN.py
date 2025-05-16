@@ -294,7 +294,7 @@ def get_last_trading_days(today=None, days=60):
     recent_trading_days = trade_dates[trade_dates <= today].sort_values(ascending=False).iloc[:days]
     start_date = recent_trading_days.min().strftime("%Y%m%d")
     end_date = recent_trading_days.max().strftime("%Y%m%d")
-    zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[4:10]]
+    zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
     # 返回起始日期、结束日期和涨停股查询日期
     return start_date, end_date, zt_date
 
@@ -304,7 +304,7 @@ def filter_stocks():
     # 获取最近交易日（这里假设昨日是20231009，实际应自动获取）
     start_date, end_date, zt_dates = get_last_trading_days()
     # 可取消注释以下行，指定特定日期获取相关信息
-    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250512', '%Y%m%d'))
+    start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250515', '%Y%m%d'))
     # 使用 akshare 库获取指定日期的涨停股信息
     selected = []
     for i, zt_date in enumerate(zt_dates):
@@ -326,11 +326,11 @@ def filter_stocks():
                 traceback.print_exc()
                 continue
             print(code, hist.iloc[-1]['涨跌幅'])
-            if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[:-i - 5]['收盘'].max() > \
-                    hist.iloc[-i - 5]['收盘']: continue
-            if -i - 4 == -3 and hist.iloc[- 3]['涨跌幅'].max() > 0:
+            if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[:-i - 4]['收盘'].max() > \
+                    hist.iloc[-i - 4]['收盘']: continue
+            if i == 0 and hist.iloc[- 3]['涨跌幅'].max() > 0:
                 continue
-            elif -i - 4 < -3 and hist.iloc[-i - 3:-2]['涨跌幅'].max() > 0:
+            elif hist.iloc[-i - 2:-2]['涨跌幅'].max() > 0:
                 continue
             # today_close = hist.iloc[-1]['收盘']
             # today_open = hist.iloc[-1]['开盘']
@@ -342,7 +342,7 @@ def filter_stocks():
 
             # today_vol = spot_data['成交量'].values[0]
             # today_pct = spot_data['涨跌幅'].values[0]
-            if hist.iloc[-2:]['最高'].max() < hist.iloc[:-i - 3]['最高'].max():
+            if hist.iloc[-2:]['最高'].max() < hist.iloc[:-i - 2]['最高'].max():
                 selected.append(''.join(code))
     return selected
 
