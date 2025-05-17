@@ -62,8 +62,8 @@ def trade(symbol, price, stopPrice, symbols_info, slot):
                     "side": "SELL",
                     "quantity": symbol_free_round,
                     "price": price,
-                    "stopPrice": max(stopPrice, float(
-                        Decimal(6 / symbol_free_round).quantize(Decimal(f'{stopPrice}'), rounding=ROUND_DOWN)))
+                    "stopPrice": float(
+                        Decimal(6 / symbol_free_round).quantize(Decimal(f'{stopPrice}'), rounding=ROUND_DOWN))
                 }
                 # 发送卖出订单请求
                 spotBN.new_oco_order(**params)
