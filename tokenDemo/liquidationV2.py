@@ -344,7 +344,7 @@ def send_msg(msg):
 
 def get_close():
     current_time = int(datetime.now().timestamp())
-    response = requests.get("https://prices.curve.fi/v1/ohlc/ethereum/0x880F2fB3704f1875361DE6ee59629c6c6497a5E3",
+    response = requests.get("https://prices.curve.finance/v1/ohlc/ethereum/0x880F2fB3704f1875361DE6ee59629c6c6497a5E3",
                             params={
                                 'main_token': "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
                                 'reference_token': "0x97de57eC338AB5d51557DA3434828C5DbFaDA371",
