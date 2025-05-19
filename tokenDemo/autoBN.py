@@ -186,26 +186,25 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         expectation = round((price_zy / kline[-1][2] - 1) * 100, 2)
         if expectation <= 0:
             return
-        if price_zy > kline[-1][2]:
-            # 计算止损价格
-            price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
-            # 计算风险收益率
-            risk = round((price_zs / kline[-1][2] - 1) * 100, 2)
-            # 计算仓位状态的 EMA
-            size_z = calculate_ema_pandas([1 if k > 0 else 0 for k in kline_zf])
-            if size_z == 1:
-                size_z = 0.9
-            # 计算仓位比例
-            slot = (expectation * size_z + risk * (1 - size_z)) / expectation
-            if slot <= 0:
-                return
-            # 构建符合条件的交易对信息字典
-            data = {symbol: (price_close, expectation, risk, price_zy, price_zs, slot)}
-            # 更新符合条件的交易对信息字典
-            alert.update(data)
-            # 更新需要进一步处理的交易对信息字典
-            alert_m.update(data)
-            return data
+        # 计算止损价格
+        price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
+        # 计算风险收益率
+        risk = round((price_zs / kline[-1][2] - 1) * 100, 2)
+        # 计算仓位状态的 EMA
+        size_z = calculate_ema_pandas([1 if k > 0 else 0 for k in kline_zf])
+        if size_z == 1:
+            size_z = 0.9
+        # 计算仓位比例
+        slot = (expectation * size_z + risk * (1 - size_z)) / expectation
+        if slot <= 0:
+            return
+        # 构建符合条件的交易对信息字典
+        data = {symbol: (price_close, expectation, risk, price_zy, price_zs, slot)}
+        # 更新符合条件的交易对信息字典
+        alert.update(data)
+        # 更新需要进一步处理的交易对信息字典
+        alert_m.update(data)
+        return data
     except:
         # 打印异常堆栈信息
         traceback.print_exc()
