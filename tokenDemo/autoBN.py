@@ -91,6 +91,8 @@ async def get_kline(semaphore, symbol, t: str):
     async with semaphore:
         # 异步调用 spotBN.klines 方法获取 K 线数据
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
+        # kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
+        #                                 endTime=1747526400000)
         # 将 K 线数据中的元素转换为浮点数
         kline = [list(map(float, sublist)) for sublist in kline]
         return kline
