@@ -149,9 +149,12 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
                 index_s = index_e
                 # 从起始索引往前遍历，寻找符合条件的结束索引
                 for ii, kk in enumerate(kline[index_e - 1::-1]):
-                    if index_e - ii == -20:
-                        index_s = -20
-                    elif kk[4] <= kk[1] and kline_zf[index_e - ii - 1] <= 0:
+                    if index_e - ii - 1 == -20:
+                        if kk[4] <= kk[1]:
+                            index_s = -19
+                        else:
+                            index_s = -20
+                    elif kk[4] <= kk[1] and kline_zf[index_e - ii - 2] <= 0:
                         index_s = index_e - ii
                         break
                 break
