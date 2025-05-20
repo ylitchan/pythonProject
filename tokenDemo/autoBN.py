@@ -62,8 +62,9 @@ def trade(symbol, price, stopPrice, symbols_info, slot):
                     "side": "SELL",
                     "quantity": symbol_free_round,
                     "price": price,
-                    "stopPrice": float(
-                        Decimal(6 / symbol_free_round).quantize(Decimal(f'{stopPrice}'), rounding=ROUND_DOWN))
+                    "stopPrice": max(round(price * symbols_info.get(symbol).get('askMultiplierDown'),
+                                           symbols_info.get(symbol).get('maxDecimal')),
+                                     symbols_info.get(symbol).get('minPrice'))
                 }
                 # 发送卖出订单请求
                 spotBN.new_oco_order(**params)
@@ -116,7 +117,7 @@ def calculate_ema_pandas(prices, period=None):
     return ema.tolist()[-1]
 
 
-async def rzq_token(semaphore, symbol, alert, success, alert_m):
+async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
     """
     异步分析指定交易对的 K 线数据，筛选符合条件的交易对
 
@@ -173,7 +174,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         elif index_e < -5 and max(kline_zf[index_e + 2:-3]) > 0:
             return
         # 计算收盘价的最大小数位数
-        max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
+        max_decimal = symbols_info.get(symbol).get('maxDecimal')
         # 截取符合条件的涨跌幅列表
         kline_zf = kline_zf[index_s:-1]
         # 计算正向涨跌幅的 EMA 并乘以 0.9
@@ -252,6 +253,11 @@ async def rzq_market(market):
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             # 提取符合条件的交易对信息，构建交易对信息字典
             symbols_info = {symbol['symbol']: {'quotePrecision': symbol['quotePrecision'],
+                                               'askMultiplierDown': float(
+                                                   parse('$..askMultiplierDown').find(symbol)[0].value),
+                                               'minPrice': float(parse('$..minPrice').find(symbol)[0].value),
+                                               'maxDecimal': get_minQty(
+                                                   [y.value for y in parse('$..minPrice').find(symbol)]),
                                                'minQty': get_minQty([y.value for y in parse('$..minQty').find(symbol)])}
                             for symbol in exchange_info['symbols'] if
                             symbol['symbol'] not in POSITIONS and 'USDT' in symbol['quoteAsset'] and 'TRADING' in
@@ -274,7 +280,7 @@ async def rzq_market(market):
     # 初始化最终结果列表
     alert_final = []
     # 创建异步任务列表
-    tasks = [rzq_token(semaphore, symbol, alert, success, alert_m) for symbol in symbols]
+    tasks = [rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info) for symbol in symbols]
     # 并发执行所有任务
     await asyncio.gather(*tasks)
     try:
