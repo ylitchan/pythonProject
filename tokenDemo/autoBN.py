@@ -189,7 +189,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         # 截取符合条件的涨跌幅列表
         kline_zf = kline_zf[index_s:-1]
         # 计算正向涨跌幅的 EMA 并乘以 0.9
-        zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf]) * 0.9
+        zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf])
         # 计算 K 线数据的高低价差涨跌幅的 EMA
         zf_d = calculate_ema_pandas([(k[3] - k[1]) / k[1] for k in kline[index_s:-1]])
         # 计算预期价格
