@@ -62,9 +62,7 @@ def trade(symbol, price, stopPrice, symbols_info, slot):
                     "side": "SELL",
                     "quantity": symbol_free_round,
                     "price": price,
-                    "stopPrice": max(round(price * symbols_info.get(symbol).get('askMultiplierDown'),
-                                           symbols_info.get(symbol).get('maxDecimal')),
-                                     symbols_info.get(symbol).get('minPrice'))
+                    "stopPrice": stopPrice
                 }
                 # 发送卖出订单请求
                 spotBN.new_oco_order(**params)
@@ -200,6 +198,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         if slot <= 0:
             return
         # 构建符合条件的交易对信息字典
+        price_zs = round(kline[-1][2] * symbols_info.get(symbol).get('askMultiplierDown'), max_decimal)
+        price_zs = max(price_zs, min(kline[-3][3], kline[-2][3]))
         data = {symbol: (price_close, expectation, risk, price_zy, price_zs, slot)}
         # 更新符合条件的交易对信息字典
         alert.update(data)
