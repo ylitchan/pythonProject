@@ -42,13 +42,18 @@ for s in shu.itertuples():
             data = response.json()['data']['itemResponse']['list']
             if data:
                 for d in data:
-                    if d['isbn'].strip()[-5:-1] == s[1].replace('-', '').strip()[-5:-1]:
-                        dd = {'标题': s[2], '题名': d['title'], 'ISBN': d['isbn'].strip(), '价格': d['price'],
+                    if d['isbn'].strip() and d['isbn'].strip()[:-1] == s[1].replace('-', '').strip()[:-1]:
+                        dd = {'标题': s[2], '题名': d['title'], '厦大ISBN': s[1], 'ISBN': d['isbn'].strip(),
+                              '价格': d['price'],
                               '链接': d['link']['pc']}
                         results.append(dd)
                         print(dd)
+                    elif not d['isbn'].strip():
+                        dd = {'标题': s[2], '题名': d['title'], '厦大ISBN': s[1], 'ISBN': '无', '价格': d['price'],
+                              '链接': d['link']['pc']}
+                        results.append(dd)
             else:
-                dd = {'标题': s[2], '题名': '无', 'ISBN': s[1].replace('-', '').strip(), '价格': '无', '链接': '无'}
+                dd = {'标题': s[2], '题名': '无', '厦大ISBN': s[1], 'ISBN': '无', '价格': '无', '链接': '无'}
                 results.append(dd)
                 print(dd)
             time.sleep(3)
