@@ -75,8 +75,7 @@ def trade(symbol, price, stopPrice, symbols_info, slot):
                     "side": "SELL",
                     "quantity": symbol_free_round,
                     "price": price,
-                    "stopPrice": max(stopPrice, float(
-                        Decimal(6 / symbol_free_round).quantize(Decimal(f'{stopPrice}'), rounding=ROUND_DOWN)))
+                    "stopPrice": stopPrice
                 }
                 # 发送卖出订单请求
                 spotBN.new_oco_order(**params)
@@ -104,6 +103,8 @@ async def get_kline(semaphore, symbol, t: str):
     async with semaphore:
         # 异步调用 spotBN.klines 方法获取 K 线数据
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
+        # kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
+        #                                 endTime=1747526400000)
         # 将 K 线数据中的元素转换为浮点数
         kline = [list(map(float, sublist)) for sublist in kline]
         return kline
@@ -127,7 +128,7 @@ def calculate_ema_pandas(prices, period=None):
     return ema.tolist()[-1]
 
 
-async def rzq_token(semaphore, symbol, alert, success, alert_m):
+async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
     """
     异步分析指定交易对的 K 线数据，筛选符合条件的交易对
 
@@ -148,21 +149,26 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
             return
         # 初始化结束索引
         index_e = 0
-        # 计算 K 线数据的涨跌幅列表
-        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
         # 获取 K 线数据中的收盘价列表
         kline_close = [k[4] for k in kline]
+        # 计算 K 线数据的涨跌幅列表
+        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
+        # 获取 K 线数据中的量能列表
+        kline_vol = [k[5] for k in kline]
         # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
         for i, k in enumerate(kline[-5:-9:-1]):
-            if k[4] > k[1] and kline_zf[-i - 5] > max(kline_zf[:-i - 5]) and k[4] >= max(kline_close[:-i - 5]):
+            if k[4] > k[1] and kline_close[-i - 5] > max(kline_close[:-i - 5]) and k[5] >= max(kline_vol[:-i - 5]) * 2:
                 index_e = -i - 5
                 # 初始化起始索引
                 index_s = index_e
                 # 从起始索引往前遍历，寻找符合条件的结束索引
                 for ii, kk in enumerate(kline[index_e - 1::-1]):
-                    if index_e - ii == -20:
-                        index_s = -20
-                    elif kk[4] <= kk[1] and kline_zf[index_e - ii - 1] <= 0:
+                    if index_e - ii - 1 == -20:
+                        if kk[4] <= kk[1]:
+                            index_s = -19
+                        else:
+                            index_s = -20
+                    elif kk[4] <= kk[1] and kline_zf[index_e - ii - 2] <= 0:
                         index_s = index_e - ii
                         break
                 break
@@ -179,7 +185,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         elif index_e < -5 and max(kline_zf[index_e + 2:-3]) > 0:
             return
         # 计算收盘价的最大小数位数
-        max_decimal = max(map(lambda ks: -Decimal(str(ks)).normalize().as_tuple().exponent, kline_close))
+        max_decimal = symbols_info.get(symbol).get('maxDecimal')
         # 截取符合条件的涨跌幅列表
         kline_zf = kline_zf[index_s:-1]
         # 计算正向涨跌幅的 EMA 并乘以 0.9
@@ -192,26 +198,27 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m):
         expectation = round((price_zy / kline[-1][2] - 1) * 100, 2)
         if expectation <= 0:
             return
-        if price_zy > kline[-1][2]:
-            # 计算止损价格
-            price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
-            # 计算风险收益率
-            risk = round((price_zs / kline[-1][2] - 1) * 100, 2)
-            # 计算仓位状态的 EMA
-            size_z = calculate_ema_pandas([1 if k > 0 else 0 for k in kline_zf])
-            if size_z == 1:
-                size_z = 0.9
-            # 计算仓位比例
-            slot = (expectation * size_z + risk * (1 - size_z)) / expectation
-            if slot <= 0:
-                return
-            # 构建符合条件的交易对信息字典
-            data = {symbol: (price_close, expectation, risk, price_zy, price_zs, slot)}
-            # 更新符合条件的交易对信息字典
-            alert.update(data)
-            # 更新需要进一步处理的交易对信息字典
-            alert_m.update(data)
-            return data
+        # 计算止损价格
+        price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
+        # 计算风险收益率
+        risk = round((price_zs / kline[-1][2] - 1) * 100, 2)
+        # 计算仓位状态的 EMA
+        size_z = calculate_ema_pandas([1 if k > 0 else 0 for k in kline_zf])
+        if size_z == 1:
+            size_z = 0.9
+        # 计算仓位比例
+        slot = (expectation * size_z + risk * (1 - size_z)) / expectation
+        if slot <= 0:
+            return
+        # 构建符合条件的交易对信息字典
+        price_zs = round(kline[-1][2] * symbols_info.get(symbol).get('askMultiplierDown'), max_decimal)
+        price_zs = max(price_zs, min(kline[-3][3], kline[-2][3]))
+        data = {symbol: (price_close, expectation, risk, price_zy, price_zs, slot)}
+        # 更新符合条件的交易对信息字典
+        alert.update(data)
+        # 更新需要进一步处理的交易对信息字典
+        alert_m.update(data)
+        return data
     except:
         # 打印异常堆栈信息
         traceback.print_exc()
@@ -259,6 +266,11 @@ async def rzq_market(market):
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             # 提取符合条件的交易对信息，构建交易对信息字典
             symbols_info = {symbol['symbol']: {'quotePrecision': symbol['quotePrecision'],
+                                               'askMultiplierDown': float(
+                                                   parse('$..askMultiplierDown').find(symbol)[0].value),
+                                               'minPrice': float(parse('$..minPrice').find(symbol)[0].value),
+                                               'maxDecimal': get_minQty(
+                                                   [y.value for y in parse('$..minPrice').find(symbol)]),
                                                'minQty': get_minQty([y.value for y in parse('$..minQty').find(symbol)])}
                             for symbol in exchange_info['symbols'] if
                             symbol['symbol'] not in POSITIONS and 'USDT' in symbol['quoteAsset'] and 'TRADING' in
@@ -281,7 +293,7 @@ async def rzq_market(market):
     # 初始化最终结果列表
     alert_final = []
     # 创建异步任务列表
-    tasks = [rzq_token(semaphore, symbol, alert, success, alert_m) for symbol in symbols]
+    tasks = [rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info) for symbol in symbols]
     # 并发执行所有任务
     await asyncio.gather(*tasks)
     try:
