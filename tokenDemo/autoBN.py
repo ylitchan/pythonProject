@@ -12,6 +12,7 @@ import time
 import traceback
 # 从 decimal 模块导入 Decimal 类和 ROUND_DOWN 常量，用于高精度十进制运算和向下取整
 from decimal import Decimal, ROUND_DOWN
+from itertools import pairwise
 
 # 导入 akshare 库，用于获取金融数据
 import akshare as ak
@@ -104,7 +105,7 @@ async def get_kline(semaphore, symbol, t: str):
         # 异步调用 spotBN.klines 方法获取 K 线数据
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
         # kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
-        #                                 endTime=1747526400000)
+        #                                 endTime=1747699200000)
         # 将 K 线数据中的元素转换为浮点数
         kline = [list(map(float, sublist)) for sublist in kline]
         return kline
@@ -178,11 +179,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         # 获取最新收盘价
         price_close = kline[-1][4]
         # 若前一日最高价大于等于最新收盘价，则不进行后续分析
-        if max(kline[-2][2], kline[-3][2]) >= max([k[2] for k in kline[index_e:index_e + 2]]):
-            return
-        if index_e == -5 and kline_zf[index_e + 1] > 0:
-            return
-        elif index_e < -5 and max(kline_zf[index_e + 2:-3]) > 0:
+        if any(x > 0 and y > 0 for x, y in pairwise(kline_zf[index_e + 1:-2])):
             return
         # 计算收盘价的最大小数位数
         max_decimal = symbols_info.get(symbol).get('maxDecimal')
@@ -414,7 +411,7 @@ def filter_stocks():
     # 获取最近交易日信息
     start_date, end_date, zt_dates = get_last_trading_days()
     # 可取消注释以下行，指定特定日期获取相关信息
-    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250508', '%Y%m%d'))
+    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250514', '%Y%m%d'))
     # 初始化符合条件的股票集合
     selected = set()
     for i, zt_date in enumerate(zt_dates):
@@ -440,11 +437,8 @@ def filter_stocks():
                 continue
             print(code, hist.iloc[-1]['涨跌幅'])
             if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[:-i - 4]['收盘'].max() > \
-                    hist.iloc[-i - 4]['收盘']:
-                continue
-            if i == 0 and hist.iloc[- 3]['涨跌幅'].max() > 0:
-                continue
-            elif hist.iloc[-i - 2:-2]['涨跌幅'].max() > 0:
+                    hist.iloc[-i - 4]['收盘'] or any(
+                x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist())):
                 continue
             # today_close = hist.iloc[-1]['收盘']
             # today_open = hist.iloc[-1]['开盘']
@@ -456,9 +450,8 @@ def filter_stocks():
 
             # today_vol = spot_data['成交量'].values[0]
             # today_pct = spot_data['涨跌幅'].values[0]
-            if hist.iloc[-2:]['最高'].max() < hist.iloc[-i - 4:-i - 2]['最高'].max():
-                # 将符合条件的股票代码和名称添加到集合中
-                selected.add(''.join(code))
+            # 将符合条件的股票代码和名称添加到集合中
+            selected.add(''.join(code))
     return selected
 
 
