@@ -62,7 +62,7 @@ def trade(symbol, price, stopPrice, symbols_info, slot):
         spotBN.new_order(**params)
         # 等待 3 秒，确保订单处理完成
         time.sleep(3)
-        while True:
+        for _ in range(3):
             try:
                 # 获取交易对资产的可用余额
                 symbol_free = spotBN.user_asset(asset=symbol[:-4])[0]['free']
