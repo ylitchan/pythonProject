@@ -105,7 +105,7 @@ async def get_kline(semaphore, symbol, t: str):
         # 异步调用 spotBN.klines 方法获取 K 线数据
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
         # kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
-        #                                 endTime=1747699200000)
+        #                                 endTime=1746835200000)
         # 将 K 线数据中的元素转换为浮点数
         kline = [list(map(float, sublist)) for sublist in kline]
         return kline
@@ -174,7 +174,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
                         break
                 break
         # 若未找到符合条件的索引或存在不符合条件的 K 线数据，则不进行后续分析
-        if not index_e or kline_zf[-2] <= 0 or kline_zf[-3] <= 0:
+        if not index_e or kline_zf[-2] <= 0 or kline_zf[-3] <= 0 or max([k[2] for k in kline[index_e + 2:]]) >= max(
+                kline[index_e][2], kline[index_e + 1][2]):
             return
         # 获取最新收盘价
         price_close = kline[-1][4]
@@ -411,7 +412,7 @@ def filter_stocks():
     # 获取最近交易日信息
     start_date, end_date, zt_dates = get_last_trading_days()
     # 可取消注释以下行，指定特定日期获取相关信息
-    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250514', '%Y%m%d'))
+    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250519', '%Y%m%d'))
     # 初始化符合条件的股票集合
     selected = set()
     for i, zt_date in enumerate(zt_dates):
@@ -437,7 +438,8 @@ def filter_stocks():
                 continue
             print(code, hist.iloc[-1]['涨跌幅'])
             if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[:-i - 4]['收盘'].max() > \
-                    hist.iloc[-i - 4]['收盘'] or any(
+                    hist.iloc[-i - 4]['收盘'] or hist.iloc[-i - 2:]['最高'].max() >= hist.iloc[-i - 4:-i - 2][
+                '最高'].max() or any(
                 x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist())):
                 continue
             # today_close = hist.iloc[-1]['收盘']
