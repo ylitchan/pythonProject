@@ -145,15 +145,15 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         kline = await get_kline(semaphore, symbol, "1Dutc")
         # 将成功获取 K 线数据的交易对添加到集合中
         success.add(symbol)
+        # 计算 K 线数据的涨跌幅列表
+        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
         # 若 K 线数据长度小于 20 或收盘价小于等于开盘价，则不进行后续分析
-        if len(kline) < 20:
+        if len(kline) < 20 or kline_zf[-2] <= 0 or kline_zf[-3] <= 0:
             return
         # 初始化结束索引
         index_e = 0
         # 获取 K 线数据中的收盘价列表
         kline_close = [k[4] for k in kline]
-        # 计算 K 线数据的涨跌幅列表
-        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
         # 获取 K 线数据中的量能列表
         kline_vol = [k[5] for k in kline]
         # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
@@ -174,13 +174,9 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
                         break
                 break
         # 若未找到符合条件的索引或存在不符合条件的 K 线数据，则不进行后续分析
-        if not index_e or kline_zf[-2] <= 0 or kline_zf[-3] <= 0 or max([k[2] for k in kline[index_e + 2:]]) >= max(
-                kline[index_e][2], kline[index_e + 1][2]):
-            return
-        # 获取最新收盘价
-        price_close = kline[-1][4]
-        # 若前一日最高价大于等于最新收盘价，则不进行后续分析
-        if any(x > 0 and y > 0 for x, y in pairwise(kline_zf[index_e + 1:-2])):
+        if (not index_e or max([k[2] for k in kline[index_e + 2:]]) >= max(
+                kline[index_e][2], kline[index_e + 1][2])
+                or any(x > 0 and y > 0 for x, y in pairwise(kline_zf[index_e + 1:-2]))):
             return
         # 计算收盘价的最大小数位数
         max_decimal = symbols_info.get(symbol).get('maxDecimal')
@@ -188,8 +184,6 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         kline_zf = kline_zf[index_s:-1]
         # 计算正向涨跌幅的 EMA 并乘以 0.9
         zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf])
-        # 计算 K 线数据的高低价差涨跌幅的 EMA
-        zf_d = calculate_ema_pandas([(k[3] - k[1]) / k[1] for k in kline[index_s:-1]])
         # 计算预期价格
         price_zy = round(kline[-2][4] + kline[-2][4] * zf_z, max_decimal)
         # 计算预期收益率
@@ -211,7 +205,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         if slot <= 0:
             return
         # 构建符合条件的交易对信息字典
-        data = {symbol: (price_close, expectation, risk, price_zy, price_zs, slot)}
+        data = {symbol: (kline[-1][4], expectation, risk, price_zy, price_zs, slot)}
         # 更新符合条件的交易对信息字典
         alert.update(data)
         # 更新需要进一步处理的交易对信息字典
@@ -350,30 +344,6 @@ async def rzq_market(market):
         print(datetime.datetime.now(), f'{market}任务结束', alert_final, alert)
         # 进行垃圾回收
         gc.collect()
-
-
-# 辅助函数：获取股票涨停价
-def get_upper_limit(code, stock_info):
-    """
-    根据股票代码和股票信息计算涨停价
-
-    :param code: 股票代码
-    :param stock_info: 包含股票名称和昨收价格的 DataFrame
-    :return: 股票的涨停价，保留两位小数
-    """
-    # 获取股票名称
-    name = stock_info['名称'].values[0]
-    # 获取股票昨收价格
-    prev_close = stock_info['昨收'].values[0]
-    if 'ST' in name or '*ST' in name:
-        # ST 股涨停 5%
-        return round(prev_close * 1.05, 2)
-    elif code.startswith(('300', '688')):
-        # 创业板和科创板涨停 20%
-        return round(prev_close * 1.2, 2)
-    else:
-        # 其他股票涨停 10%
-        return round(prev_close * 1.1, 2)
 
 
 def get_last_trading_days(today=None, days=60):
