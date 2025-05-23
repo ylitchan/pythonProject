@@ -201,7 +201,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         if size_z == 1:
             size_z = 0.9
         # 计算仓位比例
-        slot = (expectation * size_z + risk * (1 - size_z)) / expectation
+        slot = round((expectation * size_z + risk * (1 - size_z)) / expectation, 2)
         if slot <= 0:
             return
         # 构建符合条件的交易对信息字典
