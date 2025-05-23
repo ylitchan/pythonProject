@@ -193,7 +193,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         # 计算止损价格
         # price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
         price_zs = round(kline[-1][2] * symbols_info.get(symbol).get('askMultiplierDown'), max_decimal)
-        price_zs = max(price_zs, min(kline[-3][3], kline[-2][3]))
+        price_zs = max(price_zs, min(kline[-4][3], kline[-3][3], kline[-2][3]))
         # 计算风险收益率
         risk = round((price_zs / kline[-1][2] - 1) * 100, 2)
         # 计算仓位状态的 EMA
