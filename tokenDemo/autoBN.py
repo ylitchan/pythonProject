@@ -105,7 +105,7 @@ async def get_kline(semaphore, symbol, t: str):
         # 异步调用 spotBN.klines 方法获取 K 线数据
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
         # kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
-        #                                 endTime=1746835200000)
+        #                                 endTime=1747094400000)
         # 将 K 线数据中的元素转换为浮点数
         kline = [list(map(float, sublist)) for sublist in kline]
         return kline
@@ -157,7 +157,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         # 获取 K 线数据中的量能列表
         kline_vol = [k[5] for k in kline]
         # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
-        for i, k in enumerate(kline[-5:-9:-1]):
+        for i, k in enumerate(kline[-5:-12:-1]):
             if k[4] > k[1] and kline_close[-i - 5] > max(kline_close[:-i - 5]) and k[5] >= max(kline_vol[:-i - 5]) * 2:
                 index_e = -i - 5
                 # 初始化起始索引
@@ -367,7 +367,7 @@ def get_last_trading_days(today=None, days=60):
     # 获取结束日期
     end_date = recent_trading_days.max().strftime("%Y%m%d")
     # 获取涨停股查询日期列表
-    zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:7]]
+    zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
     # 返回起始日期、结束日期和涨停股查询日期列表
     return start_date, end_date, zt_date
 
@@ -382,7 +382,7 @@ def filter_stocks():
     # 获取最近交易日信息
     start_date, end_date, zt_dates = get_last_trading_days()
     # 可取消注释以下行，指定特定日期获取相关信息
-    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250519', '%Y%m%d'))
+    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250513', '%Y%m%d'))
     # 初始化符合条件的股票集合
     selected = set()
     for i, zt_date in enumerate(zt_dates):
@@ -407,7 +407,8 @@ def filter_stocks():
                 traceback.print_exc()
                 continue
             print(code, hist.iloc[-1]['涨跌幅'])
-            if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[:-i - 4]['收盘'].max() > \
+            if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[-3:-1]['成交量'].max() > \
+                    hist.iloc[-1]['成交量'] or hist.iloc[:-i - 4]['收盘'].max() > \
                     hist.iloc[-i - 4]['收盘'] or hist.iloc[-i - 2:]['最高'].max() >= hist.iloc[-i - 4:-i - 2][
                 '最高'].max() or any(
                 x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist())):
@@ -435,16 +436,16 @@ def monitor_stocks():
     # 筛选符合量能条件的股票
     filtered = filter_stocks()
     print(f"符合量能条件的股票：{filtered}")
-    if filtered:
-        # 构建企业微信消息内容
-        json_msg = {
-            "msgtype": "text",
-            "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
-        }
-        # 发送企业微信消息
-        session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-            json=json_msg)
+    # if filtered:
+    #     # 构建企业微信消息内容
+    #     json_msg = {
+    #         "msgtype": "text",
+    #         "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
+    #     }
+    #     # 发送企业微信消息
+    #     session.post(
+    #         url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+    #         json=json_msg)
 
 
 async def main():
