@@ -436,16 +436,16 @@ def monitor_stocks():
     # 筛选符合量能条件的股票
     filtered = filter_stocks()
     print(f"符合量能条件的股票：{filtered}")
-    # if filtered:
-    #     # 构建企业微信消息内容
-    #     json_msg = {
-    #         "msgtype": "text",
-    #         "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
-    #     }
-    #     # 发送企业微信消息
-    #     session.post(
-    #         url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-    #         json=json_msg)
+    if filtered:
+        # 构建企业微信消息内容
+        json_msg = {
+            "msgtype": "text",
+            "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
+        }
+        # 发送企业微信消息
+        session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            json=json_msg)
 
 
 async def main():
