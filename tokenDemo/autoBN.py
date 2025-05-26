@@ -408,11 +408,12 @@ def filter_stocks():
                 traceback.print_exc()
                 continue
             print(code, hist.iloc[-1]['涨跌幅'])
-            if len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0 or hist.iloc[-3:-1]['成交量'].max() > \
-                    hist.iloc[-1]['成交量'] or hist.iloc[:-i - 4]['收盘'].max() > \
-                    hist.iloc[-i - 4]['收盘'] or hist.iloc[-i - 2:]['最高'].max() >= hist.iloc[-i - 4:-i - 2][
-                '最高'].max() or any(
-                x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist())):
+            if (len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0
+                    or hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘']
+                    or hist.iloc[-3:-1]['成交量'].max() > hist.iloc[-1]['成交量']
+                    or hist.iloc[:-i - 4]['收盘'].max() > hist.iloc[-i - 4]['收盘']
+                    or hist.iloc[-i - 2:]['最高'].max() >= hist.iloc[-i - 4:-i - 2]['最高'].max()
+                    or any(x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist()))):
                 continue
             # today_close = hist.iloc[-1]['收盘']
             # today_open = hist.iloc[-1]['开盘']
