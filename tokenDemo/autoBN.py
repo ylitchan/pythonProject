@@ -251,6 +251,7 @@ async def rzq_market(market):
         alert.clear()
         POSITIONS.clear()
         TRADING.clear()
+    CC = [asset.get('asset', 'USDT') + 'USDT' for asset in spotBN.user_asset()]
     # 最多尝试 10 次获取交易对信息
     for i in range(10):
         try:
@@ -265,8 +266,8 @@ async def rzq_market(market):
                                                    [y.value for y in parse('$..minPrice').find(symbol)]),
                                                'minQty': get_minQty([y.value for y in parse('$..minQty').find(symbol)])}
                             for symbol in exchange_info['symbols'] if
-                            symbol['symbol'] not in POSITIONS and 'USDT' in symbol['quoteAsset'] and 'TRADING' in
-                            symbol['status']}
+                            symbol['symbol'] not in CC and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol[
+                                'status']}
             # 获取符合条件的交易对列表
             symbols = list(symbols_info.keys())
             break
@@ -457,7 +458,7 @@ async def main():
     # 执行市场分析任务
     await rzq_market('BN')
     # 设置任务调度
-    scheduler.add_job(monitor_stocks, 'cron', hour='14', minute='52-57', second='00', day_of_week='mon-fri',
+    scheduler.add_job(monitor_stocks, 'cron', hour='12,14', minute='52-57', second='00', day_of_week='mon-fri',
                       timezone='Asia/Shanghai')
     scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
                       args=('BN',))
