@@ -104,8 +104,8 @@ async def get_kline(semaphore, symbol, t: str):
     async with semaphore:
         # 异步调用 spotBN.klines 方法获取 K 线数据
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
-        kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
-                                        endTime=1748217600000)
+        # kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
+        #                                 endTime=1748217600000)
         # 将 K 线数据中的元素转换为浮点数
         kline = [list(map(float, sublist)) for sublist in kline]
         return kline
@@ -457,7 +457,7 @@ async def main():
     主函数，启动股票监控和市场分析任务，并设置定时任务
     """
     # 执行股票监控任务
-    # monitor_stocks()
+    monitor_stocks()
     # 执行市场分析任务
     await rzq_market('BN')
     # 设置任务调度
