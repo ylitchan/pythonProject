@@ -154,9 +154,13 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         index_e = 0
         # 获取 K 线数据中的收盘价列表
         kline_close = [k[4] for k in kline]
-        # 获取 K 线数据中的量能列表
+        if sum(kline_close[-11:-1]) / 10 > kline_close[-2]:
+            return
+            # 获取 K 线数据中的量能列表
         kline_vol = [k[5] for k in kline]
-        # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
+        if max(kline_vol[-4:-2]) > kline_vol[-2]:
+            return
+            # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
         for i, k in enumerate(kline[-5:-12:-1]):
             if k[4] > k[1] and kline_close[-i - 5] > max(kline_close[:-i - 5]) and k[5] >= max(kline_vol[:-i - 5]) * 2:
                 index_e = -i - 5
