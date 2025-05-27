@@ -104,8 +104,8 @@ async def get_kline(semaphore, symbol, t: str):
     async with semaphore:
         # 异步调用 spotBN.klines 方法获取 K 线数据
         kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
-        # kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
-        #                                 endTime=1747094400000)
+        kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
+                                        endTime=1748217600000)
         # 将 K 线数据中的元素转换为浮点数
         kline = [list(map(float, sublist)) for sublist in kline]
         return kline
@@ -158,9 +158,7 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
             return
             # 获取 K 线数据中的量能列表
         kline_vol = [k[5] for k in kline]
-        if max(kline_vol[-4:-2]) > kline_vol[-2]:
-            return
-            # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
+        # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
         for i, k in enumerate(kline[-5:-12:-1]):
             if k[4] > k[1] and kline_close[-i - 5] > max(kline_close[:-i - 5]) and k[5] >= max(kline_vol[:-i - 5]) * 2:
                 index_e = -i - 5
@@ -459,7 +457,7 @@ async def main():
     主函数，启动股票监控和市场分析任务，并设置定时任务
     """
     # 执行股票监控任务
-    monitor_stocks()
+    # monitor_stocks()
     # 执行市场分析任务
     await rzq_market('BN')
     # 设置任务调度
