@@ -148,15 +148,13 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         # 计算 K 线数据的涨跌幅列表
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
         # 若 K 线数据长度小于 20 或收盘价小于等于开盘价，则不进行后续分析
-        if len(kline) < 20 or kline_zf[-2] <= 0 or kline_zf[-3] <= 0:
+        if len(kline) < 20:
             return
         # 初始化结束索引
         index_e = 0
         # 获取 K 线数据中的收盘价列表
         kline_close = [k[4] for k in kline]
-        if sum(kline_close[-11:-1]) / 10 > kline_close[-2]:
-            return
-            # 获取 K 线数据中的量能列表
+        # 获取 K 线数据中的量能列表
         kline_vol = [k[5] for k in kline]
         # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
         for i, k in enumerate(kline[-5:-12:-1]):
@@ -175,9 +173,10 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
                         index_s = index_e - ii
                         break
                 break
+        if index_e and kline[-1][2]>max([k[2] for k in kline[index_e:-1]]):
+            return
         # 若未找到符合条件的索引或存在不符合条件的 K 线数据，则不进行后续分析
-        if (not index_e or max([k[2] for k in kline[index_e + 2:]]) >= max(
-                kline[index_e][2], kline[index_e + 1][2])
+        if (not index_e or kline_zf[-2] <= 0 or kline_zf[-3] <= 0
                 or any(x > 0 and y > 0 for x, y in pairwise(kline_zf[index_e + 1:-2]))):
             return
         # 计算收盘价的最大小数位数
@@ -414,7 +413,7 @@ def filter_stocks():
                     or hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘']
                     or hist.iloc[-3:-1]['成交量'].max() > hist.iloc[-1]['成交量']
                     or hist.iloc[:-i - 4]['收盘'].max() > hist.iloc[-i - 4]['收盘']
-                    or hist.iloc[-i - 2:]['最高'].max() >= hist.iloc[-i - 4:-i - 2]['最高'].max()
+                    # or hist.iloc[-i - 2:]['最高'].max() >= hist.iloc[-i - 4:-i - 2]['最高'].max()
                     or any(x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist()))):
                 continue
             # today_close = hist.iloc[-1]['收盘']
