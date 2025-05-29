@@ -42,12 +42,12 @@ def trade(symbol, price, stopPrice, symbols_info, slot):
     try:
         # 获取 USDT 可用余额，若余额小于 6 则不进行交易
         if (usdt_free := float(spotBN.user_asset(asset='USDT')[0]['free'])) < 6:
-            return
+            return None
         # 根据仓位比例计算可用 USDT 金额，若计算后金额大于等于 6 则更新可用余额
         elif (usdt_slot := usdt_free * slot) >= 6:
             usdt_free = usdt_slot
         else:
-            return
+            return None
         # 获取交易对的最小交易数量精度
         minQty = symbols_info.get(symbol).get('minQty')
         # 获取交易对的报价精度
@@ -86,10 +86,12 @@ def trade(symbol, price, stopPrice, symbols_info, slot):
                 traceback.print_exc()
                 # 等待 2 秒后重试
                 time.sleep(2)
+                return None
+        return None
     except:
         # 打印异常堆栈信息
         traceback.print_exc()
-        return
+        return None
 
 
 async def get_kline(semaphore, symbol, t: str):
