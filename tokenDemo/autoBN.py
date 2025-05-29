@@ -158,7 +158,8 @@ async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
         kline_vol = [k[5] for k in kline]
         # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
         for i, k in enumerate(kline[-5:-12:-1]):
-            if k[4] > k[1] and kline_close[-i - 5] > max(kline_close[:-i - 5]) and k[5] >= max(kline_vol[:-i - 5]) * 2:
+            if (k[4] > k[1] and kline_close[-i - 5] > max(kline_close[max(-i - 14, -20):-i - 5])
+                    and k[5] >= max(kline_vol[max(-i - 14, -20):-i - 5]) * 2):
                 index_e = -i - 5
                 # 初始化起始索引
                 index_s = index_e
