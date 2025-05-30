@@ -311,7 +311,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         if kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max:
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'].append(symbol)
-            # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
+            trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
 
         # 做空条件：
         # 1. 当日为阴线(涨跌幅为负)
@@ -324,7 +324,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'].append(symbol)
-            # open_bn_position(symbol, symbols_info)
+            open_bn_position(symbol, symbols_info)
     except:
         traceback.print_exc()
         return
