@@ -290,7 +290,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
     """
     try:
         # 检查是否已在交易中，避免重复交易
-        if symbol in alert_all['TRADING']:
+        if symbol in alert_all['POSITIONS']:
             return
         # 获取日K线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
