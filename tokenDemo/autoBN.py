@@ -193,7 +193,8 @@ def open_bn_position(symbol, symbols_info):
         amount_raw = safe_balance * leverage / markPrice
 
         # 按照交易对精度要求四舍五入（向下取整，避免超出可用余额）
-        amount = float(Decimal(str(amount_raw)).quantize(symbols_info.get(symbol), rounding=ROUND_DOWN))
+        amount = float(
+            Decimal(str(amount_raw)).quantize(symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
 
         # 计算名义价值
         notional = amount * markPrice
@@ -309,7 +310,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
         if kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max:
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['TRADING'].append(symbol)
+            alert_all['POSITIONS'].append(symbol)
             # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
 
         # 做空条件：
@@ -322,22 +323,11 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               kline_vol[-2] >= 2 * max(kline_vol[-11:-2]) and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['TRADING'].append(symbol)
+            alert_all['POSITIONS'].append(symbol)
             # open_bn_position(symbol, symbols_info)
     except:
         traceback.print_exc()
         return
-
-
-def get_minQty(minQty):
-    """
-    计算最小交易数量的精度
-
-    :param minQty: 包含最小交易数量的列表
-    :return: 最小交易数量的精度，即小数位数
-    """
-    minQty = max(map(lambda x: Decimal(x).normalize(), minQty))
-    return -minQty.as_tuple().exponent
 
 
 async def rzq_market(market):
@@ -357,31 +347,23 @@ async def rzq_market(market):
     """
     now = datetime.datetime.now()
     symbols = []
-    alert = alert_all.get(market, {})
     POSITIONS = alert_all.get("POSITIONS", {})
-    TRADING = alert_all.get("TRADING", [])
     # 每天早上8点重置数据
     if now.hour == 8 and now.minute < 1:
-        alert.clear()
         POSITIONS.clear()
-        TRADING.clear()
     for i in range(10):
         try:
             sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
                 f'0.{"1" * i["quantityPrecision"]}') for i in um_futures_client.exchange_info()['symbols']}
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
-            symbols_info = {symbol['symbol']: {'quotePrecision': symbol['quotePrecision'],
-                                               'askMultiplierDown': float(
-                                                   parse('$..askMultiplierDown').find(symbol)[0].value),
-                                               'minPrice': float(parse('$..minPrice').find(symbol)[0].value),
-                                               'maxDecimal': get_minQty(
-                                                   [y.value for y in parse('$..minPrice').find(symbol)]),
-                                               'minQty': get_minQty([y.value for y in parse('$..minQty').find(symbol)]),
-                                               'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
-                                               }
-                            for symbol in exchange_info['symbols'] if
-                            symbol['symbol'] not in TRADING and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol[
-                                'status']}
+            symbols_info = {symbol['symbol']: {
+                'quotePrecision': symbol['quotePrecision'],
+                'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
+            }
+                for symbol in exchange_info['symbols'] if
+                symbol['symbol'] not in POSITIONS and 'USDT' in symbol['quoteAsset'] and 'TRADING' in
+                symbol[
+                    'status']}
             symbols = list(symbols_info.keys())
             break
         except:
@@ -393,7 +375,6 @@ async def rzq_market(market):
 
     # 初始化数据收集容器
     success = set()  # 成功处理的交易对
-    alert_final = []  # 最终通知结果
 
     # 创建并发任务
     chunk_size = 50  # 每批处理的交易对数量
@@ -405,13 +386,7 @@ async def rzq_market(market):
         await asyncio.gather(*tasks)
         # 进行垃圾回收以释放内存
         gc.collect()
-    try:
-        print(market, f"""{len(success)}/{len(symbols)}""")
-    finally:
-        with open('symbol.json', 'w') as f:
-            json.dump(alert, f, indent=4, ensure_ascii=False)
-        print(datetime.datetime.now(), f'{market}任务结束', alert_final, alert)
-        gc.collect()
+    print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}')
 
 
 def get_last_trading_days(today=None, days=60):
@@ -635,5 +610,5 @@ if __name__ == "__main__":
         bn_api = json.load(f)
     spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
-    alert_all = {'BN': {}, 'POSITIONS': {}, 'TRADING': []}
+    alert_all = {'POSITIONS': []}
     asyncio.run(main())
