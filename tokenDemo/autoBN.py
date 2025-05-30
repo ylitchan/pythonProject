@@ -1,95 +1,234 @@
-# 导入异步编程相关模块，用于处理异步任务
+# ==================================================================================================
+# 文件名: autoBN.py
+# 功能描述: Binance交易自动化工具，提供以下功能：
+#   1. 量能分析和交易信号生成
+#   2. 自动交易执行（做多、做空）
+#   3. 账户健康度监控
+#   4. 股票市场监控与筛选
+#   5. 企业微信消息通知
+# 作者: ylitchan
+# 创建日期: 2024
+# 最后修改: 2025-05-30
+# ==================================================================================================
+
 import asyncio
-# 导入日期时间模块，用于获取和处理日期时间信息
 import datetime
-# 导入垃圾回收模块，用于手动触发垃圾回收
 import gc
-# 导入 JSON 处理模块，用于读写 JSON 数据
 import json
-# 导入时间模块，用于实现时间延迟等操作
-import time
-# 导入异常堆栈跟踪模块，用于打印异常详细信息
 import traceback
-# 从 decimal 模块导入 Decimal 类和 ROUND_DOWN 常量，用于高精度十进制运算和向下取整
 from decimal import Decimal, ROUND_DOWN
 from itertools import pairwise
 
-# 导入 akshare 库，用于获取金融数据
+from binance.um_futures import UMFutures
 import akshare as ak
-# 导入 pandas 库，用于数据处理和分析
 import pandas as pd
-# 导入 requests 库，用于发送 HTTP 请求
 import requests
-# 从 apscheduler 库的 schedulers.asyncio 模块导入 AsyncIOScheduler 类，用于异步任务调度
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-# 从 binance.spot 模块导入 Spot 类，用于与 Binance 现货交易 API 交互
 from binance.spot import Spot
-# 从 jsonpath_ng 模块导入 parse 函数，用于解析 JSON 数据
 from jsonpath_ng import parse
 
 
-def trade(symbol, price, stopPrice, symbols_info, slot):
+def send_msg(msg):
+    """
+    发送消息到企业微信群聊
+
+    :param msg: 要发送的消息内容
+    :return: None
+    """
+    try:
+        # 记录当前时间和消息内容
+        current_time = datetime.datetime.now()
+        print(f"{current_time} - 发送消息: {msg}")
+
+        # 构建企业微信消息格式
+        json_msg = {
+            "msgtype": "text",
+            "text": {'content': msg}
+        }
+
+        # 发送POST请求到企业微信API
+        response = session.post(
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+            json=json_msg)
+
+        # 检查响应状态（可选）
+        if response.status_code != 200:
+            print(f"消息发送失败，状态码: {response.status_code}")
+    except Exception as e:
+        print(f"消息发送异常: {str(e)}")
+        # 记录异常但不中断程序
+
+
+def trade(symbol, symbols_info, slot):
     """
     执行交易操作，包括买入和卖出订单的创建
 
     :param symbol: 交易对符号
-    :param price: 卖出价格
-    :param stopPrice: 止损价格
     :param symbols_info: 交易对信息字典
     :param slot: 仓位比例
     :return: 若交易成功返回交易对符号，否则返回 None
     """
     try:
-        # 获取 USDT 可用余额，若余额小于 6 则不进行交易
-        if (usdt_free := float(spotBN.user_asset(asset='USDT')[0]['free'])) < 6:
+        # 检查可用USDT余额
+        usdt_assets = spotBN.user_asset(asset='USDT')
+        if not usdt_assets:  # 检查是否有USDT资产数据
+            send_msg(f'无法获取USDT资产信息')
             return None
-        # 根据仓位比例计算可用 USDT 金额，若计算后金额大于等于 6 则更新可用余额
-        elif (usdt_slot := usdt_free * slot) >= 6:
+
+        usdt_free = float(usdt_assets[0]['free'])
+
+        # 检查最小交易额
+        if usdt_free < 6:
+            send_msg(f'USDT余额不足: {usdt_free}')
+            return None
+
+        # 计算实际交易额
+        usdt_slot = usdt_free * slot
+        if usdt_slot >= 6:
             usdt_free = usdt_slot
         else:
+            send_msg(f'交易额太小: {usdt_slot}')
             return None
-        # 获取交易对的最小交易数量精度
-        minQty = symbols_info.get(symbol).get('minQty')
-        # 获取交易对的报价精度
-        quotePrecision = symbols_info.get(symbol).get('quotePrecision')
-        # 构建买入订单参数
+
+        # 获取交易对配置信息
+        if symbol not in symbols_info:
+            send_msg(f'找不到交易对信息: {symbol}')
+            return None
+
+        symbol_info = symbols_info.get(symbol)
+        quotePrecision = symbol_info.get('quotePrecision')
+
+        # 准备订单参数
         params = {
             "symbol": symbol,
             "side": "BUY",
             "type": "MARKET",
             "quoteOrderQty": round(usdt_free, quotePrecision)
         }
-        # 发送买入订单请求
-        spotBN.new_order(**params)
-        # 等待 3 秒，确保订单处理完成
-        time.sleep(3)
-        for _ in range(3):
-            try:
-                # 获取交易对资产的可用余额
-                symbol_free = spotBN.user_asset(asset=symbol[:-4])[0]['free']
-                # 对可用余额进行精度处理
-                symbol_free_round = float(
-                    Decimal(symbol_free).quantize(Decimal(f'0.{"1" * minQty}'), rounding=ROUND_DOWN))
-                # 构建卖出订单参数
-                params = {
-                    "symbol": symbol,
-                    "side": "SELL",
-                    "quantity": symbol_free_round,
-                    "price": price,
-                    "stopPrice": stopPrice
-                }
-                # 发送卖出订单请求
-                spotBN.new_oco_order(**params)
-                return symbol
-            except:
-                # 打印异常堆栈信息
-                traceback.print_exc()
-                # 等待 2 秒后重试
-                time.sleep(2)
-                return None
+
+        # 发送订单
+        order_result = spotBN.new_order(**params)
+
+        # 记录交易结果
+        executed_qty = order_result.get('executedQty', '未知')
+        executed_price = order_result.get('price', '市价')
+        msg = f'bn做多{symbol}成功，交易仓位:{slot}，数量:{executed_qty}，价格:{executed_price}'
+        send_msg(msg)
+
+        return symbol
+    except Exception as e:
+        error_msg = f'交易{symbol}失败: {str(e)}'
+        send_msg(error_msg)
+        traceback.print_exc()
         return None
-    except:
-        # 打印异常堆栈信息
+
+
+def calculate_health_bn(notional) -> int:
+    """
+    计算Binance账户的健康度（健康百分比）
+
+    该函数计算账户的风险水平，用百分比表示。计算方法为：
+    健康度 = (1 - 维持保证金总额/账户总余额) * 100%
+
+    :param notional: 新增头寸的名义价值，用于计算额外需要的维持保证金
+    :return: 账户健康度，范围为0-100的整数，100表示最健康，0表示已爆仓
+    """
+    account_data = um_futures_client.account()
+    total_balance = float(account_data['totalMarginBalance'])  # 账户总余额
+    position_data = um_futures_client.get_position_risk()
+    total_maintenance_margin = 0.0  # 维持保证金总额
+    for position in position_data:
+        if float(position['positionAmt']) != 0:  # 只考虑有持仓的头寸
+            maintenance_margin = float(position['maintMargin'])  # 当前头寸维持保证金
+            total_maintenance_margin += maintenance_margin
+    total_maintenance_margin += notional * 0.004  # 新增头寸所需维持保证金（假设维持保证金率为0.4%）
+    if total_maintenance_margin == 0 and total_balance >= 0:
+        return 100  # 无持仓且余额为正，健康度为100%
+    elif total_balance <= 0:
+        return 0  # 余额为负，已爆仓
+    else:
+        return round(
+            min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100))
+        )
+
+
+def open_bn_position(symbol, symbols_info):
+    """
+    在Binance合约市场开仓做空
+
+    根据账户可用余额和杠杆倍数计算开仓数量，并执行做空开仓操作。
+    会检查账户健康度确保开仓后不会导致风险过高。
+
+    :param symbol: 交易对符号，如'BTCUSDT'
+    :param symbols_info: 交易对信息字典，包含精度等信息
+    :return: 成功开仓返回交易对符号，失败返回None
+    """
+    try:
+        # 获取账户可用余额
+        account_data = um_futures_client.account()
+        balance = float(account_data['availableBalance'])
+
+        # 检查余额是否足够
+        if balance <= 0:
+            send_msg(f'{symbol} 开仓失败：可用余额为零')
+            return None
+
+        # 获取当前标记价格
+        mark_price_data = um_futures_client.mark_price(symbol)
+        if not mark_price_data:
+            send_msg(f'{symbol} 开仓失败：无法获取标记价格')
+            return None
+
+        markPrice = float(mark_price_data['markPrice'])
+
+        # 检查交易对配置信息
+        if symbol not in symbols_info:
+            send_msg(f'{symbol} 开仓失败：找不到交易对信息')
+            return None
+
+        # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
+        safe_balance = balance * 0.8
+
+        # 根据杠杆计算交易数量
+        amount_raw = safe_balance * leverage / markPrice
+
+        # 按照交易对精度要求四舍五入（向下取整，避免超出可用余额）
+        amount = float(Decimal(str(amount_raw)).quantize(symbols_info.get(symbol), rounding=ROUND_DOWN))
+
+        # 计算名义价值
+        notional = amount * markPrice
+
+        # 检查最小交易额
+        if notional < 6:
+            send_msg(f'{symbol} 开仓失败：交易额 {notional} 低于最小要求 6 USDT')
+            return None
+
+        # 检查开仓后的账户健康度
+        account_health = calculate_health_bn(notional)
+        if account_health < health4open:
+            send_msg(f'{symbol} 开仓失败：预计健康度 {account_health}% 低于要求 {health4open}%')
+            return None
+
+        # 设置杠杆
+        leverage_result = um_futures_client.change_leverage(symbol=symbol, leverage=leverage)
+        actual_leverage = leverage_result.get('leverage', leverage)
+
+        # 下市价单做空
+        tx = um_futures_client.new_order(
+            symbol=symbol,
+            side='SELL',
+            type="MARKET",
+            quantity=amount,
+            positionSide="SHORT",
+        )
+
+        # 发送成功通知
+        msg = f'bn做空{symbol}成功，杠杆:{actual_leverage}x，交易数量:{tx.get("origQty", 0)}，标记价格:{markPrice}'
+        send_msg(msg)
+        return symbol
+    except Exception as e:
+        error_msg = f'{symbol} 开仓失败：{str(e)}'
+        send_msg(error_msg)
         traceback.print_exc()
         return None
 
@@ -99,122 +238,93 @@ async def get_kline(semaphore, symbol, t: str):
     异步获取指定交易对的 K 线数据
 
     :param semaphore: 异步信号量，用于控制并发数量
-    :param symbol: 交易对符号
-    :param t: K 线时间周期，如 "1Dutc"
-    :return: K 线数据列表，元素为浮点数列表
+    :param symbol: 交易对符号，例如 "BTCUSDT"
+    :param t: K 线时间周期，如 "1Dutc"（1天UTC时间）、"4h"（4小时）等
+    :return: K 线数据列表，元素为浮点数列表，每个子列表包含[开盘时间, 开盘价, 最高价, 最低价, 收盘价, 成交量, ...]等信息
     """
     async with semaphore:
-        # 异步调用 spotBN.klines 方法获取 K 线数据
-        kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20)
-        # kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=t[:2].lower(), limit=20,
-        #                                 endTime=1748217600000)
-        # 将 K 线数据中的元素转换为浮点数
-        kline = [list(map(float, sublist)) for sublist in kline]
-        return kline
+        # 提取时间周期前缀（如 1d, 4h 等）并转小写
+        interval = t[:2].lower()
+        # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
+        kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=interval, limit=20)
+        # 一次性将所有数据转换为浮点数
+        return [list(map(float, sublist)) for sublist in kline]
 
 
 def calculate_ema_pandas(prices, period=None):
     """
     使用 pandas 计算指数移动平均线 (EMA)
 
-    :param prices: 价格数据列表
-    :param period: 计算 EMA 的周期，默认为价格数据列表的长度
-    :return: 最后一个 EMA 值
+    EMA是一种赋予近期数据更高权重的移动平均线，计算公式为：
+    EMA(today) = Price(today) * k + EMA(yesterday) * (1 – k)
+    其中 k = 2/(period + 1)
+
+    :param prices: 价格数据列表，包含历史价格数据
+    :param period: 计算 EMA 的周期，默认为价格数据列表的长度。较小的周期对最新数据更敏感
+    :return: 最后一个 EMA 值，即最新的 EMA 计算结果
     """
-    # 将价格数据转换为 pandas Series 对象
-    df = pd.Series(prices)
+    # 如果未提供周期，则使用全部数据长度
     if not period:
         period = len(prices)
-    # 计算 EMA
-    ema = df.ewm(span=period, adjust=False).mean()
-    # 返回最后一个 EMA 值
-    return ema.tolist()[-1]
+    # 直接使用 pandas Series 创建数据并计算 EMA
+    # ewm: 指数加权移动，span参数设置为period使其等价于交易软件中的EMA
+    # adjust=False确保使用标准EMA计算方法
+    return pd.Series(prices).ewm(span=period, adjust=False).mean().iloc[-1]
 
 
-async def rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info):
+async def rzq_token(semaphore, symbol, success, symbols_info):
     """
-    异步分析指定交易对的 K 线数据，筛选符合条件的交易对
+    异步分析指定交易对的 K 线数据，筛选符合交易条件的交易对并执行交易
 
-    :param semaphore: 异步信号量，用于控制并发数量
-    :param symbol: 交易对符号
+    该函数通过分析K线数据的价格变动和成交量模式，识别做多和做空信号：
+    - 做多信号：当日涨幅为近10天最大且成交量为近10天最高
+    - 做空信号：当日为阴线，前一日涨幅为近10天最大且成交量为前10天的2倍，并且前日上影线足够长
+
+    :param semaphore: 异步信号量，用于控制并发请求数量
+    :param symbol: 交易对符号，如 "BTCUSDT"
     :param alert: 存储符合条件的交易对信息的字典
     :param success: 存储成功获取 K 线数据的交易对集合
-    :param alert_m: 存储需要进一步处理的交易对信息的字典
+    :param symbols_info: 交易对信息字典，包含交易精度等信息
     :return: 若不符合条件则返回 None，否则返回符合条件的交易对信息字典
     """
     try:
-        # 异步获取指定交易对的 K 线数据
+        # 检查是否已在交易中，避免重复交易
+        if symbol in alert_all['TRADING']:
+            return
+        # 获取日K线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
-        # 将成功获取 K 线数据的交易对添加到集合中
         success.add(symbol)
-        # 计算 K 线数据的涨跌幅列表
+        # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        # 若 K 线数据长度小于 20 或收盘价小于等于开盘价，则不进行后续分析
-        if len(kline) < 20 or kline_zf[-2] <= 0 or kline_zf[-3] <= 0:
+        if len(kline) < 20:  # 数据不足，跳过
             return
-        # 初始化结束索引
-        index_e = 0
-        # 获取 K 线数据中的收盘价列表
-        kline_close = [k[4] for k in kline]
-        # 获取 K 线数据中的量能列表
-        kline_vol = [k[5] for k in kline]
-        # 从倒数第 5 个到倒数第 9 个 K 线数据中寻找符合条件的起始索引
-        for i, k in enumerate(kline[-5:-12:-1]):
-            if (k[4] > k[1] and kline_close[-i - 5] > max(kline_close[max(-i - 14, -20):-i - 5])
-                    and k[5] >= max(kline_vol[max(-i - 14, -20):-i - 5]) * 2):
-                index_e = -i - 5
-                # 初始化起始索引
-                index_s = index_e
-                # 从起始索引往前遍历，寻找符合条件的结束索引
-                for ii, kk in enumerate(kline[index_e - 1::-1]):
-                    if index_e - ii - 1 == -20:
-                        if kk[4] <= kk[1]:
-                            index_s = -19
-                        else:
-                            index_s = -20
-                    elif kk[4] <= kk[1] and kline_zf[index_e - ii - 2] <= 0:
-                        index_s = index_e - ii
-                        break
-                break
-        # 若未找到符合条件的索引或存在不符合条件的 K 线数据，则不进行后续分析
-        if (not index_e or max(kline_vol[max(index_e + 2, -4):-2]) > kline_vol[-2]
-                or any(x > 0 and y > 0 for x, y in pairwise(kline_zf[index_e + 1:-2]))):
-            return
-        # 计算收盘价的最大小数位数
-        max_decimal = symbols_info.get(symbol).get('maxDecimal')
-        # 截取符合条件的涨跌幅列表
-        kline_zf = kline_zf[index_s:-1]
-        # 计算正向涨跌幅的 EMA 并乘以 0.9
-        zf_z = calculate_ema_pandas([k if k > 0 else 0 for k in kline_zf])
-        # 计算预期价格
-        price_zy = round(kline[-2][4] + kline[-2][4] * zf_z, max_decimal)
-        # 计算预期收益率
-        expectation = round((price_zy / kline[-1][2] - 1) * 100, 2)
-        if expectation <= 0:
-            return
-        # 计算止损价格
-        # price_zs = round(kline[-2][4] + kline[-2][4] * zf_d, max_decimal)
-        price_zs = round(kline[-1][2] * symbols_info.get(symbol).get('askMultiplierDown'), max_decimal)
-        price_zs = max(price_zs, min(kline[-4][3], kline[-3][3], kline[-2][3]))
-        # 计算风险收益率
-        risk = round((price_zs / kline[-1][2] - 1) * 100, 2)
-        # 计算仓位状态的 EMA
-        size_z = calculate_ema_pandas([1 if k > 0 else 0 for k in kline_zf])
-        if size_z == 1:
-            size_z = 0.9
-        # 计算仓位比例
-        slot = round((expectation * size_z + risk * (1 - size_z)) / expectation, 2)
-        if slot <= 0:
-            return
-        # 构建符合条件的交易对信息字典
-        data = {symbol: (kline[-1][4], expectation, risk, price_zy, price_zs, slot)}
-        # 更新符合条件的交易对信息字典
-        alert.update(data)
-        # 更新需要进一步处理的交易对信息字典
-        alert_m.update(data)
-        return data
+        # 提取 K 线数据中的各项指标
+        kline_close = [k[4] for k in kline]  # 收盘价列表
+        kline_vol = [k[5] for k in kline]  # 成交量列表
+
+        # 计算关键指标
+        recent_zf_max = max([abs(k) for k in kline_zf[-10:]])  # 近10天最大涨跌幅（绝对值）
+        recent_vol_max = max(kline_vol[-10:])  # 近10天最大成交量
+
+        # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
+        if kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max:
+            send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
+            alert_all['TRADING'].append(symbol)
+            # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
+
+        # 做空条件：
+        # 1. 当日为阴线(涨跌幅为负)
+        # 2. 前一日涨跌幅为近10天最大
+        # 3. 前一日成交量为前10天的2倍以上
+        # 4. 前一日上影线足够长（至少为涨幅的一半）
+        elif (kline_zf[-1] < 0 and  # 当日为阴线
+              kline_zf[-2] >= max([abs(k) for k in kline_zf[-11:-1]]) and  # 前一日涨幅最大
+              kline_vol[-2] >= 2 * max(kline_vol[-11:-2]) and  # 前一日成交量是前10天的2倍以上
+              (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
+            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
+            alert_all['TRADING'].append(symbol)
+            # open_bn_position(symbol, symbols_info)
     except:
-        # 打印异常堆栈信息
         traceback.print_exc()
         return
 
@@ -226,9 +336,7 @@ def get_minQty(minQty):
     :param minQty: 包含最小交易数量的列表
     :return: 最小交易数量的精度，即小数位数
     """
-    # 将列表中的元素转换为 Decimal 类型并标准化，取最大值
     minQty = max(map(lambda x: Decimal(x).normalize(), minQty))
-    # 返回最小交易数量的小数位数
     return -minQty.as_tuple().exponent
 
 
@@ -236,217 +344,228 @@ async def rzq_market(market):
     """
     异步执行市场分析任务，筛选符合条件的交易对并进行交易操作，最后记录结果并发送通知
 
-    :param market: 市场名称，如 'BN'
+    该函数是交易逻辑的主要入口，执行以下步骤：
+    1. 获取所有符合条件的交易对
+    2. 对每个交易对并发执行技术分析（调用rzq_token函数）
+    3. 对符合条件的交易对执行交易策略
+    4. 汇总交易结果并发送通知
+    5. 保存分析数据
+
+    每天早上8点会清空历史数据，重新开始分析和交易。
+
+    :param market: 市场名称，如 'BN'（币安）
     """
-    # 获取当前时间
     now = datetime.datetime.now()
-    # 初始化交易对列表
     symbols = []
-    # 获取当前市场的交易对信息字典，若不存在则初始化为空字典
     alert = alert_all.get(market, {})
-    # 获取当前持仓信息字典，若不存在则初始化为空字典
     POSITIONS = alert_all.get("POSITIONS", {})
-    # 获取当前交易记录列表，若不存在则初始化为空列表
     TRADING = alert_all.get("TRADING", [])
-    # 若当前时间为 8 点且分钟数小于 2，则清空相关数据
-    if now.hour == 8 and now.minute < 2:
+    # 每天早上8点重置数据
+    if now.hour == 8 and now.minute < 1:
         alert.clear()
         POSITIONS.clear()
         TRADING.clear()
-    CC = [asset.get('asset', 'USDT') + 'USDT' for asset in spotBN.user_asset()]
-    # 最多尝试 10 次获取交易对信息
     for i in range(10):
         try:
-            # 异步调用 spotBN.exchange_info 方法获取所有交易对信息
+            sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
+                f'0.{"1" * i["quantityPrecision"]}') for i in um_futures_client.exchange_info()['symbols']}
             exchange_info = await asyncio.to_thread(spotBN.exchange_info)
-            # 提取符合条件的交易对信息，构建交易对信息字典
             symbols_info = {symbol['symbol']: {'quotePrecision': symbol['quotePrecision'],
                                                'askMultiplierDown': float(
                                                    parse('$..askMultiplierDown').find(symbol)[0].value),
                                                'minPrice': float(parse('$..minPrice').find(symbol)[0].value),
                                                'maxDecimal': get_minQty(
                                                    [y.value for y in parse('$..minPrice').find(symbol)]),
-                                               'minQty': get_minQty([y.value for y in parse('$..minQty').find(symbol)])}
+                                               'minQty': get_minQty([y.value for y in parse('$..minQty').find(symbol)]),
+                                               'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
+                                               }
                             for symbol in exchange_info['symbols'] if
-                            symbol['symbol'] not in CC and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol[
+                            symbol['symbol'] not in TRADING and 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol[
                                 'status']}
-            # 获取符合条件的交易对列表
             symbols = list(symbols_info.keys())
             break
         except:
-            # 打印异常堆栈信息，等待 2 秒后重试
             traceback.print_exc()
             await asyncio.sleep(2)
-    # 创建异步信号量，限制并发数量为 10
+    # 创建并发控制信号量（限制最大并发数为10）
     semaphore = asyncio.Semaphore(10)
-    # 打印任务开始信息
-    print(now, f'{market}任务开始', len(symbols))
-    # 初始化成功获取 K 线数据的交易对集合
-    success = set()
-    # 初始化需要进一步处理的交易对信息字典
-    alert_m = {}
-    # 初始化最终结果列表
-    alert_final = []
-    # 创建异步任务列表
-    tasks = [rzq_token(semaphore, symbol, alert, success, alert_m, symbols_info) for symbol in symbols]
-    # 并发执行所有任务
-    await asyncio.gather(*tasks)
+    print(now, f'{market}任务开始 - 总交易对数量: {len(symbols)}')
+
+    # 初始化数据收集容器
+    success = set()  # 成功处理的交易对
+    alert_final = []  # 最终通知结果
+
+    # 创建并发任务
+    chunk_size = 50  # 每批处理的交易对数量
+    for i in range(0, len(symbols), chunk_size):
+        # 分批处理以避免内存占用过高
+        symbol_chunk = symbols[i:i + chunk_size]
+        tasks = [rzq_token(semaphore, symbol, success, symbols_info) for symbol in symbol_chunk]
+        # 等待当前批次完成
+        await asyncio.gather(*tasks)
+        # 进行垃圾回收以释放内存
+        gc.collect()
     try:
-        # 打印成功获取 K 线数据的交易对数量信息
         print(market, f"""{len(success)}/{len(symbols)}""")
-        if alert_m:
-            # 对符合条件的交易对按仓位比例排序
-            alert_sort = enumerate(sorted(alert, key=lambda x: alert[x][5], reverse=True))
-            for i, j in alert_sort:
-                if j not in alert_m:
-                    continue
-                if j not in POSITIONS:
-                    # 执行交易操作，若成功则更新持仓信息
-                    if trade(symbol=j, price=alert_m[j][3], stopPrice=alert_m[j][4], symbols_info=symbols_info,
-                             slot=alert_m[j][5]):
-                        POSITIONS.update({j: alert_m[j]})
-                if j in POSITIONS:
-                    # 构建开仓交易对信息字符串并添加到最终结果列表
-                    alert_final.append(
-                        f'开仓{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}\n仓位:{alert_m[j][5]}')
-                elif j not in TRADING:
-                    # 构建交易对信息字符串并添加到最终结果列表
-                    alert_final.append(
-                        f'{i + 1}.{j.replace("-USDT", "USDT")[:-4]}\n'
-                        f'现价:{alert_m[j][0]}\n预期:{alert_m[j][1]}\n风险:{alert_m[j][2]}\n止盈:{alert_m[j][3]}\n止损:{alert_m[j][4]}\n仓位:{alert_m[j][5]}')
-                    # 将交易对添加到交易记录列表
-                    TRADING.append(j)
-            if alert_final:
-                # 构建企业微信消息内容
-                json_msg = {
-                    "msgtype": "text",
-                    "text": {'content': f'==={market}{len(alert)}做多===\n' + '\n-------\n'.join(alert_final)}
-                }
-                # 发送企业微信消息
-                session.post(
-                    url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-                    json=json_msg)
-        elif not success and symbols:
-            # 构建交易失败信息列表
-            alert_final = [f"""{len(success)}/{len(symbols)}"""]
-            # 构建企业微信消息内容
-            json_msg = {
-                "msgtype": "text",
-                "text": {'content': f'==={market}{len(alert)}===\n' + '\n-------\n'.join(alert_final)}
-            }
-            # 发送企业微信消息
-            session.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-                json=json_msg)
     finally:
-        # 将符合条件的交易对信息保存到 JSON 文件
         with open('symbol.json', 'w') as f:
             json.dump(alert, f, indent=4, ensure_ascii=False)
-        # 打印任务结束信息
         print(datetime.datetime.now(), f'{market}任务结束', alert_final, alert)
-        # 进行垃圾回收
         gc.collect()
 
 
 def get_last_trading_days(today=None, days=60):
     """
-    获取最近的交易日信息
+    获取最近的交易日信息，用于数据分析和历史回测
+
+    该函数从新浪财经接口获取A股交易日历，然后计算：
+    1. 指定日期前的最近n个交易日区间（起始日和结束日）
+    2. 近期涨停股需要查询的日期列表（近7个交易日，但略过最近3天）
 
     :param today: 指定日期，默认为当前日期
     :param days: 获取最近交易日的天数，默认为 60 天
-    :return: 起始日期、结束日期和涨停股查询日期列表
+    :return: 三元组 (start_date, end_date, zt_date)
+        - start_date: 查询区间起始日期，格式'YYYYMMDD'
+        - end_date: 查询区间结束日期，格式'YYYYMMDD'
+        - zt_date: 需要查询涨停股的日期列表，格式['YYYYMMDD', ...]
     """
+    # 设置默认日期为今天
     if not today:
         today = datetime.datetime.today()
-    # 获取最近的交易日列表
-    trade_dates = ak.tool_trade_date_hist_sina()
-    # 将交易日期转换为 datetime 类型
-    trade_dates = pd.to_datetime(trade_dates["trade_date"])
-    # 找到最近的指定天数的交易日
-    recent_trading_days = trade_dates[trade_dates <= today].sort_values(ascending=False).iloc[:days]
-    # 获取起始日期
-    start_date = recent_trading_days.min().strftime("%Y%m%d")
-    # 获取结束日期
-    end_date = recent_trading_days.max().strftime("%Y%m%d")
-    # 获取涨停股查询日期列表
-    zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
-    # 返回起始日期、结束日期和涨停股查询日期列表
-    return start_date, end_date, zt_date
+
+    try:
+        # 从新浪获取交易日历
+        trade_dates = ak.tool_trade_date_hist_sina()
+
+        # 转换为日期时间格式
+        trade_dates = pd.to_datetime(trade_dates["trade_date"])
+
+        # 过滤出不晚于指定日期的交易日
+        valid_dates = trade_dates[trade_dates <= today]
+
+        # 如果没有有效日期，返回空结果
+        if valid_dates.empty:
+            print(f"警告: 未找到 {today} 之前的交易日")
+            return None, None, []
+
+        # 获取指定日期前的最近n个交易日，按时间降序排列
+        recent_trading_days = valid_dates.sort_values(ascending=False).iloc[:days]
+
+        # 计算查询区间起始日期和结束日期（时间上最早和最晚的日期）
+        start_date = recent_trading_days.min().strftime("%Y%m%d")
+        end_date = recent_trading_days.max().strftime("%Y%m%d")
+
+        # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
+        # 注意：iloc[3:10]表示从第4个元素到第10个元素（索引从0开始）
+        zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
+
+        return start_date, end_date, zt_date
+    except Exception as e:
+        print(f"获取交易日历失败: {str(e)}")
+        # 发生异常时返回空结果
+        return None, None, []
 
 
-# 步骤2：筛选符合条件的股票
 def filter_stocks():
     """
-    筛选符合量能条件的股票
+    筛选符合量能条件的A股股票
+
+    该函数筛选满足以下条件的股票：
+    1. 在近期涨停池中出现
+    2. 有至少60天的交易数据
+    3. 近两天不能有下跌
+    4. 当前价格高于近10天均价
+    5. 当日成交量大于前几天最大成交量
+    6. 当日价格处于近期低点
+    7. 不能有连续上涨的情况
+
+    这些条件筛选出有较强上涨动能且可能进入回调的优质股票，适合低吸策略。
 
     :return: 符合条件的股票代码和名称集合
     """
-    # 获取最近交易日信息
+    # 获取交易日信息
     start_date, end_date, zt_dates = get_last_trading_days()
-    # 可取消注释以下行，指定特定日期获取相关信息
-    # start_date, end_date, zt_dates = get_last_trading_days(datetime.datetime.strptime('20250513', '%Y%m%d'))
-    # 初始化符合条件的股票集合
     selected = set()
+
+    # 遍历近期涨停日期
     for i, zt_date in enumerate(zt_dates):
-        # 使用 akshare 库获取指定日期的涨停股信息
+        # 获取当天涨停股池
         zt_df = ak.stock_zt_pool_em(date=zt_date)
-        # 检查获取的涨停股信息 DataFrame 是否为空
         if zt_df.empty:
-            # 若为空，打印提示信息，表示在指定日期未找到涨停股票
             print(f"没有在 {zt_date} 找到涨停股票。")
             continue
-        # 获取涨停股的代码和名称列表
+        # 提取股票代码和名称
         stock_codes = zt_df[['代码', '名称']].values.tolist()
         print(f"{zt_date}涨停股：{stock_codes}")
-        # spot_df = ak.stock_zh_a_spot()
+
+        # 遍历涨停股票进行筛选
         for code in stock_codes:
             try:
-                # 获取历史数据（昨日量能）
+                # 获取股票历史数据
                 hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
                                           adjust="qfq")
             except:
-                # 打印异常堆栈信息
                 traceback.print_exc()
                 continue
-            print(code, hist.iloc[-1]['涨跌幅'])
-            if (len(hist) < 60 or hist.iloc[-2:]['涨跌幅'].min() <= 0
-                    or hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘']
-                    or hist.iloc[max(-3, -i - 2):-1]['成交量'].max() > hist.iloc[-1]['成交量']
-                    or hist.iloc[:-i - 4]['收盘'].max() > hist.iloc[-i - 4]['收盘']
-                    # or hist.iloc[-i - 2:]['最高'].max() >= hist.iloc[-i - 4:-i - 2]['最高'].max()
-                    or any(x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist()))):
-                continue
-            # today_close = hist.iloc[-1]['收盘']
-            # today_open = hist.iloc[-1]['开盘']
-            # yesterday_close = hist.iloc[-2]['收盘']
-            # yesterday_open = hist.iloc[-2]['开盘']
-            # 获取今日实时数据
-            # spot_data = spot_df[spot_df['代码'].str.contains(code)]
-            # if spot_data.empty: continue
 
-            # today_vol = spot_data['成交量'].values[0]
-            # today_pct = spot_data['涨跌幅'].values[0]
-            # 将符合条件的股票代码和名称添加到集合中
+            code.append(str(hist.iloc[-1]['涨跌幅']))  # 添加最新涨跌幅
+            print(code)
+
+            # 分别检查每个筛选条件
+            if len(hist) < 60:  # 数据量不足60天
+                continue
+
+            # 近两天有下跌
+            if hist.iloc[-2:]['涨跌幅'].min() <= 0:
+                continue
+
+            # 当前价格低于10天均价
+            if hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘']:
+                continue
+
+            # 当日成交量不是最大
+            if hist.iloc[max(-3, -i - 2):-1]['成交量'].max() > hist.iloc[-1]['成交量']:
+                continue
+
+            # 不在近期低点
+            if hist.iloc[:-i - 4]['收盘'].max() > hist.iloc[-i - 4]['收盘']:
+                continue
+
+            # 有连续上涨（任意两天都为正涨幅）
+            if any(x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist())):
+                continue
+
+            # 添加符合条件的股票
             selected.add(''.join(code))
+
     return selected
 
 
-# 步骤3：实时监控
 def monitor_stocks():
     """
     实时监控符合量能条件的股票，并通过企业微信发送通知
+
+    该函数调用filter_stocks获取符合低吸条件的股票，然后将结果通过企业微信机器人
+    发送到指定群聊，便于交易员实时跟踪A股市场机会。
+
+    通知格式：
+    ===A[股票数量]低吸===
+    [股票代码+名称+涨跌幅1]
+    -------
+    [股票代码+名称+涨跌幅2]
+    ...
     """
-    # 筛选符合量能条件的股票
+    # 获取符合条件的股票列表
     filtered = filter_stocks()
     print(f"符合量能条件的股票：{filtered}")
+
+    # 如果有符合条件的股票，发送通知
     if filtered:
-        # 构建企业微信消息内容
         json_msg = {
             "msgtype": "text",
             "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
         }
-        # 发送企业微信消息
+        # 发送到企业微信群
         session.post(
             url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
             json=json_msg)
@@ -454,40 +573,67 @@ def monitor_stocks():
 
 async def main():
     """
-    主函数，启动股票监控和市场分析任务，并设置定时任务
+    主函数，启动所有监控和交易任务
+
+    主要功能：
+    1. 立即执行一次股票监控和币安市场分析
+    2. 设置定时任务：
+       - 每个工作日（周一至周五）的12:52-12:57和14:52-14:57执行股票监控
+       - 每分钟执行一次币安市场分析
+    3. 启动调度器并保持程序运行
+
+    该函数是程序的入口点，启动后会一直运行直到被手动终止。
     """
-    # 执行股票监控任务
+    # 立即执行一次股票监控
     monitor_stocks()
-    # 执行市场分析任务
+    # 立即执行一次币安市场分析
     await rzq_market('BN')
-    # 设置任务调度
-    scheduler.add_job(monitor_stocks, 'cron', hour='12,14', minute='52-57', second='00', day_of_week='mon-fri',
-                      timezone='Asia/Shanghai')
-    scheduler.add_job(rzq_market, 'cron', hour='*', minute='*/1', second='00', timezone='Asia/Shanghai',
-                      args=('BN',))
+
+    # 设置股票监控定时任务 - 在交易时段执行
+    scheduler.add_job(
+        monitor_stocks,  # 执行的函数
+        'cron',  # 调度类型：按日历规则
+        hour='12,14',  # 每天12点和14点
+        minute='52-57',  # 每小时的52-57分
+        second='00',  # 整点秒数
+        day_of_week='mon-fri',  # 周一至周五（交易日）
+        timezone='Asia/Shanghai',  # 上海时区
+        misfire_grace_time=60,  # 错过执行的宽限时间（秒）
+        name='股票监控任务'  # 任务名称（便于日志识别）
+    )
+
+    # 设置币安市场分析定时任务 - 每分钟执行
+    scheduler.add_job(
+        rzq_market,  # 执行的函数
+        'cron',  # 调度类型：按日历规则
+        hour='08-20',  # 每天8点和20点
+        minute='*/1',  # 每1分钟
+        second='00',  # 整点秒数
+        timezone='Asia/Shanghai',  # 上海时区
+        args=('BN',),  # 传递参数
+        misfire_grace_time=30,  # 错过执行的宽限时间（秒）
+        coalesce=True,  # 合并错过的执行（避免积压）
+        name='币安市场分析任务'  # 任务名称（便于日志识别）
+    )
+
     # 启动调度器
     scheduler.start()
-    # 创建异步事件
+
+    # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
-    # 等待事件触发
-    await stop_event.wait()
+    await stop_event.wait()  # 等待事件触发（实际不会发生）
 
 
 if __name__ == "__main__":
-    # 创建 requests 会话
+    leverage = 2
+    health4open = 80
     session = requests.Session()
-    # 禁用 SSL 验证
     session.verify = False
-    # 设置请求头
     session.headers = {'Content-Type': 'application/json'}
-    # 创建 AsyncIOScheduler 对象
     scheduler = AsyncIOScheduler()
-    # 从文件中读取 Binance API 信息
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
-    # 创建 Binance Spot 客户端
     spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
-    # 初始化全局信息字典
+    um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
     alert_all = {'BN': {}, 'POSITIONS': {}, 'TRADING': []}
-    # 运行异步主函数
     asyncio.run(main())
