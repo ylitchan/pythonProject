@@ -187,7 +187,7 @@ def open_bn_position(symbol, symbols_info):
             return None
 
         # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
-        safe_balance = balance * 0.8
+        safe_balance = balance * 0.5
 
         # 根据杠杆计算交易数量
         amount_raw = safe_balance * leverage / markPrice
@@ -308,7 +308,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         recent_vol_max = max(kline_vol[-10:])  # 近10天最大成交量
 
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
-        if (kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max
+        if (kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max / 2
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'].append(symbol)
