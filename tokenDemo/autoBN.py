@@ -350,7 +350,7 @@ async def rzq_market(market):
     symbols = []
     POSITIONS = alert_all.get("POSITIONS", {})
     # 每天早上8点重置数据
-    if now.hour == 8 and now.minute < 1:
+    if now.hour == 8 and now.minute < 2:
         POSITIONS.clear()
     for i in range(10):
         try:
