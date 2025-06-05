@@ -3,7 +3,7 @@ import traceback
 
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pydantic.schema import datetime
+from datetime import datetime
 from web3 import Web3
 
 address_borrowed = {'0x00000000006004dfb6aB427a47994F2a6A4F6334', '0x000000fee13a103A10D593b9AE06b3e05F2E7E1c',
@@ -471,7 +471,7 @@ def send_msg(msg):
 
 def get_close():
     current_time = int(datetime.now().timestamp())
-    response = requests.get("https://prices.curve.fi/v1/ohlc/ethereum/0x2673099769201c08E9A5e63b25FBaF25541A6557",
+    response = requests.get("https://prices.curve.finance/v1/ohlc/ethereum/0x2673099769201c08E9A5e63b25FBaF25541A6557",
                             params={
                                 'main_token': "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
                                 'reference_token': "0xdf3ac4F479375802A821f7b7b46Cd7EB5E4262cC",
