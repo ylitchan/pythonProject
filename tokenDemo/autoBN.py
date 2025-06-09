@@ -217,10 +217,10 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
         # 下市价单做空
         tx = um_futures_client.new_order(
             symbol=symbol,
-            side='SELL',
+            side=side,
             type="MARKET",
             quantity=amount,
-            positionSide="SHORT",
+            positionSide=positionSide,
         )
 
         # 发送成功通知
@@ -313,7 +313,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'].append(symbol)
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
-            trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
+            # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
 
         # 做空条件：
         # 1. 当日为阴线(涨跌幅为负)
