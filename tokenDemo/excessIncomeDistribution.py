@@ -148,7 +148,7 @@ if __name__ == "__main__":
     w3 = Web3(Web3.HTTPProvider(NODE_URL))
     w3.eth.account.enable_unaudited_hdwallet_features()
     # WALLET_ADDRESS = '0x802d78fd3045b64bf2680aaa9a5ae0f4f5241836'  # 要修改的钱包地址
-    with open('PRIVATE_MNEMONIC2', 'r') as f:
+    with open('PRIVATE_MNEMONIC', 'r') as f:
         PRIVATE_MNEMONIC = f.read()
     ACCOUNT = w3.eth.account.from_mnemonic(PRIVATE_MNEMONIC)  # .from_key(PRIVATE_KEY)
     WALLET_ADDRESS = ACCOUNT.address
@@ -262,10 +262,10 @@ if __name__ == "__main__":
 
         t = Thread(target=job2)
         # t.start()
-        while datetime.now().minute <= 30:
+        while datetime.now().minute <= 300:
             try:
                 excessAmount = get_excess_amount(LYBRA_CONTRACT_ADDRESS) - 11
-                # print(datetime.now(), excessAmount)
+                print(datetime.now(), excessAmount)
                 if excessAmount >= 30000000000000000:
                     send_transaction(excessAmount, nonce, int((w3.eth.get_block('latest')[
                                                                    'baseFeePerGas'] + w3.eth.max_priority_fee * 10e2) * 1.3))
@@ -277,8 +277,8 @@ if __name__ == "__main__":
         # t.join()
 
 
-    # job()
+    job()
     scheduler = BlockingScheduler()
-    scheduler.add_job(job, 'cron', hour=20, minute=19)
+    scheduler.add_job(job, 'cron', hour=20, minute=00)
     # 启动调度器
     scheduler.start()
