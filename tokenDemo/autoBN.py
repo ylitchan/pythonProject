@@ -304,8 +304,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         kline_vol = [k[5] for k in kline]  # 成交量列表
 
         # 计算关键指标
-        recent_zf_max = max([abs(k) for k in kline_zf[-10:]])  # 近10天最大涨跌幅（绝对值）
-        recent_vol_max = max(kline_vol[-10:])  # 近10天最大成交量
+        recent_zf_max = max([abs(k) for k in kline_zf[-10:-1]])  # 近10天最大涨跌幅（绝对值）
+        recent_vol_max = max(kline_vol[-10:-1])  # 近10天最大成交量
 
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
         if (1.2 * recent_zf_max >= kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max / 2
