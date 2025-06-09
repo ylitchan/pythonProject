@@ -112,7 +112,7 @@ def trade(symbol, symbols_info, slot):
         # 记录交易结果
         executed_qty = order_result.get('executedQty', '未知')
         executed_price = order_result.get('price', '市价')
-        msg = f'bn做多{symbol}成功，交易仓位:{slot}，数量:{executed_qty}，价格:{executed_price}'
+        msg = f'{symbol}成功交易，交易仓位:{slot}，数量:{executed_qty}，价格:{executed_price}'
         send_msg(msg)
 
         return symbol
@@ -152,7 +152,7 @@ def calculate_health_bn(notional) -> int:
         )
 
 
-def open_bn_position(symbol, symbols_info):
+def open_bn_position(symbol, symbols_info, side, positionSide):
     """
     在Binance合约市场开仓做空
 
@@ -187,7 +187,7 @@ def open_bn_position(symbol, symbols_info):
             return None
 
         # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
-        safe_balance = balance * 0.5
+        safe_balance = balance * 0.2
 
         # 根据杠杆计算交易数量
         amount_raw = safe_balance * leverage / markPrice
@@ -224,7 +224,7 @@ def open_bn_position(symbol, symbols_info):
         )
 
         # 发送成功通知
-        msg = f'bn做空{symbol}成功，杠杆:{actual_leverage}x，交易数量:{tx.get("origQty", 0)}，标记价格:{markPrice}'
+        msg = f'{symbol}成功{side}，杠杆:{actual_leverage}x，交易数量:{tx.get("origQty", 0)}，标记价格:{markPrice}'
         send_msg(msg)
         return symbol
     except Exception as e:
@@ -312,6 +312,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'].append(symbol)
+            open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
             trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
 
         # 做空条件：
@@ -325,7 +326,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'].append(symbol)
-            open_bn_position(symbol, symbols_info)
+            open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
         traceback.print_exc()
         return
