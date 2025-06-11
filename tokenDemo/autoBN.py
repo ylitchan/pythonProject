@@ -362,6 +362,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         if close_info := alert_all['POSITIONS'].get(symbol):
             if kline_close[-1] >= close_info[0] or kline_close[1] <= close_info[-1]:
                 close_bn_position(symbol, close_info[2], close_info[3])
+                alert_all['POSITIONS'].pop(symbol)
             return
         kline_vol = [k[5] for k in kline]  # 成交量列表
 
