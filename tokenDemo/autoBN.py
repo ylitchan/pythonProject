@@ -308,7 +308,7 @@ async def get_kline(semaphore, symbol, t: str):
         # 提取时间周期前缀（如 1d, 4h 等）并转小写
         interval = t[:2].lower()
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
-        kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=interval, limit=20)
+        kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=interval, limit=10)
         # 一次性将所有数据转换为浮点数
         return [list(map(float, sublist)) for sublist in kline]
 
@@ -350,21 +350,18 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
     :return: 若不符合条件则返回 None，否则返回符合条件的交易对信息字典
     """
     try:
-        # 检查是否已在交易中，避免重复交易
-        if alert_all['POSITIONS'].get(symbol) == ():
-            return
         # 获取日K线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
         success.add(symbol)
         # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if len(kline) < 20:  # 数据不足，跳过
+        if len(kline) < 10:  # 数据不足，跳过
             return
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if kline_close[-1] >= close_info[0] or kline_close[-1] < close_info[-1]:
-                close_bn_position(symbol, 'SELL', 'SHORT')
+            if kline_close[-1] >= close_info[0] or kline_close[1] <= close_info[-1]:
+                close_bn_position(symbol, close_info[2], close_info[3])
             return
         kline_vol = [k[5] for k in kline]  # 成交量列表
 
@@ -377,7 +374,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'][symbol] = (kline_close[-2] * (1 + kline_zf[-1] * 1.2),
-                                              kline_close[-2] * (1 + kline_zf[-1] * 0.8))
+                                              kline_close[-2] * (1 + kline_zf[-1] * 0.8),
+                                              'SELL', 'SHORT')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
             # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
 
@@ -391,7 +389,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               kline_vol[-2] >= 2 * max(kline_vol[-11:-2]) and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['POSITIONS'][symbol] = ()
+            alert_all['POSITIONS'][symbol] = (kline_close[-2], kline_close[-2] * (1 - kline_zf[-2] * 0.4),
+                                              'BUY', 'LONG')
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
         traceback.print_exc()
