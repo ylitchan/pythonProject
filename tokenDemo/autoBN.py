@@ -15,6 +15,7 @@ import asyncio
 import datetime
 import gc
 import json
+import time
 import traceback
 from decimal import Decimal, ROUND_DOWN
 from itertools import pairwise
@@ -152,6 +153,25 @@ def calculate_health_bn(notional) -> int:
         )
 
 
+def get_amount_close(symbol):
+    """
+    计算需要平仓的数量，用于平衡Binance和Drift之间的头寸
+
+    该函数比较两个平台上的持仓数量，并确定需要在每个平台上关闭的数量，以便:
+    1. 如果两个平台持仓数量相同，则在两边都减少持仓的positionClose比例
+    2. 如果两个平台持仓数量不同，则减少持仓数量较多的平台上的持仓，使两边平衡
+
+    :return: 包含需要在各平台平仓数量的字典 {'drift': float, 'bn': float}
+    """
+    try:
+        # 获取Binance上的持仓数量
+        position = {k['symbol']: abs(float(k['positionAmt'])) for k in um_futures_client.get_position_risk()}
+        return position.get(symbol, 0)
+    except:
+        # 出错时返回零值
+        return 0
+
+
 def open_bn_position(symbol, symbols_info, side, positionSide):
     """
     在Binance合约市场开仓做空
@@ -187,7 +207,9 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
             return None
 
         # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
-        safe_balance = balance * 0.2
+        if not slot_balance[0]:
+            slot_balance[0] = balance * 0.2
+        safe_balance = min(slot_balance[0], balance * 0.8)
 
         # 根据杠杆计算交易数量
         amount_raw = safe_balance * leverage / markPrice
@@ -232,6 +254,45 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
         send_msg(error_msg)
         traceback.print_exc()
         return None
+
+
+def close_bn_position(symbol, side, positionSide):
+    """
+    在Binance合约市场平仓或减仓
+
+    该函数在Binance上执行平仓或减仓操作。特点：
+    1. 循环重试，确保即使在网络不稳定时也能执行
+    2. 如果失败会重新计算需要关闭的数量并再次尝试
+    3. 默认关闭空头仓位（本程序中币安端始终做空）
+
+    :param amount: 要平仓的数量
+    :return: None
+    """
+    # 只要还有需要平仓的数量就继续尝试
+    amount = get_amount_close(symbol)
+    while amount:
+        try:
+            # 提交市价单平仓
+            tx = um_futures_client.new_order(
+                symbol=symbol,
+                side=side,  # 空头平仓需要买入
+                type="MARKET",  # 市价单
+                quantity=amount,
+                positionSide=positionSide,
+            )
+
+            # 发送成功通知
+            msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
+            send_msg(msg)
+            break  # 成功执行后跳出循环
+        except:
+            # 失败后等待3秒再重试
+            time.sleep(3)
+            traceback.print_exc()
+            msg = f'bn平仓{symbol}失败'
+            send_msg(msg)
+            # 重新计算平仓数量
+            amount = get_amount_close(symbol)
 
 
 async def get_kline(semaphore, symbol, t: str):
@@ -290,7 +351,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
     """
     try:
         # 检查是否已在交易中，避免重复交易
-        if symbol in alert_all['POSITIONS']:
+        if alert_all['POSITIONS'].get(symbol) == ():
             return
         # 获取日K线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
@@ -301,17 +362,22 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             return
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
+        if close_info := alert_all['POSITIONS'].get(symbol):
+            if kline_close[-1] >= close_info[0] or kline_close[-1] < close_info[-1]:
+                close_bn_position(symbol, 'SELL', 'SHORT')
+            return
         kline_vol = [k[5] for k in kline]  # 成交量列表
 
         # 计算关键指标
-        recent_zf_max = max([abs(k) for k in kline_zf[-10:-1]])  # 近10天最大涨跌幅（绝对值）
-        recent_vol_max = max(kline_vol[-10:-1])  # 近10天最大成交量
+        recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
+        recent_vol_max = max(kline_vol[-7:-1])  # 近10天最大成交量
 
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
         if (1.2 * recent_zf_max >= kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max / 2
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['POSITIONS'].append(symbol)
+            alert_all['POSITIONS'][symbol] = (kline_close[-2] * (1 + kline_zf[-1] * 1.2),
+                                              kline_close[-2] * (1 + kline_zf[-1] * 0.8))
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
             # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
 
@@ -325,7 +391,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               kline_vol[-2] >= 2 * max(kline_vol[-11:-2]) and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['POSITIONS'].append(symbol)
+            alert_all['POSITIONS'][symbol] = ()
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
         traceback.print_exc()
@@ -353,6 +419,7 @@ async def rzq_market(market):
     # 每天早上8点重置数据
     if now.hour == 8 and now.minute < 2:
         POSITIONS.clear()
+        slot_balance[0] = 0.0
     for i in range(10):
         try:
             sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
@@ -363,9 +430,7 @@ async def rzq_market(market):
                 'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
             }
                 for symbol in exchange_info['symbols'] if
-                symbol['symbol'] not in POSITIONS and 'USDT' in symbol['quoteAsset'] and 'TRADING' in
-                symbol[
-                    'status']}
+                'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
             symbols = list(symbols_info.keys())
             break
         except:
@@ -612,5 +677,6 @@ if __name__ == "__main__":
         bn_api = json.load(f)
     spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
-    alert_all = {'POSITIONS': []}
+    alert_all = {'POSITIONS': {}}
+    slot_balance = [0.0]
     asyncio.run(main())
