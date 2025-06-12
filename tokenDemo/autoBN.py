@@ -378,7 +378,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'][symbol] = (kline_close[-2] * (1 + kline_zf[-1] * 1.2),
                                               kline_close[-2] * (1 + kline_zf[-1] * 0.8),
-                                              'SELL', 'SHORT')
+                                              'SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
             # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
 
@@ -393,7 +393,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'][symbol] = (kline_close[-2], kline_close[-2] * (1 - kline_zf[-2] * 0.4),
-                                              'BUY', 'LONG')
+                                              'BUY', 'SHORT')
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
         traceback.print_exc()
