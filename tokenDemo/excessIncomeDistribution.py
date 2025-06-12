@@ -262,7 +262,7 @@ if __name__ == "__main__":
 
         t = Thread(target=job2)
         # t.start()
-        while datetime.now().minute <= 300:
+        while datetime.now().minute <= 59:
             try:
                 excessAmount = get_excess_amount(LYBRA_CONTRACT_ADDRESS) - 11
                 print(datetime.now(), excessAmount)
@@ -277,7 +277,7 @@ if __name__ == "__main__":
         # t.join()
 
 
-    job()
+    # job()
     scheduler = BlockingScheduler()
     scheduler.add_job(job, 'cron', hour=20, minute=00)
     # 启动调度器

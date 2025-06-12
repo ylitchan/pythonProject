@@ -629,7 +629,7 @@ async def main():
     该函数是程序的入口点，启动后会一直运行直到被手动终止。
     """
     # 立即执行一次股票监控
-    monitor_stocks()
+    # monitor_stocks()
     # 立即执行一次币安市场分析
     await rzq_market('BN')
 
