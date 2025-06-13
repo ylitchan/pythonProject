@@ -362,7 +362,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if kline_close[-1] >= close_info[0] or kline_close[1] <= close_info[-1]:
+            if kline_close[-1] >= close_info[0] or kline_close[1] <= close_info[1]:
                 close_bn_position(symbol, close_info[2], close_info[3])
                 alert_all['POSITIONS'][symbol] = ()
             return
