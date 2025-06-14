@@ -373,7 +373,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         recent_vol_max = max(kline_vol[-7:-1])  # 近10天最大成交量
 
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
-        if (1.2 * recent_zf_max >= kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max / 2
+        if (kline_zf[-1] >= recent_zf_max and kline_vol[-1] / recent_vol_max >= datetime.datetime.now().hour / 12
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
             alert_all['POSITIONS'][symbol] = (kline_close[-2] * (1 + kline_zf[-1] * 1.2),
@@ -392,7 +392,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               kline_vol[-2] >= 2 * max(kline_vol[-11:-2]) and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['POSITIONS'][symbol] = (kline_close[-2], kline_close[-2] * (1 - kline_zf[-2] * 0.4),
+            alert_all['POSITIONS'][symbol] = (kline_close[-3] * (1 + kline_zf[-2] * 0.8),
+                                              kline_close[-2] * (1 - kline_zf[-2] * 0.4),
                                               'BUY', 'SHORT')
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
@@ -650,7 +651,7 @@ async def main():
     scheduler.add_job(
         rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
-        hour='08-20',  # 每天8点和20点
+        hour='*',  # 每天8点和20点
         minute='01-59/1',  # 每1分钟
         second='00',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
