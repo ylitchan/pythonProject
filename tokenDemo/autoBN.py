@@ -422,7 +422,8 @@ async def rzq_market(market):
     # 每天早上8点重置数据
     if now.hour == 8 and now.minute < 2:
         for symbol, close_info in POSITIONS.items():
-            close_bn_position(symbol, close_info[2], close_info[3])
+            if close_info:
+                close_bn_position(symbol, close_info[2], close_info[3])
         POSITIONS.clear()
         slot_balance[0] = 0.0
     for i in range(10):
