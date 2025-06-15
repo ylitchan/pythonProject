@@ -279,6 +279,6 @@ if __name__ == "__main__":
 
     # job()
     scheduler = BlockingScheduler()
-    scheduler.add_job(job, 'cron', hour=20, minute=00)
+    scheduler.add_job(job, 'cron', hour=4, minute=00)
     # 启动调度器
     scheduler.start()
