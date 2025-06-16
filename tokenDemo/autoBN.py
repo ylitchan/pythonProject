@@ -375,8 +375,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
         if (kline_zf[-1] >= recent_zf_max and kline_vol[-1] / recent_vol_max >= datetime.datetime.now().hour / 12
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
-            zy = kline_close[-1] * (1 + kline_zf[-1] * 0.2)
-            zs = kline_close[-1] * (1 - kline_zf[-1] * 0.2)
+            zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            zs = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.2
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
@@ -391,8 +391,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               kline_zf[-2] >= max([abs(k) for k in kline_zf[-11:-1]]) and  # 前一日涨幅最大
               kline_vol[-2] >= 2 * max(kline_vol[-11:-2]) and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
-            zy = kline_close[-1] * (1 - kline_zf[-2] * 0.2)
-            zs = kline_close[-1] * (1 + kline_zf[-2] * 0.2)
+            zy = kline_close[-1] - kline_close[-3] * kline_zf[-2] * 0.2
+            zs = kline_close[-1] + kline_close[-3] * kline_zf[-2] * 0.2
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
