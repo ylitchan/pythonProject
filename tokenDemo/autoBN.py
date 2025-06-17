@@ -369,7 +369,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         kline_vol = [k[5] for k in kline]  # 成交量列表
 
         # 计算关键指标
-        recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
+        recent_zf_max = max([abs(k) for k in kline_zf[-8:-2]])  # 近10天最大涨跌幅（绝对值）
         recent_vol_max = max(kline_vol[-7:-1])  # 近10天最大成交量
 
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
@@ -391,7 +391,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         # 4. 前一日上影线足够长（至少为涨幅的一半）
         elif (kline_zf[-1] < 0 and  # 当日为阴线
               kline_zf[-2] >= recent_zf_max and  # 前一日涨幅最大
-              kline_vol[-2] >= 2 * recent_vol_max and  # 前一日成交量是前10天的2倍以上
+              kline_vol[-2] >= 2 * max(kline_vol[-8:-2]) and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             zy = kline_close[-1] * (1 - kline_zf[-2] * 0.2)
             if kline[-1][3] <= zy:
