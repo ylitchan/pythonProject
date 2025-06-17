@@ -454,7 +454,7 @@ async def rzq_market(market):
     success = set()  # 成功处理的交易对
 
     # 创建并发任务
-    chunk_size = 50  # 每批处理的交易对数量
+    chunk_size = len(symbols)  # 每批处理的交易对数量
     for i in range(0, len(symbols), chunk_size):
         # 分批处理以避免内存占用过高
         symbol_chunk = symbols[i:i + chunk_size]
