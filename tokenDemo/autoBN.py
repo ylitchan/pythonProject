@@ -380,7 +380,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         recent_vol_max = max(kline_vol[-7:-1])  # 近10天最大成交量
 
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
-        if (kline_zf[-1] >= 0
+        if (kline_zf[-1] >= recent_zf_max
                 and kline_vol[-1] / recent_vol_max >= minutes_since_midnight_utc() / 720
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
@@ -389,7 +389,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
             # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
-        elif (kline_zf[-1] <= 0
+        elif (kline_zf[-1] <= -recent_zf_max
               and kline_vol[-1] / recent_vol_max >= minutes_since_midnight_utc() / 720
               and (kline[-1][3] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
