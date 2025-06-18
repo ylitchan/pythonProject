@@ -19,6 +19,7 @@ import time
 import traceback
 from decimal import Decimal, ROUND_DOWN
 from itertools import pairwise
+from zoneinfo import ZoneInfo
 
 from binance.um_futures import UMFutures
 import akshare as ak
@@ -27,6 +28,12 @@ import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from binance.spot import Spot
 from jsonpath_ng import parse
+
+
+def minutes_since_midnight_utc():
+    utc_now = datetime.datetime.now(ZoneInfo("UTC"))
+    utc_midnight = utc_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int((utc_now - utc_midnight).total_seconds() / 60)
 
 
 def send_msg(msg):
@@ -373,16 +380,23 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         recent_vol_max = max(kline_vol[-7:-1])  # 近10天最大成交量
 
         # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
-        if (kline_zf[-1] >= recent_zf_max and kline_vol[-1] >= recent_vol_max
-                and kline_vol[-1] / recent_vol_max >= datetime.datetime.now().hour / 12
+        if (kline_zf[-1] >= 0
+                and kline_vol[-1] / recent_vol_max >= minutes_since_midnight_utc() / 720
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
-            zy = kline_close[-1] * (1 + kline_zf[-1] * 0.2)
-            zs = kline_close[-1] * (1 - kline_zf[-1] * 0.2)
+            zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            zs = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.2
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
             # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
-
+        elif (kline_zf[-1] <= 0
+              and kline_vol[-1] / recent_vol_max >= minutes_since_midnight_utc() / 720
+              and (kline[-1][3] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
+            zy = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.2
+            zs = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+            alert_all['POSITIONS'][symbol] = (zs, zy, 'SELL', 'LONG')
+            open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
         # 做空条件：
         # 1. 当日为阴线(涨跌幅为负)
         # 2. 前一日涨跌幅为近10天最大
@@ -392,8 +406,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               kline_zf[-2] >= recent_zf_max and  # 前一日涨幅最大
               kline_vol[-2] >= 2 * max(kline_vol[-7:-2]) and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
-            zy = kline_close[-1] * (1 - kline_zf[-2] * 0.2)
-            zs = kline_close[-1] * (1 + kline_zf[-2] * 0.2)
+            zy = kline_close[-1] - kline_zf[-3] * kline_zf[-2] * 0.2
+            zs = kline_close[-1] + kline_zf[-3] * kline_zf[-2] * 0.2
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
