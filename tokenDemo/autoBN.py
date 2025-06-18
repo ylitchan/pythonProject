@@ -395,8 +395,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             zy = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.2
             zs = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-            alert_all['POSITIONS'][symbol] = (zs, zy, 'SELL', 'LONG')
-            open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
+            alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
+            open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
         # 做空条件：
         # 1. 当日为阴线(涨跌幅为负)
         # 2. 前一日涨跌幅为近10天最大
