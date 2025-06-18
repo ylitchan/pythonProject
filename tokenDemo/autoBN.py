@@ -315,9 +315,12 @@ async def get_kline(semaphore, symbol, t: str):
         # 提取时间周期前缀（如 1d, 4h 等）并转小写
         interval = t[:2].lower()
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
-        kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=10)
-        # 一次性将所有数据转换为浮点数
-        return [list(map(float, sublist)) for sublist in kline]
+        try:
+            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=10)
+            # 一次性将所有数据转换为浮点数
+            return [list(map(float, sublist)) for sublist in kline]
+        except:
+            return []
 
 
 def calculate_ema_pandas(prices, period=None):
@@ -384,6 +387,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 and kline_vol[-1] / recent_vol_max >= minutes_since_midnight_utc() / 720
                 and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            if kline[-1][2] >= zy:
+                return
             zs = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.2
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
@@ -393,6 +398,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               and kline_vol[-1] / recent_vol_max >= minutes_since_midnight_utc() / 720
               and (kline[-1][3] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            if kline[-1][3] <= zy:
+                return
             zs = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.2
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
@@ -407,6 +414,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
               kline_vol[-2] >= 2 * max(kline_vol[-7:-2]) and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             zy = kline_close[-1] - kline_zf[-3] * kline_zf[-2] * 0.2
+            if kline[-1][3] <= zy:
+                return
             zs = kline_close[-1] + kline_zf[-3] * kline_zf[-2] * 0.2
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
