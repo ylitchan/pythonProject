@@ -392,8 +392,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         elif (kline_zf[-1] <= 0
               and kline_vol[-1] / recent_vol_max >= minutes_since_midnight_utc() / 720
               and (kline[-1][3] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 2):
-            zy = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.2
-            zs = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            zs = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.2
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
