@@ -672,7 +672,7 @@ async def main():
         'cron',  # 调度类型：按日历规则
         hour='*',  # 每天8点和20点
         minute='01-59/1',  # 每1分钟
-        second='00',  # 整点秒数
+        second='*/15',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数
         misfire_grace_time=30,  # 错过执行的宽限时间（秒）
