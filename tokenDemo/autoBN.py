@@ -315,7 +315,7 @@ async def get_kline(semaphore, symbol, t: str):
         # 提取时间周期前缀（如 1d, 4h 等）并转小写
         interval = t[:2].lower()
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
-        kline = await asyncio.to_thread(spotBN.klines, symbol=symbol, interval=interval, limit=10)
+        kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=10)
         # 一次性将所有数据转换为浮点数
         return [list(map(float, sublist)) for sublist in kline]
 
@@ -443,9 +443,10 @@ async def rzq_market(market):
         slot_balance[0] = 0.0
     for i in range(10):
         try:
+            exchange_info = await asyncio.to_thread(um_futures_client.exchange_info)
             sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
-                f'0.{"1" * i["quantityPrecision"]}') for i in um_futures_client.exchange_info()['symbols']}
-            exchange_info = await asyncio.to_thread(spotBN.exchange_info)
+                f'0.{"1" * i["quantityPrecision"]}') for i in exchange_info['symbols']}
+            # exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             symbols_info = {symbol['symbol']: {
                 'quotePrecision': symbol['quotePrecision'],
                 'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
@@ -696,7 +697,7 @@ if __name__ == "__main__":
     scheduler = AsyncIOScheduler()
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
-    spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
+    # spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
     alert_all = {'POSITIONS': {}}
     slot_balance = [0.0]
