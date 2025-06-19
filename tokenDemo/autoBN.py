@@ -26,8 +26,6 @@ import akshare as ak
 import pandas as pd
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from binance.spot import Spot
-from jsonpath_ng import parse
 
 
 def minutes_since_midnight_utc():
@@ -65,70 +63,6 @@ def send_msg(msg):
     except Exception as e:
         print(f"消息发送异常: {str(e)}")
         # 记录异常但不中断程序
-
-
-def trade(symbol, symbols_info, slot):
-    """
-    执行交易操作，包括买入和卖出订单的创建
-
-    :param symbol: 交易对符号
-    :param symbols_info: 交易对信息字典
-    :param slot: 仓位比例
-    :return: 若交易成功返回交易对符号，否则返回 None
-    """
-    try:
-        # 检查可用USDT余额
-        usdt_assets = spotBN.user_asset(asset='USDT')
-        if not usdt_assets:  # 检查是否有USDT资产数据
-            send_msg(f'无法获取USDT资产信息')
-            return None
-
-        usdt_free = float(usdt_assets[0]['free'])
-
-        # 检查最小交易额
-        if usdt_free < 6:
-            send_msg(f'USDT余额不足: {usdt_free}')
-            return None
-
-        # 计算实际交易额
-        usdt_slot = usdt_free * slot
-        if usdt_slot >= 6:
-            usdt_free = usdt_slot
-        else:
-            send_msg(f'交易额太小: {usdt_slot}')
-            return None
-
-        # 获取交易对配置信息
-        if symbol not in symbols_info:
-            send_msg(f'找不到交易对信息: {symbol}')
-            return None
-
-        symbol_info = symbols_info.get(symbol)
-        quotePrecision = symbol_info.get('quotePrecision')
-
-        # 准备订单参数
-        params = {
-            "symbol": symbol,
-            "side": "BUY",
-            "type": "MARKET",
-            "quoteOrderQty": round(usdt_free, quotePrecision)
-        }
-
-        # 发送订单
-        order_result = spotBN.new_order(**params)
-
-        # 记录交易结果
-        executed_qty = order_result.get('executedQty', '未知')
-        executed_price = order_result.get('price', '市价')
-        msg = f'{symbol}成功交易，交易仓位:{slot}，数量:{executed_qty}，价格:{executed_price}'
-        send_msg(msg)
-
-        return symbol
-    except Exception as e:
-        error_msg = f'交易{symbol}失败: {str(e)}'
-        send_msg(error_msg)
-        traceback.print_exc()
-        return None
 
 
 def calculate_health_bn(notional) -> int:
@@ -323,27 +257,6 @@ async def get_kline(semaphore, symbol, t: str):
             return []
 
 
-def calculate_ema_pandas(prices, period=None):
-    """
-    使用 pandas 计算指数移动平均线 (EMA)
-
-    EMA是一种赋予近期数据更高权重的移动平均线，计算公式为：
-    EMA(today) = Price(today) * k + EMA(yesterday) * (1 – k)
-    其中 k = 2/(period + 1)
-
-    :param prices: 价格数据列表，包含历史价格数据
-    :param period: 计算 EMA 的周期，默认为价格数据列表的长度。较小的周期对最新数据更敏感
-    :return: 最后一个 EMA 值，即最新的 EMA 计算结果
-    """
-    # 如果未提供周期，则使用全部数据长度
-    if not period:
-        period = len(prices)
-    # 直接使用 pandas Series 创建数据并计算 EMA
-    # ewm: 指数加权移动，span参数设置为period使其等价于交易软件中的EMA
-    # adjust=False确保使用标准EMA计算方法
-    return pd.Series(prices).ewm(span=period, adjust=False).mean().iloc[-1]
-
-
 async def rzq_token(semaphore, symbol, success, symbols_info):
     """
     异步分析指定交易对的 K 线数据，筛选符合交易条件的交易对并执行交易
@@ -380,35 +293,22 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
 
         # 计算关键指标
         recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
-        recent_vol_max = max(kline_vol[-7:-1])  # 近10天最大成交量
+        recent_vol_max = max(kline_vol[-7:-2])  # 近10天最大成交量
 
-        # # 做多条件：当日涨幅为近10天最大且成交量为近10天最高
+        # 做多条件：
+        # 1. 当日为阳线(涨跌幅为正)
+        # 2. 前一日涨跌幅为近10天最大
+        # 3. 前一日成交量为前10天的2倍以上
+        # 4. 前一日下影线足够长（至少为涨幅的一半）
         if (kline_zf[-1] > 0 and  # 当日为阳线
                 kline_zf[-2] <= -recent_zf_max and  # 前一日涨幅最大
-                kline_vol[-2] >= 2 * max(kline_vol[-7:-2]) and  # 前一日成交量是前10天的2倍以上
+                kline_vol[-2] >= 2 * recent_vol_max and  # 前一日成交量是前10天的2倍以上
                 (kline[-2][3] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 下影线足够长
             zy = kline_close[-1] - kline_zf[-3] * kline_zf[-2] * 0.2
             zs = kline_close[-1] + kline_zf[-3] * kline_zf[-2] * 0.4
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
-        # if (kline_zf[-1] >= recent_zf_max
-        #         and kline_vol[-1] / recent_vol_max >= minutes_since_midnight_utc() / 720
-        #         and (kline[-1][2] - kline_close[-1]) / kline[-1][1] < kline_zf[-1] / 5):
-        #     zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
-        #     zs = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.4
-        #     send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-        #     alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
-        #     open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
-        #     # trade(symbol=symbol, symbols_info=symbols_info, slot=0.2)
-        # elif (kline_zf[-1] <= -recent_zf_max
-        #       and kline_vol[-1] / recent_vol_max <= minutes_since_midnight_utc() / 2880
-        #       and (kline[-1][3] - kline_close[-1]) / kline[-1][1] > kline_zf[-1] / 5):
-        #     zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
-        #     zs = kline_close[-1] - kline_close[-2] * kline_zf[-1] * 0.4
-        #     send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-        #     alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
-        #     open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
         # 做空条件：
         # 1. 当日为阴线(涨跌幅为负)
         # 2. 前一日涨跌幅为近10天最大
@@ -416,7 +316,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         # 4. 前一日上影线足够长（至少为涨幅的一半）
         elif (kline_zf[-1] < 0 and  # 当日为阴线
               kline_zf[-2] >= recent_zf_max and  # 前一日涨幅最大
-              kline_vol[-2] >= 2 * max(kline_vol[-7:-2]) and  # 前一日成交量是前10天的2倍以上
+              kline_vol[-2] >= 2 * recent_vol_max and  # 前一日成交量是前10天的2倍以上
               (kline[-2][2] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 上影线足够长
             zy = kline_close[-1] - kline_zf[-3] * kline_zf[-2] * 0.2
             zs = kline_close[-1] + kline_zf[-3] * kline_zf[-2] * 0.4
@@ -709,7 +609,6 @@ if __name__ == "__main__":
     scheduler = AsyncIOScheduler()
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
-    # spotBN = Spot(api_key=bn_api.get('api_key'), api_secret=bn_api.get('api_secret'))
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
     alert_all = {'POSITIONS': {}}
     slot_balance = [0.0]
