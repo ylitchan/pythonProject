@@ -303,7 +303,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         if (kline_zf[-1] > 0 and  # 当日为阳线
                 kline_zf[-2] <= -recent_zf_max and  # 前一日涨幅最大
                 kline_vol[-2] >= 2 * recent_vol_max and  # 前一日成交量是前10天的2倍以上
-                (kline[-2][3] - kline_close[-2]) / kline[-2][1] >= kline_zf[-2] / 2):  # 下影线足够长
+                (kline[-2][3] - kline_close[-2]) / kline[-2][1] <= kline_zf[-2] / 2):  # 下影线足够长
             zy = kline_close[-1] - kline_close[-3] * kline_zf[-2] * 0.2
             zs = kline_close[-1] + kline_close[-3] * kline_zf[-2] * 0.4
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
