@@ -433,7 +433,7 @@ def get_last_trading_days(today=None, days=60):
 
         # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
         # 注意：iloc[3:10]表示从第4个元素到第10个元素（索引从0开始）
-        zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
+        zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:8]]
 
         return start_date, end_date, zt_date
     except Exception as e:
@@ -496,7 +496,10 @@ def filter_stocks():
                 continue
 
             # 当前价格低于10天均价
-            if hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘']:
+
+            if hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] \
+                    or list(filter(lambda x: hist.iloc[-9 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘'],
+                                   range(-2, -i - 5, -1))):
                 continue
 
             # 当日成交量不是最大
