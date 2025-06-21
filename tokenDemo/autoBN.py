@@ -366,7 +366,7 @@ async def rzq_market(market):
     symbols = []
     POSITIONS = alert_all.get("POSITIONS", {})
     # 每天早上8点重置数据
-    if now.hour == 8 and now.minute < 2:
+    if now.hour == 8 and now.minute < 2 and now.second < 15:
         for symbol, close_info in POSITIONS.items():
             if close_info:
                 close_bn_position(symbol, close_info[2], close_info[3])
