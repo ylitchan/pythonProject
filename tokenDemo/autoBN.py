@@ -197,7 +197,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
         return None
 
 
-def close_bn_position(symbol, side, positionSide):
+def close_bn_position(symbol, side, positionSide, price_close):
     """
     在Binance合约市场平仓或减仓
 
@@ -223,14 +223,14 @@ def close_bn_position(symbol, side, positionSide):
             )
 
             # 发送成功通知
-            msg = f'bn平仓{symbol}成功，交易数量:{tx.get("origQty", 0)}'
+            msg = f'bn平仓{symbol}成功，当前价格:{price_close}，交易数量:{tx.get("origQty", 0)}'
             send_msg(msg)
             break  # 成功执行后跳出循环
         except:
             # 失败后等待3秒再重试
             time.sleep(3)
             traceback.print_exc()
-            msg = f'bn平仓{symbol}失败'
+            msg = f'bn平仓{symbol}失败，当前价格:{price_close}'
             send_msg(msg)
             # 重新计算平仓数量
             amount = get_amount_close(symbol)
@@ -257,7 +257,7 @@ async def get_kline(semaphore, symbol, t: str):
             return []
 
 
-async def rzq_token(semaphore, symbol, success, symbols_info):
+async def rzq_token(semaphore, symbol, success, symbols_info, condition):
     """
     异步分析指定交易对的 K 线数据，筛选符合交易条件的交易对并执行交易
 
@@ -285,8 +285,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1]:
-                close_bn_position(symbol, close_info[2], close_info[3])
+            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or condition:
+                close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'][symbol] = ()
             return
         kline_vol = [k[5] for k in kline]  # 成交量列表
@@ -363,14 +363,11 @@ async def rzq_market(market):
     :param market: 市场名称，如 'BN'（币安）
     """
     now = datetime.datetime.now()
+    condition = now.hour == 8 and now.minute < 2 and now.second < 15
     symbols = []
     POSITIONS = alert_all.get("POSITIONS", {})
     # 每天早上8点重置数据
-    if now.hour == 8 and now.minute < 2 and now.second < 15:
-        for symbol, close_info in POSITIONS.items():
-            if close_info:
-                close_bn_position(symbol, close_info[2], close_info[3])
-        POSITIONS.clear()
+    if condition:
         slot_balance[0] = 0.0
     for i in range(10):
         try:
@@ -401,11 +398,14 @@ async def rzq_market(market):
     for i in range(0, len(symbols), chunk_size):
         # 分批处理以避免内存占用过高
         symbol_chunk = symbols[i:i + chunk_size]
-        tasks = [rzq_token(semaphore, symbol, success, symbols_info) for symbol in symbol_chunk]
+        tasks = [rzq_token(semaphore, symbol, success, symbols_info, condition) for symbol in symbol_chunk]
         # 等待当前批次完成
         await asyncio.gather(*tasks)
         # 进行垃圾回收以释放内存
         gc.collect()
+    # 每天早上8点重置数据
+    if condition:
+        POSITIONS.clear()
     print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all)
 
 
