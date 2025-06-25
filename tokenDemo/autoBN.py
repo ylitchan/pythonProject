@@ -403,9 +403,6 @@ async def rzq_market(market):
         await asyncio.gather(*tasks)
         # 进行垃圾回收以释放内存
         gc.collect()
-    # 每天早上8点重置数据
-    if condition:
-        POSITIONS.clear()
     print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all)
 
 
