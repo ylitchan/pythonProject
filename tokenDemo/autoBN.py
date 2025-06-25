@@ -365,7 +365,6 @@ async def rzq_market(market):
     now = datetime.datetime.now()
     condition = now.hour == 8 and now.minute < 2 and now.second < 15
     symbols = []
-    POSITIONS = alert_all.get("POSITIONS", {})
     # 每天早上8点重置数据
     if condition:
         slot_balance[0] = 0.0
