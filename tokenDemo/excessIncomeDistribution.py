@@ -279,6 +279,9 @@ if __name__ == "__main__":
 
     # job()
     scheduler = BlockingScheduler()
-    scheduler.add_job(job, 'cron', hour=4, minute=00)
+    scheduler.add_job(job, 'cron', hour=4, minute=00, misfire_grace_time=120,  # 错过执行的宽限时间（秒）
+                      max_instances=1,  # 同一时间只允许1个实例运行
+                      coalesce=True,  # 合并错过的执行（避免积压）
+                      )
     # 启动调度器
     scheduler.start()
