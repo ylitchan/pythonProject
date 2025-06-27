@@ -593,6 +593,8 @@ async def main():
         day_of_week='mon-fri',  # 周一至周五（交易日）
         timezone='Asia/Shanghai',  # 上海时区
         misfire_grace_time=60,  # 错过执行的宽限时间（秒）
+        max_instances=1,  # 同一时间只允许1个实例运行
+        coalesce=True,  # 合并错过的执行（避免积压）
         name='股票监控任务'  # 任务名称（便于日志识别）
     )
 
@@ -606,6 +608,7 @@ async def main():
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数
         misfire_grace_time=30,  # 错过执行的宽限时间（秒）
+        max_instances=1,  # 同一时间只允许1个实例运行
         coalesce=True,  # 合并错过的执行（避免积压）
         name='币安市场分析任务'  # 任务名称（便于日志识别）
     )
