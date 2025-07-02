@@ -285,7 +285,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             alert_all['POSITIONS'].pop(symbol)
             return
         kline_vol = [k[5] for k in kline]
-        if kline_vol[-4] >= max(kline_vol[-7:-4]) and kline[-4][1] <= kline[-3][4] <= kline[-4][4] <= kline[-2][4]:
+        if kline_vol[-4] >= max(2 * max(kline_vol[-7:-4]), kline_vol[-2]) \
+                and kline[-4][1] <= kline[-3][4] <= kline[-4][4] <= kline[-2][4]:
             send_msg(f'==={symbol}做多===\n价格:{kline[-1][4]}\n涨幅:{kline[-4][4] / kline[-4][1] - 1:.2%}')
             alert_all['POSITIONS'][symbol] = ('SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
