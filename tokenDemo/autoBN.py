@@ -149,7 +149,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
 
         # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
         if not slot_balance[0]:
-            slot_balance[0] = balance * 0.5
+            slot_balance[0] = balance * 0.2
         safe_balance = min(slot_balance[0], balance * 0.8)
 
         # 根据杠杆计算交易数量
@@ -250,7 +250,7 @@ async def get_kline(semaphore, symbol, t: str):
         interval = t[:2].lower()
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
         try:
-            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=7)
+            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=10)
             # 一次性将所有数据转换为浮点数
             return [list(map(float, sublist)) for sublist in kline]
         except:
@@ -278,77 +278,67 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         # 获取日K线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
         success.add(symbol)
-        if len(kline) < 7:  # 数据不足，跳过
+        # 计算涨跌幅：收盘价/开盘价-1
+        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
+        if len(kline) < 10:  # 数据不足，跳过
             return
-        if close_info := alert_all['POSITIONS'].get(symbol) and condition:
-            close_bn_position(symbol, close_info[0], close_info[1], kline[-1][4])
-            alert_all['POSITIONS'].pop(symbol)
+        # 提取 K 线数据中的各项指标
+        kline_close = [k[4] for k in kline]  # 收盘价列表
+        if close_info := alert_all['POSITIONS'].get(symbol):
+            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or condition:
+                close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
+                alert_all['POSITIONS'][symbol] = ()
+                if condition:
+                    alert_all['POSITIONS'].pop(symbol)
+                else:
+                    alert_all['POSITIONS'][symbol] = ()
             return
-        kline_vol = [k[5] for k in kline]
-        if kline_vol[-4] >= max(2 * max(kline_vol[-7:-4]), kline_vol[-2]) \
-                and kline[-4][1] <= kline[-3][4] <= kline[-4][4] <= kline[-2][4]:
-            send_msg(f'==={symbol}做多===\n价格:{kline[-1][4]}\n涨幅:{kline[-4][4] / kline[-4][1] - 1:.2%}')
-            alert_all['POSITIONS'][symbol] = ('SELL', 'LONG')
+        kline_vol = [k[5] for k in kline]  # 成交量列表
+
+        # 计算关键指标
+        recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
+        recent_vol_max = max(kline_vol[-7:-2])  # 近10天最大成交量
+        recent_vol_max2 = max(kline_vol[-7:-3])  # 近10天最大成交量
+        zy = kline_close[-1] - kline_close[-3] * kline_zf[-2] * 0.2 * 0.618
+        zs = kline_close[-1] + kline_close[-3] * kline_zf[-2] * 0.2 * 0.618
+        # 做多条件：
+        # 1. 当日为阳线(涨跌幅为正)
+        # 2. 前一日涨跌幅为近10天最大
+        # 3. 前一日成交量为前10天的2倍以上
+        # 4. 前一日下影线足够长（至少为涨幅的一半）
+        if (kline_zf[-1] >= -kline_zf[-2] * 0.0764 and  # 当日为阳线
+                kline_zf[-2] <= -recent_zf_max and  # 前一日涨幅最大
+                kline_vol[-2] >= 2 * recent_vol_max  # 前一日成交量是前10天的2倍以上
+        ):  # 下影线足够长
+            send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+            alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
-        # # 计算涨跌幅：收盘价/开盘价-1
-        # kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        # # 提取 K 线数据中的各项指标
-        # kline_close = [k[4] for k in kline]  # 收盘价列表
-        # if close_info := alert_all['POSITIONS'].get(symbol):
-        #     if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or condition:
-        #         close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
-        #         alert_all['POSITIONS'][symbol] = ()
-        #         if condition:
-        #             alert_all['POSITIONS'].pop(symbol)
-        #         else:
-        #             alert_all['POSITIONS'][symbol] = ()
-        #     return
-        # kline_vol = [k[5] for k in kline]  # 成交量列表
-        #
-        # # 计算关键指标
-        # recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
-        # recent_vol_max = max(kline_vol[-7:-2])  # 近10天最大成交量
-        # recent_vol_max2 = max(kline_vol[-7:-3])  # 近10天最大成交量
-        # zy = kline_close[-1] - kline_close[-3] * kline_zf[-2] * 0.2
-        # zs = kline_close[-1] + kline_close[-3] * kline_zf[-2] * 0.2
-        # # 做多条件：
-        # # 1. 当日为阳线(涨跌幅为正)
-        # # 2. 前一日涨跌幅为近10天最大
-        # # 3. 前一日成交量为前10天的2倍以上
-        # # 4. 前一日下影线足够长（至少为涨幅的一半）
-        # if (kline_close[-1] >= kline[-2][1] and  # 当日为阳线
-        #         kline_zf[-2] <= -recent_zf_max and  # 前一日涨幅最大
-        #         kline_vol[-2] >= 2 * recent_vol_max  # 前一日成交量是前10天的2倍以上
-        # ):  # 下影线足够长
-        #     send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-        #     alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
-        #     open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
-        # elif (kline_close[-1] >= kline[-2][1] and 0 > max(kline_zf[-3:-1]) and
-        #       min(kline_zf[-3:-1]) <= -recent_zf_max and  # 前一日涨幅最大
-        #       (kline_vol[-2] >= 2 * recent_vol_max or kline_vol[-3] >= 2 * recent_vol_max2)  # 前一日成交量是前10天的2倍以上
-        # ):  # 下影线足够长
-        #     send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-        #     alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
-        #     open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
-        # # 做空条件：
-        # # 1. 当日为阴线(涨跌幅为负)
-        # # 2. 前一日涨跌幅为近10天最大
-        # # 3. 前一日成交量为前10天的2倍以上
-        # # 4. 前一日上影线足够长（至少为涨幅的一半）
-        # elif (kline_close[-1] <= kline[-2][1] and 0 < min(kline_zf[-3:-1]) and
-        #       max(kline_zf[-3:-1]) >= recent_zf_max and  # 前一日涨幅最大
-        #       (kline_vol[-2] >= 2 * recent_vol_max or kline_vol[-3] >= 2 * recent_vol_max2)  # 前一日成交量是前10天的2倍以上
-        # ):  # 上影线足够长
-        #     send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-        #     alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
-        #     open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
-        # elif (kline_close[-1] <= kline[-2][1] and  # 当日为阴线
-        #       kline_zf[-2] >= recent_zf_max and  # 前一日涨幅最大
-        #       kline_vol[-2] >= 2 * recent_vol_max  # 前一日成交量是前10天的2倍以上
-        # ):  # 上影线足够长
-        #     send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-        #     alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
-        #     open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
+        elif (kline_zf[-1] >= -kline_zf[-2] * 0.0764 and 0 > max(kline_zf[-3:-1]) and
+              min(kline_zf[-3:-1]) <= -recent_zf_max and  # 前一日涨幅最大
+              (kline_vol[-2] >= 2 * recent_vol_max or kline_vol[-3] >= 2 * recent_vol_max2)  # 前一日成交量是前10天的2倍以上
+        ):  # 下影线足够长
+            send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+            alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
+            open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
+        # 做空条件：
+        # 1. 当日为阴线(涨跌幅为负)
+        # 2. 前一日涨跌幅为近10天最大
+        # 3. 前一日成交量为前10天的2倍以上
+        # 4. 前一日上影线足够长（至少为涨幅的一半）
+        elif (kline_zf[-1] <= -kline_zf[-2] * 0.0764 and 0 < min(kline_zf[-3:-1]) and
+              max(kline_zf[-3:-1]) >= recent_zf_max and  # 前一日涨幅最大
+              (kline_vol[-2] >= 2 * recent_vol_max or kline_vol[-3] >= 2 * recent_vol_max2)  # 前一日成交量是前10天的2倍以上
+        ):  # 上影线足够长
+            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+            alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
+            open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
+        elif (kline_zf[-1] <= -kline_zf[-2] * 0.0764 and  # 当日为阴线
+              kline_zf[-2] >= recent_zf_max and  # 前一日涨幅最大
+              kline_vol[-2] >= 2 * recent_vol_max  # 前一日成交量是前10天的2倍以上
+        ):  # 上影线足够长
+            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+            alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
+            open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
         traceback.print_exc()
         return
@@ -370,7 +360,7 @@ async def rzq_market(market):
     :param market: 市场名称，如 'BN'（币安）
     """
     now = datetime.datetime.now()
-    condition = now.hour == 8 and now.minute < 2
+    condition = now.hour == 8 and now.minute < 2 and now.second < 15
     symbols = []
     # 每天早上8点重置数据
     if condition:
@@ -588,7 +578,7 @@ async def main():
     # 立即执行一次股票监控
     # monitor_stocks()
     # 立即执行一次币安市场分析
-    # await rzq_market('BN')
+    await rzq_market('BN')
 
     # 设置股票监控定时任务 - 在交易时段执行
     scheduler.add_job(
@@ -609,9 +599,9 @@ async def main():
     scheduler.add_job(
         rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
-        hour='08',  # 每天8点和20点
-        minute='01',  # 每1分钟
-        second='00',  # 整点秒数
+        hour='*',  # 每天8点和20点
+        minute='01-59/1',  # 每1分钟
+        second='*/15',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数
         misfire_grace_time=30,  # 错过执行的宽限时间（秒）
