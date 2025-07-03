@@ -250,7 +250,7 @@ async def get_kline(semaphore, symbol, t: str):
         interval = t[:2].lower()
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
         try:
-            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=10)
+            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=7)
             # 一次性将所有数据转换为浮点数
             return [list(map(float, sublist)) for sublist in kline]
         except:
@@ -280,7 +280,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         success.add(symbol)
         # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if len(kline) < 10:  # 数据不足，跳过
+        if len(kline) < 7:  # 数据不足，跳过
             return
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
