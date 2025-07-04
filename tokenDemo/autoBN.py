@@ -508,6 +508,9 @@ def filter_stocks():
                 continue
 
             # 当前价格低于10天均价
+            if not list(filter(lambda x: hist.iloc[-4 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘'],
+                               range(-2, -i - 5, -1))):
+                continue
 
             if hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] \
                     or list(filter(lambda x: hist.iloc[-9 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘'],
