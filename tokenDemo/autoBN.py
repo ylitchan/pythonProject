@@ -274,6 +274,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
     """
     try:
         if alert_all['POSITIONS'].get(symbol) == ():
+            if condition:
+                alert_all['POSITIONS'].pop(symbol)
             return
         # 获取日K线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
