@@ -309,15 +309,15 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         # 3. 前一日成交量为前10天的2倍以上
         # 4. 前一日下影线足够长（至少为涨幅的一半）
         if (kline_close[-1] >= kline[-2][1] and  # 当日为阳线
-                kline_zf[-2] <= -recent_zf_max and  # 前一日涨幅最大
-                kline_vol[-2] >= 2 * recent_vol_max  # 前一日成交量是前10天的2倍以上
+                kline_zf[-2] <= -recent_zf_max  # and  # 前一日涨幅最大
+                # kline_vol[-2] >= 2 * recent_vol_max  # 前一日成交量是前10天的2倍以上
         ):  # 下影线足够长
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
         elif (kline_close[-1] >= kline[-2][1] and 0 > max(kline_zf[-3:-1]) and
-              min(kline_zf[-3:-1]) <= -recent_zf_max and  # 前一日涨幅最大
-              (kline_vol[-2] >= 2 * recent_vol_max or kline_vol[-3] >= 2 * recent_vol_max2)  # 前一日成交量是前10天的2倍以上
+              min(kline_zf[-3:-1]) <= -recent_zf_max  # and  # 前一日涨幅最大
+                # (kline_vol[-2] >= 2 * recent_vol_max or kline_vol[-3] >= 2 * recent_vol_max2)  # 前一日成交量是前10天的2倍以上
         ):  # 下影线足够长
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
@@ -328,15 +328,15 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         # 3. 前一日成交量为前10天的2倍以上
         # 4. 前一日上影线足够长（至少为涨幅的一半）
         elif (kline_close[-1] <= kline[-2][1] and 0 < min(kline_zf[-3:-1]) and
-              max(kline_zf[-3:-1]) >= recent_zf_max and  # 前一日涨幅最大
-              (kline_vol[-2] >= 2 * recent_vol_max or kline_vol[-3] >= 2 * recent_vol_max2)  # 前一日成交量是前10天的2倍以上
+              max(kline_zf[-3:-1]) >= recent_zf_max  # and  # 前一日涨幅最大
+                # (kline_vol[-2] >= 2 * recent_vol_max or kline_vol[-3] >= 2 * recent_vol_max2)  # 前一日成交量是前10天的2倍以上
         ):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
         elif (kline_close[-1] <= kline[-2][1] and  # 当日为阴线
-              kline_zf[-2] >= recent_zf_max and  # 前一日涨幅最大
-              kline_vol[-2] >= 2 * recent_vol_max  # 前一日成交量是前10天的2倍以上
+              kline_zf[-2] >= recent_zf_max  # and  # 前一日涨幅最大
+                # kline_vol[-2] >= 2 * recent_vol_max  # 前一日成交量是前10天的2倍以上
         ):  # 上影线足够长
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = (zs, zy, 'BUY', 'SHORT')
