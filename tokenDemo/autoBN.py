@@ -187,7 +187,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
         )
 
         # 发送成功通知
-        msg = f'{symbol}成功{side}，杠杆:{actual_leverage}x，交易数量:{tx.get("origQty", 0)}，标记价格:{markPrice}'
+        msg = f'{symbol}成功{positionSide}，杠杆:{actual_leverage}x，交易数量:{tx.get("origQty", 0)}，标记价格:{markPrice}'
         send_msg(msg)
         return symbol
     except Exception as e:
