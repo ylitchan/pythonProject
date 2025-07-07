@@ -624,7 +624,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    leverage = 5
+    leverage = 20
     health4open = 80
     session = requests.Session()
     session.verify = False
