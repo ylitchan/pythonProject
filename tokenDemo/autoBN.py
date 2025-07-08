@@ -295,7 +295,6 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
                 else:
                     alert_all['POSITIONS'][symbol] = ()
             return
-        kline_vol = [k[5] for k in kline]  # 成交量列表
 
         # 计算关键指标
         recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
