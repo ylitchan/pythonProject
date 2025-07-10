@@ -141,7 +141,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
 
         # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
         if not slot_balance[0]:
-            slot_balance[0] = balance * 0.25
+            slot_balance[0] = balance * 0.5
         safe_balance = min(slot_balance[0], balance * 0.8)
 
         # 根据杠杆计算交易数量
@@ -294,8 +294,9 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
                 kline_close[-1] >= recent_price_max  # 当日为阳线
         ):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['POSITIONS'][symbol] = ()
-            # open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
+            alert_all['POSITIONS'][symbol] = (kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2, kline_close[-2],
+                                              'SELL', 'LONG')
+            open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
     except:
         traceback.print_exc()
         return
@@ -579,7 +580,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    leverage = 20
+    leverage = 10
     health4open = 80
     session = requests.Session()
     session.verify = False
