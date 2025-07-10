@@ -290,9 +290,10 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         if (kline_zf[-1] >= recent_zf_max and  # 涨幅最大
                 kline_close[-1] >= recent_price_max  # 当日为阳线
         ):
-            send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['POSITIONS'][symbol] = (kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2, kline_close[-2],
-                                              'SELL', 'LONG')
+            zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            zs = kline_close[-1] - kline_close[-2] * 0.8 / leverage
+            send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+            alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
         elif (kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
               kline_close[-1] <= recent_price_min  # 当日为阴线
