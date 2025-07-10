@@ -280,13 +280,9 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         kline_close = [k[4] for k in kline]  # 收盘价列表
         kline_open = [k[1] for k in kline]  # 开盘价列表
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or condition:
+            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1]:
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'][symbol] = ()
-                if condition:
-                    alert_all['POSITIONS'].pop(symbol)
-                else:
-                    alert_all['POSITIONS'][symbol] = ()
             return
         recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
         recent_price_max = max(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最大价格
