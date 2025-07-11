@@ -241,7 +241,7 @@ if __name__ == "__main__":
 
         def job2():
             print('监听线程开始', nonce)
-            while datetime.now().minute <= 30:
+            while datetime.now().hour < 4:
                 try:
                     for tx in w3.eth.filter('pending').get_new_entries():
                         try:
@@ -262,7 +262,8 @@ if __name__ == "__main__":
 
         t = Thread(target=job2)
         # t.start()
-        while datetime.now().minute < 59:
+        # t.join()
+        while datetime.now().hour < 5:
             try:
                 excessAmount = get_excess_amount(LYBRA_CONTRACT_ADDRESS) - 11
                 print(datetime.now(), excessAmount)
@@ -279,7 +280,7 @@ if __name__ == "__main__":
 
     # job()
     scheduler = BlockingScheduler()
-    scheduler.add_job(job, 'cron', hour=4, minute=00, misfire_grace_time=120,  # 错过执行的宽限时间（秒）
+    scheduler.add_job(job, 'cron', hour=00, minute=00, misfire_grace_time=120,  # 错过执行的宽限时间（秒）
                       max_instances=1,  # 同一时间只允许1个实例运行
                       coalesce=True,  # 合并错过的执行（避免积压）
                       )
