@@ -367,7 +367,7 @@ async def rzq_market(market):
     if condition or len(alert_all['POSITIONS']) != alert_length[0]:
         with open('alert_all.json', 'w') as f:
             json.dump(alert_all, f, ensure_ascii=False, indent=4)
-    alert_length[0] = len(alert_all['POSITIONS'])
+        alert_length[0] = len(alert_all['POSITIONS'])
 
 
 def get_last_trading_days(today=None, days=60):
