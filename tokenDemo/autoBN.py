@@ -265,7 +265,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
     :return: 若不符合条件则返回 None，否则返回符合条件的交易对信息字典
     """
     try:
-        if alert_all['POSITIONS'].get(symbol) == ():
+        if alert_all['POSITIONS'].get(symbol) == []:
             if condition:
                 alert_all['POSITIONS'].pop(symbol)
             return
@@ -282,7 +282,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         if close_info := alert_all['POSITIONS'].get(symbol):
             if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1]:
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
-                alert_all['POSITIONS'][symbol] = ()
+                alert_all['POSITIONS'][symbol] = []
             return
         recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
         recent_price_max = max(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最大价格
@@ -293,13 +293,13 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
             zs = kline_close[-1] - kline_close[-2] * min(0.8 / leverage, kline_zf[-1])
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-            alert_all['POSITIONS'][symbol] = (zy, zs, 'SELL', 'LONG')
+            alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
         elif (kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
               kline_close[-1] <= recent_price_min  # 当日为阴线
         ):
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['POSITIONS'][symbol] = ()
+            alert_all['POSITIONS'][symbol] = []
             # open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
     except:
         traceback.print_exc()
