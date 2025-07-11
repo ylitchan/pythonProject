@@ -362,6 +362,10 @@ async def rzq_market(market):
         # 进行垃圾回收以释放内存
         gc.collect()
     print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all)
+    if condition or len(alert_all['POSITIONS']) != alert_length[0]:
+        with open('alert_all.json', 'w') as f:
+            json.dump(alert_all, f, ensure_ascii=False, indent=4)
+    alert_length[0] = len(alert_all['POSITIONS'])
 
 
 def get_last_trading_days(today=None, days=60):
@@ -593,6 +597,8 @@ if __name__ == "__main__":
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
-    alert_all = {'POSITIONS': {}}
+    with open('alert_all.json', 'r') as f:
+        alert_all = json.load(f)
+    alert_length = [len(alert_all['POSITIONS'])]
     slot_balance = [0.0]
     asyncio.run(main())
