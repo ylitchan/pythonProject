@@ -291,16 +291,18 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
                 kline_close[-1] >= recent_price_max  # 当日为阳线
         ):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
-            zs = kline_close[-1] - kline_close[-2] * min(0.8 / leverage, kline_zf[-1])
+            zs = kline_close[-1] - kline_close[-2] * min(0.8 / leverage, kline_zf[-1] * 0.8)
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
         elif (kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
               kline_close[-1] <= recent_price_min  # 当日为阴线
         ):
-            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}')
-            alert_all['POSITIONS'][symbol] = []
-            # open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
+            zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] * 0.2
+            zs = kline_close[-1] - kline_close[-2] * max(-0.8 / leverage, kline_zf[-1] * 0.8)
+            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+            alert_all['POSITIONS'][symbol] = [zy, zs, 'BUY', 'SHORT']
+            open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
         traceback.print_exc()
         return
