@@ -141,7 +141,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
 
         # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
         if not slot_balance[0]:
-            slot_balance[0] = balance * 0.5
+            slot_balance[0] = balance * 0.2
         safe_balance = min(slot_balance[0], balance * 0.8)
 
         # 根据杠杆计算交易数量
