@@ -228,6 +228,28 @@ def close_bn_position(symbol, side, positionSide, price_close):
             amount = get_amount_close(symbol)
 
 
+async def get_oi(semaphore, symbol):
+    """
+    异步获取指定交易对的 K 线数据
+
+    :param semaphore: 异步信号量，用于控制并发数量
+    :param symbol: 交易对符号，例如 "BTCUSDT"
+    :param t: K 线时间周期，如 "1Dutc"（1天UTC时间）、"4h"（4小时）等
+    :return: K 线数据列表，元素为浮点数列表，每个子列表包含[开盘时间, 开盘价, 最高价, 最低价, 收盘价, 成交量, ...]等信息
+    """
+    async with semaphore:
+        # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
+        try:
+            # 一次性将所有数据转换为浮点数
+            oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
+            oi = [float(i['sumOpenInterest']) for i in oi]
+            if max(oi[-2:]) > max(oi[:-2]):
+                return True
+            return False
+        except:
+            return True
+
+
 async def get_kline(semaphore, symbol, t: str):
     """
     异步获取指定交易对的 K 线数据
@@ -288,7 +310,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         recent_price_max = max(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最大价格
         recent_price_min = min(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最低价格
         if (kline_zf[-1] >= recent_zf_max and  # 涨幅最大
-                kline_close[-1] >= recent_price_max  # 当日为阳线
+                kline_close[-1] >= recent_price_max and  # 当日为阳线
+                await get_oi(semaphore, symbol)
         ):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] / 7
             zs = kline_close[-1] - kline_close[-2] * min(0.7 / leverage, kline_zf[-1] * 0.7)
@@ -300,7 +323,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         ):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] / 7
             zs = kline_close[-1] - kline_close[-2] * max(-0.7 / leverage, kline_zf[-1] * 0.7)
-            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}') 
+            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = [zy, zs, 'BUY', 'SHORT']
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
