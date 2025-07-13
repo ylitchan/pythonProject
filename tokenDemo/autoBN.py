@@ -273,19 +273,6 @@ async def decrease_oi(semaphore, symbol, positionSide):
             return False
 
 
-async def get_funding_rate(semaphore, symbol):
-    async with semaphore:
-        params = {
-            "symbol": symbol
-        }
-        try:
-            response = await asyncio.to_thread(requests.get, url="https://fapi.binance.com/fapi/v1/premiumIndex",
-                                               params=params)
-            return float(response.json()['lastFundingRate'])
-        except:
-            return 0
-
-
 async def get_kline(semaphore, symbol, t: str):
     """
     异步获取指定交易对的 K 线数据
