@@ -244,7 +244,9 @@ async def increase_oi(semaphore, symbol):
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            if sumOpenInterest[-1] > sumOpenInterest[-2] > sumOpenInterest[-3] and \
+            if sumOpenInterest[-4] > sumOpenInterest[-3] and \
+                    sumOpenInterest[-1] > sumOpenInterest[-2] > sumOpenInterest[-3] and \
+                    sumOpenInterestValue[-4] > sumOpenInterestValue[-3] and \
                     sumOpenInterestValue[-1] > sumOpenInterestValue[-2] > sumOpenInterestValue[-3]:
                 print(f'{symbol} 增仓信号{sumOpenInterest[-3]}——>{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
                 return True
