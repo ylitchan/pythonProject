@@ -281,6 +281,19 @@ async def decrease_oi(semaphore, symbol):
             return False
 
 
+async def get_funding_rate(semaphore, symbol):
+    async with semaphore:
+        params = {
+            "symbol": symbol
+        }
+        try:
+            response = await asyncio.to_thread(requests.get, url="https://fapi.binance.com/fapi/v1/premiumIndex",
+                                               params=params)
+            return float(response.json()['lastFundingRate'])
+        except:
+            return 0
+
+
 async def get_kline(semaphore, symbol, t: str):
     """
     异步获取指定交易对的 K 线数据
@@ -345,6 +358,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         recent_price_min = min(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最低价格
         if (  # kline_zf[-1] >= recent_zf_max and  # 涨幅最大
                 kline_close[-1] >= recent_price_max and  # 当日为阳线
+                await get_funding_rate(semaphore, symbol) < 0 and
                 await increase_oi(semaphore, symbol)
         ):
             zy = kline_close[-1] + kline_close[-2] * recent_zf_max / 7
@@ -354,6 +368,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
         elif (  # kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
                 kline_close[-1] <= recent_price_min and  # 当日为阴线
+                await get_funding_rate(semaphore, symbol) > 0 and
                 await increase_oi(semaphore, symbol)
         ):
             zy = kline_close[-1] - kline_close[-2] * recent_zf_max / 7
