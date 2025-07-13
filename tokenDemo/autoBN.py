@@ -227,7 +227,7 @@ def close_bn_position(symbol, side, positionSide, price_close):
             amount = get_amount_close(symbol)
 
 
-async def get_oi(semaphore, symbol):
+async def increase_oi(semaphore, symbol):
     """
     异步获取指定交易对的 K 线数据
 
@@ -237,16 +237,39 @@ async def get_oi(semaphore, symbol):
     :return: K 线数据列表，元素为浮点数列表，每个子列表包含[开盘时间, 开盘价, 最高价, 最低价, 收盘价, 成交量, ...]等信息
     """
     async with semaphore:
-        # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
+
         try:
-            # 一次性将所有数据转换为浮点数
+            # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
+            # 一次性将所有数据转换为浮点数
             oi = [float(i['sumOpenInterest']) for i in oi]
-            if max(oi[-2:]) > max(oi[:-2]):
+            if oi[-1] >= max(oi):
                 return True
             return False
         except:
-            return True
+            return False
+
+
+async def decrease_oi(semaphore, symbol):
+    """
+    异步获取指定交易对的 K 线数据
+
+    :param semaphore: 异步信号量，用于控制并发数量
+    :param symbol: 交易对符号，例如 "BTCUSDT"
+    :param t: K 线时间周期，如 "1Dutc"（1天UTC时间）、"4h"（4小时）等
+    :return: K 线数据列表，元素为浮点数列表，每个子列表包含[开盘时间, 开盘价, 最高价, 最低价, 收盘价, 成交量, ...]等信息
+    """
+    async with semaphore:
+        try:
+            # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
+            oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
+            # 一次性将所有数据转换为浮点数
+            oi = [float(i['sumOpenInterest']) for i in oi]
+            if oi[-1] < oi[-2]:
+                return True
+            return False
+        except:
+            return False
 
 
 async def get_kline(semaphore, symbol, t: str):
@@ -301,7 +324,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         kline_close = [k[4] for k in kline]  # 收盘价列表
         kline_open = [k[1] for k in kline]  # 开盘价列表
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1]:
+            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or decrease_oi(semaphore, symbol):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'][symbol] = []
             return
@@ -310,7 +333,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         recent_price_min = min(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最低价格
         if (kline_zf[-1] >= recent_zf_max and  # 涨幅最大
                 kline_close[-1] >= recent_price_max and  # 当日为阳线
-                await get_oi(semaphore, symbol)
+                await increase_oi(semaphore, symbol)
         ):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] / 7
             zs = kline_close[-1] - kline_close[-2] * min(0.7 / leverage, kline_zf[-1] * 0.7)
@@ -318,7 +341,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
         elif (kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
-              kline_close[-1] <= recent_price_min  # 当日为阴线
+              kline_close[-1] <= recent_price_min and  # 当日为阴线
+              await increase_oi(semaphore, symbol)
         ):
             zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] / 7
             zs = kline_close[-1] - kline_close[-2] * max(-0.7 / leverage, kline_zf[-1] * 0.7)
@@ -356,7 +380,6 @@ async def rzq_market(market):
             exchange_info = await asyncio.to_thread(um_futures_client.exchange_info)
             sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
                 f'0.{"1" * i["quantityPrecision"]}') for i in exchange_info['symbols']}
-            # exchange_info = await asyncio.to_thread(spotBN.exchange_info)
             symbols_info = {symbol['symbol']: {
                 'quotePrecision': symbol['quotePrecision'],
                 'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
