@@ -330,6 +330,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
                     await decrease_oi(semaphore, symbol)):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'][symbol] = []
+                with open('alert_all.json', 'w') as f:
+                    json.dump(alert_all, f, ensure_ascii=False, indent=4)
             return
         recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
         recent_price_max = max(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最大价格
