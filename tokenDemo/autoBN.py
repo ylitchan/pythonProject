@@ -336,21 +336,21 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
         recent_price_max = max(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最大价格
         recent_price_min = min(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最低价格
-        if (kline_zf[-1] >= recent_zf_max and  # 涨幅最大
+        if (  # kline_zf[-1] >= recent_zf_max and  # 涨幅最大
                 kline_close[-1] >= recent_price_max and  # 当日为阳线
                 await increase_oi(semaphore, symbol)
         ):
-            zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] / 7
-            zs = kline_close[-1] - kline_close[-2] * min(0.7 / leverage, kline_zf[-1] * 0.7)
+            zy = kline_close[-1] + kline_close[-2] * recent_zf_max / 7
+            zs = kline_close[-1] - kline_close[-2] * min(0.7 / leverage, recent_zf_max * 0.7)
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
-        elif (kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
-              kline_close[-1] <= recent_price_min and  # 当日为阴线
-              await increase_oi(semaphore, symbol)
+        elif (  # kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
+                kline_close[-1] <= recent_price_min and  # 当日为阴线
+                await increase_oi(semaphore, symbol)
         ):
-            zy = kline_close[-1] + kline_close[-2] * kline_zf[-1] / 7
-            zs = kline_close[-1] - kline_close[-2] * max(-0.7 / leverage, kline_zf[-1] * 0.7)
+            zy = kline_close[-1] - kline_close[-2] * recent_zf_max / 7
+            zs = kline_close[-1] - kline_close[-2] * max(-0.7 / leverage, -recent_zf_max * 0.7)
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = [zy, zs, 'BUY', 'SHORT']
             open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
