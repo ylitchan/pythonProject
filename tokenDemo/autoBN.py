@@ -244,6 +244,7 @@ async def increase_oi(semaphore, symbol):
             # 一次性将所有数据转换为浮点数
             oi = [float(i['sumOpenInterest']) for i in oi]
             if oi[-1] >= max(oi):
+                print(f'{symbol} 增仓信号{oi[-1]}-{oi[-2]}')
                 return True
             return False
         except:
@@ -266,6 +267,7 @@ async def decrease_oi(semaphore, symbol):
             # 一次性将所有数据转换为浮点数
             oi = [float(i['sumOpenInterest']) for i in oi]
             if oi[-1] < oi[-2]:
+                print(f'{symbol} 减仓信号{oi[-1]}-{oi[-2]}')
                 return True
             return False
         except:
@@ -324,7 +326,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         kline_close = [k[4] for k in kline]  # 收盘价列表
         kline_open = [k[1] for k in kline]  # 开盘价列表
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or decrease_oi(semaphore, symbol):
+            if (kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or
+                    await decrease_oi(semaphore, symbol)):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'][symbol] = []
             return
