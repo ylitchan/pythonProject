@@ -353,7 +353,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             if (kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or
                     await decrease_oi(semaphore, symbol)):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
-                alert_all['POSITIONS'][symbol] = []
+                alert_all['POSITIONS'].pop(symbol)
                 with open('alert_all.json', 'w') as f:
                     json.dump(alert_all, f, ensure_ascii=False, indent=4)
             return
