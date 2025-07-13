@@ -242,7 +242,7 @@ async def increase_oi(semaphore, symbol):
             # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
             # 一次性将所有数据转换为浮点数
-            oi = [float(i['sumOpenInterest']) for i in oi]
+            oi = [float(i['sumOpenInterestValue']) for i in oi]
             if oi[-1] > oi[-2] > oi[-3]:
                 print(f'{symbol} 增仓信号{oi[-3]}——>{oi[-2]}——>{oi[-1]}')
                 return True
@@ -265,7 +265,7 @@ async def decrease_oi(semaphore, symbol):
             # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
             # 一次性将所有数据转换为浮点数
-            oi = [float(i['sumOpenInterest']) for i in oi]
+            oi = [float(i['sumOpenInterestValue']) for i in oi]
             if oi[-1] < oi[-2] < oi[-3]:
                 print(f'{symbol} 减仓信号{oi[-3]}——>{oi[-2]}——>{oi[-1]}')
                 return True
