@@ -140,7 +140,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
             return None
 
         # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
-        slot_balance[0] = max(balance * 0.25, slot_balance[0])
+        slot_balance[0] = max(balance * 0.1, slot_balance[0])
         safe_balance = min(slot_balance[0], balance * 0.7)
 
         # 根据杠杆计算交易数量
@@ -242,20 +242,14 @@ async def increase_oi(semaphore, symbol):
             # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
             # 一次性将所有数据转换为浮点数
-            sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            if sumOpenInterest[-4] > sumOpenInterest[-3] and \
-                    sumOpenInterest[-1] > sumOpenInterest[-2] > sumOpenInterest[-3] and \
-                    sumOpenInterestValue[-4] > sumOpenInterestValue[-3] and \
-                    sumOpenInterestValue[-1] > sumOpenInterestValue[-2] > sumOpenInterestValue[-3]:
-                print(f'{symbol} 增仓信号{sumOpenInterest[-3]}——>{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
-                return True
-            return False
+            print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
+            return sumOpenInterest[-1] > max(sumOpenInterest[:-1])
         except:
             return False
 
 
-async def decrease_oi(semaphore, symbol):
+async def decrease_oi(semaphore, symbol, positionSide):
     """
     异步获取指定交易对的 K 线数据
 
@@ -270,14 +264,11 @@ async def decrease_oi(semaphore, symbol):
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
-            sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            if sumOpenInterestValue[-1] < sumOpenInterestValue[-2]:
-                print(f'{symbol} 减仓信号${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}')
-                return True
-            elif sumOpenInterest[-1] < sumOpenInterest[-2] < sumOpenInterest[-3]:
-                print(f'{symbol} 减仓信号{sumOpenInterest[-3]}——>{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
-                return True
-            return False
+            print(f'{symbol} 减仓信号${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}')
+            if positionSide == "LONG":
+                return sumOpenInterestValue[-1] < sumOpenInterestValue[-2]
+            else:
+                return sumOpenInterestValue[-1] > sumOpenInterestValue[-2]
         except:
             return False
 
@@ -347,19 +338,17 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         kline_close = [k[4] for k in kline]  # 收盘价列表
         kline_open = [k[1] for k in kline]  # 开盘价列表
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if (kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or
-                    await decrease_oi(semaphore, symbol)):
+            if await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
-                alert_all['POSITIONS'].pop(symbol)
+                alert_all['POSITIONS'][symbol] = []
                 with open('alert_all.json', 'w') as f:
                     json.dump(alert_all, f, ensure_ascii=False, indent=4)
             return
         recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
         recent_price_max = max(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最大价格
         recent_price_min = min(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最低价格
-        if (  # kline_zf[-1] >= recent_zf_max and  # 涨幅最大
+        if (kline_zf[-1] >= recent_zf_max and  # 涨幅最大
                 kline_close[-1] >= recent_price_max and  # 当日为阳线
-                await get_funding_rate(semaphore, symbol) < 0 and
                 await increase_oi(semaphore, symbol)
         ):
             zy = kline_close[-1] + kline_close[-2] * recent_zf_max / 7
@@ -367,16 +356,15 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
-        # elif (  # kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
-        #         kline_close[-1] <= recent_price_min and  # 当日为阴线
-        #         await get_funding_rate(semaphore, symbol) > 0 and
-        #         await increase_oi(semaphore, symbol)
-        # ):
-        #     zy = kline_close[-1] - kline_close[-2] * recent_zf_max / 7
-        #     zs = kline_close[-1] - kline_close[-2] * max(-0.7 / leverage, -recent_zf_max * 0.7)
-        #     send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-        #     alert_all['POSITIONS'][symbol] = [zy, zs, 'BUY', 'SHORT']
-        #     open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
+        elif (kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
+              kline_close[-1] <= recent_price_min and  # 当日为阴线
+              await increase_oi(semaphore, symbol)
+        ):
+            zy = kline_close[-1] - kline_close[-2] * recent_zf_max / 7
+            zs = kline_close[-1] - kline_close[-2] * max(-0.7 / leverage, -recent_zf_max * 0.7)
+            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+            alert_all['POSITIONS'][symbol] = [zy, zs, 'BUY', 'SHORT']
+            open_bn_position(symbol, symbols_info, 'SELL', 'SHORT')
     except:
         traceback.print_exc()
         return
@@ -663,7 +651,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    leverage = 4
+    leverage = 1
     health4open = 70
     session = requests.Session()
     session.verify = False
