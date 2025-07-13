@@ -269,7 +269,11 @@ async def decrease_oi(semaphore, symbol):
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            if sumOpenInterest[-1] < sumOpenInterest[-2] < sumOpenInterest[-3]:
+            if sumOpenInterest[-1] < sumOpenInterest[-2] < sumOpenInterest[-3] and \
+                    sumOpenInterestValue[-1] < sumOpenInterestValue[-2]:
+                print(f'{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
+                return True
+            elif sumOpenInterest[-1] < sumOpenInterest[-2] < sumOpenInterest[-3]:
                 print(f'{symbol} 减仓信号{sumOpenInterest[-3]}——>{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
                 return True
             elif sumOpenInterestValue[-1] < sumOpenInterestValue[-2] < sumOpenInterestValue[-3]:
