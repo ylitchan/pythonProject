@@ -243,7 +243,7 @@ async def increase_oi(semaphore, symbol):
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
             # 一次性将所有数据转换为浮点数
             oi = [float(i['sumOpenInterest']) for i in oi]
-            if oi[-1] > oi[-2] > max(oi[:-2]):
+            if oi[-1] > oi[-2] > oi[-3]:
                 print(f'{symbol} 增仓信号{oi[-1]}-{oi[-2]}-{oi[-3]}')
                 return True
             return False
