@@ -241,9 +241,11 @@ async def increase_oi(semaphore, symbol):
             # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="5m", limit=25)
             # 一次性将所有数据转换为浮点数
+            sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
             print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
-            return sumOpenInterest[-1] > max(sumOpenInterest[:-1])
+            return sumOpenInterest[-1] > max(sumOpenInterest[:-1]) and \
+                sumOpenInterestValue[-1] > max(sumOpenInterestValue[:-1])
         except:
             return False
 
@@ -352,7 +354,6 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
                 await increase_oi(semaphore, symbol) and
                 await if_5m(semaphore, symbol, 'LONG')
         ):
-
             zy = kline_close[-1] + kline_close[-2] * recent_zf_max / 7
             zs = kline_close[-1] - kline_close[-2] * min(0.7 / leverage, recent_zf_max * 0.7)
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
