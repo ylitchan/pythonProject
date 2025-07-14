@@ -640,8 +640,8 @@ async def main():
         rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
         hour='*',  # 每天8点和20点
-        minute='01-59',  # 每1分钟
-        second='*/150',  # 整点秒数
+        minute='01-59/5',  # 每1分钟
+        second='*/30',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数
         misfire_grace_time=30,  # 错过执行的宽限时间（秒）
