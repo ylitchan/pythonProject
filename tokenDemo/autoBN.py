@@ -323,10 +323,10 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
     :return: 若不符合条件则返回 None，否则返回符合条件的交易对信息字典
     """
     try:
-        if alert_all['POSITIONS'].get(symbol) == []:
-            if condition:
-                alert_all['POSITIONS'].pop(symbol)
-            return
+        # if alert_all['POSITIONS'].get(symbol) == []:
+        #     if condition:
+        #         alert_all['POSITIONS'].pop(symbol)
+        #     return
         # 获取日K线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
         success.add(symbol)
@@ -340,7 +340,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         if close_info := alert_all['POSITIONS'].get(symbol):
             if await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
-                alert_all['POSITIONS'][symbol] = []
+                alert_all['POSITIONS'].pop(symbol)
                 with open('alert_all.json', 'w') as f:
                     json.dump(alert_all, f, ensure_ascii=False, indent=4)
             return
