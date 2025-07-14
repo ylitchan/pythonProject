@@ -227,7 +227,7 @@ def close_bn_position(symbol, side, positionSide, price_close):
             amount = get_amount_close(symbol)
 
 
-async def increase_oi(semaphore, symbol):
+async def increase_oi(semaphore, symbol, positionSide):
     """
     异步获取指定交易对的 K 线数据
 
@@ -244,8 +244,12 @@ async def increase_oi(semaphore, symbol):
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
             print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
-            return sumOpenInterest[-1] > max(sumOpenInterest[:-1]) and \
-                sumOpenInterestValue[-1] > max(sumOpenInterestValue[:-1])
+            if positionSide == "LONG":
+                return sumOpenInterest[-1] > max(sumOpenInterest[:-1]) and \
+                    sumOpenInterestValue[-1] > max(sumOpenInterestValue[:-1])
+            else:
+                return sumOpenInterest[-1] > max(sumOpenInterest[:-1]) and \
+                    sumOpenInterestValue[-1] < max(sumOpenInterestValue[:-1])
         except:
             return False
 
@@ -351,7 +355,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         recent_price_min = min(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最低价格
         if (kline_zf[-1] >= recent_zf_max and  # 涨幅最大
                 kline_close[-1] >= recent_price_max and  # 当日为阳线
-                await increase_oi(semaphore, symbol) and
+                await increase_oi(semaphore, symbol, 'LONG') and
                 await if_5m(semaphore, symbol, 'LONG')
         ):
             zy = kline_close[-1] + kline_close[-2] * recent_zf_max / 7
@@ -361,7 +365,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             open_bn_position(symbol, symbols_info, 'BUY', 'LONG')
         elif (kline_zf[-1] <= -recent_zf_max and  # 跌幅最大
               kline_close[-1] <= recent_price_min and  # 当日为阴线
-              await increase_oi(semaphore, symbol) and
+              await increase_oi(semaphore, symbol, 'SHORT') and
               await if_5m(semaphore, symbol, 'SHORT')
         ):
             zy = kline_close[-1] - kline_close[-2] * recent_zf_max / 7
