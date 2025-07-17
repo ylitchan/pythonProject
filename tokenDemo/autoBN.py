@@ -249,7 +249,7 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
                     return False
                 for index in range(-2, -len(kc) + 2, -1):
-                    if kc[index - 1] >= kc[index - 2] and sumOpenInterest[index] > max(
+                    if max(kc[index - 6:index - 1]) >= kc[index - 1] >= kc[index - 2] and sumOpenInterest[index] > max(
                             sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
                         return False
@@ -265,7 +265,7 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                         sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
                     return False
                 for index in range(-2, - len(kc) + 2, -1):
-                    if kc[index - 1] <= kc[index - 2] and sumOpenInterest[index] > max(
+                    if min(kc[index - 6:index - 1]) <= kc[index - 1] <= kc[index - 2] and sumOpenInterest[index] > max(
                             sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
                         return False
@@ -625,7 +625,7 @@ async def main():
     # 立即执行一次股票监控
     # monitor_stocks()
     # 立即执行一次币安市场分析
-    await rzq_market('BN')
+    # await rzq_market('BN')
 
     # 设置股票监控定时任务 - 在交易时段执行
     scheduler.add_job(
