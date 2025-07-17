@@ -227,29 +227,53 @@ def close_bn_position(symbol, side, positionSide, price_close):
             amount = get_amount_close(symbol)
 
 
-async def increase_oi(semaphore, symbol, positionSide):
+async def increase_oi(semaphore, symbol, positionSide, kc):
     """
     异步获取指定交易对的 K 线数据
 
     :param semaphore: 异步信号量，用于控制并发数量
     :param symbol: 交易对符号，例如 "BTCUSDT"
-    :param t: K 线时间周期，如 "1Dutc"（1天UTC时间）、"4h"（4小时）等
+    :param kc: K 线时间周期，如 "1Dutc"（1天UTC时间）、"4h"（4小时）等
     :return: K 线数据列表，元素为浮点数列表，每个子列表包含[开盘时间, 开盘价, 最高价, 最低价, 收盘价, 成交量, ...]等信息
     """
     async with semaphore:
         try:
             # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
-            oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=3)
+            oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=100)
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
             print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
             if positionSide == "LONG":
-                return sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
-                    sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
+                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
+                    return False
+                for index in range(-2, -len(kc), -1):
+                    if kc[index] >= kc[index - 1] and sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                            sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
+                        return False
+                    elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                            sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
+                        return True
+                    elif sumOpenInterestValue[index] > sumOpenInterestValue[index - 1] and \
+                            sumOpenInterest[index] < sumOpenInterest[index - 1]:
+                        return True
+                return True
             else:
-                return sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
-                    sumOpenInterestValue[-1] < min(sumOpenInterestValue[-3:-1])
+                if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
+                        sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
+                    return False
+                for index in range(-2, - len(kc), -1):
+                    if kc[index] <= kc[index - 1] and sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                            sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
+                        return False
+                    elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                            sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
+                        return True
+                    elif sumOpenInterestValue[index] < sumOpenInterestValue[index - 1] and \
+                            sumOpenInterest[index] < sumOpenInterest[index - 1]:
+                        return True
+                return True
         except:
             return False
 
@@ -266,21 +290,21 @@ async def decrease_oi(semaphore, symbol, positionSide):
     async with semaphore:
         try:
             # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
-            oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=3)
+            oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=100)
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
             print(f'{symbol} 减仓信号${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}')
             if positionSide == "LONG":
-                return sumOpenInterestValue[-1] > sumOpenInterestValue[-2] and sumOpenInterest[-1] < sumOpenInterest[
-                    -2] or \
-                    sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and sumOpenInterestValue[-1] < min(
-                        sumOpenInterestValue[-3:-1])
+                return sumOpenInterestValue[-1] > sumOpenInterestValue[-2] and \
+                    sumOpenInterest[-1] < sumOpenInterest[-2] or \
+                    sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
+                    sumOpenInterestValue[-1] < min(sumOpenInterestValue[-3:-1])
             else:
-                return sumOpenInterestValue[-1] < sumOpenInterestValue[-2] and sumOpenInterest[-1] < sumOpenInterest[
-                    -2] or \
-                    sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and sumOpenInterestValue[-1] > max(
-                        sumOpenInterestValue[-3:-1])
+                return sumOpenInterestValue[-1] < sumOpenInterestValue[-2] and \
+                    sumOpenInterest[-1] < sumOpenInterest[-2] or \
+                    sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
+                    sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
         except:
             return False
 
@@ -299,24 +323,11 @@ async def get_kline(semaphore, symbol, t: str):
         interval = t[:2].lower()
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
         try:
-            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=3)
+            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=99)
             # 一次性将所有数据转换为浮点数
             return [list(map(float, sublist)) for sublist in kline]
         except:
             return []
-
-
-async def if_5m(semaphore, symbol, positionSide):
-    async with semaphore:
-        kline_5m = await get_kline(semaphore, symbol, "5m")
-        kline_close_5m = [k[4] for k in kline_5m]
-        kline_open_5m = [k[1] for k in kline_5m]
-        if positionSide == "SHORT":
-            recent_price_max_5m = max(kline_close_5m[:-1] + kline_close_5m[:-1])  # 近10天最大价格
-            return kline_close_5m[-2] >= kline_close_5m[-3] >= kline_close_5m[-4]
-        else:
-            recent_price_min_5m = min(kline_open_5m[:-1] + kline_open_5m[:-1])  # 近10天最低价格
-            return kline_close_5m[-2] <= kline_close_5m[-3] <= kline_close_5m[-4]
 
 
 async def rzq_token(semaphore, symbol, success, symbols_info, condition):
@@ -335,52 +346,38 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
     :return: 若不符合条件则返回 None，否则返回符合条件的交易对信息字典
     """
     try:
-        # if alert_all['POSITIONS'].get(symbol) == []:
-        #     if condition:
-        #         alert_all['POSITIONS'].pop(symbol)
-        #     return
         # 获取日K线数据
         kline = await get_kline(semaphore, symbol, "1Dutc")
         success.add(symbol)
         # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if len(kline) < 3:  # 数据不足，跳过
+        if len(kline) < 4:  # 数据不足，跳过
             return
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
-        kline_open = [k[1] for k in kline]  # 开盘价列表
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if await decrease_oi(semaphore, symbol, close_info[3]):  # or await if_5m(semaphore, symbol, close_info[3]):
+            if await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'].pop(symbol)
                 with open('alert_all.json', 'w') as f:
                     json.dump(alert_all, f, ensure_ascii=False, indent=4)
             return
-        # recent_zf_max = max([abs(k) for k in kline_zf[-7:-1]])  # 近10天最大涨跌幅（绝对值）
-        # recent_price_max = max(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最大价格
-        # recent_price_min = min(kline_open[-25:-1] + kline_close[-25:-1])  # 近10天最低价格
-        if (  # kline_zf[-1] >= recent_zf_max and  # 涨幅最大
-                kline_close[-2] >= kline_close[-3] and  # 当日为阳线
-                await increase_oi(semaphore, symbol, 'LONG')  # and
-                # await if_5m(semaphore, symbol, 'SHORT')
+        if (kline_close[-2] >= kline_close[-3] and  # 当日为阳线
+                await increase_oi(semaphore, symbol, 'LONG', kline_close)
         ):
-            zy = kline_close[-1]  # + kline_close[-2] * recent_zf_max / 7
-            zs = kline_close[-1]  # - kline_close[-2] * min(0.7 / leverage, recent_zf_max * 0.7)
+            zy = kline_close[-1] * 1.1
+            zs = kline_close[-1] * 0.9
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
                 alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
-
-        elif (  # kline_zf[-1]<= -recent_zf_max and  # 跌幅最大
-                kline_close[-2] <= kline_close[-3] and  # 当日为阴线
-                await increase_oi(semaphore, symbol, 'SHORT') and
-                await if_5m(semaphore, symbol, 'LONG')
+        elif (kline_close[-2] <= kline_close[-3] and  # 当日为阴线
+              await increase_oi(semaphore, symbol, 'SHORT', kline_close)
         ):
-            zy = kline_close[-1]  # - kline_close[-2] * recent_zf_max / 7
-            zs = kline_close[-1]  # - kline_close[-2] * max(-0.7 / leverage, -recent_zf_max * 0.7)
+            zy = kline_close[-1] * 0.9
+            zs = kline_close[-1] * 1.1
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
                 alert_all['POSITIONS'][symbol] = [zy, zs, 'BUY', 'SHORT']
-
     except:
         traceback.print_exc()
         return
