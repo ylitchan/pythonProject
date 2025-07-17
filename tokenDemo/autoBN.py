@@ -248,8 +248,9 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
                     return False
-                for index in range(-2, -len(kc), -1):
-                    if kc[index] >= kc[index - 1] and sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                for index in range(-2, -len(kc) + 2, -1):
+                    if kc[index - 1] >= kc[index - 2] and sumOpenInterest[index] > max(
+                            sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
                         return False
                     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
@@ -258,13 +259,14 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                     elif sumOpenInterestValue[index] > sumOpenInterestValue[index - 1] and \
                             sumOpenInterest[index] < sumOpenInterest[index - 1]:
                         return True
-                return True
+                return False
             else:
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
                     return False
-                for index in range(-2, - len(kc), -1):
-                    if kc[index] <= kc[index - 1] and sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                for index in range(-2, - len(kc) + 2, -1):
+                    if kc[index - 1] <= kc[index - 2] and sumOpenInterest[index] > max(
+                            sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
                         return False
                     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
@@ -273,7 +275,7 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                     elif sumOpenInterestValue[index] < sumOpenInterestValue[index - 1] and \
                             sumOpenInterest[index] < sumOpenInterest[index - 1]:
                         return True
-                return True
+                return False
         except:
             return False
 
@@ -323,7 +325,7 @@ async def get_kline(semaphore, symbol, t: str):
         interval = t[:2].lower()
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
         try:
-            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=99)
+            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=100)
             # 一次性将所有数据转换为浮点数
             return [list(map(float, sublist)) for sublist in kline]
         except:
