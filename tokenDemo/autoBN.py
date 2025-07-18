@@ -245,41 +245,37 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
             print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
             if positionSide == "LONG":
-                if sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
-                        sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]):
-                    return True
-                else:
+                if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
+                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
                     return False
-                # for index in range(-2, -len(kc) + 2, -1):
-                #     if max(kc[index - 6:index - 1]) >= kc[index - 1] >= kc[index - 2] and sumOpenInterest[index] > max(
-                #             sumOpenInterest[index - 2:index]) and \
-                #             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
-                #         return False
-                #     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
-                #             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
-                #         return True
-                #     elif sumOpenInterestValue[index] > sumOpenInterestValue[index - 1] and \
-                #             sumOpenInterest[index] < sumOpenInterest[index - 1]:
-                #         return True
-                # return False
+                for index in range(-2, -len(kc) + 2, -1):
+                    if max(kc[index - 6:index - 1]) >= kc[index - 1] >= kc[index - 2] and sumOpenInterest[index] > max(
+                            sumOpenInterest[index - 2:index]) and \
+                            sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
+                        return False
+                    elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                            sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
+                        return True
+                    elif sumOpenInterestValue[index] > sumOpenInterestValue[index - 1] and \
+                            sumOpenInterest[index] < sumOpenInterest[index - 1]:
+                        return True
+                return False
             else:
-                if sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
-                        sumOpenInterestValue[-1] < min(sumOpenInterestValue[-3:-1]):
-                    return True
-                else:
+                if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
+                        sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
                     return False
-                # for index in range(-2, - len(kc) + 2, -1):
-                #     if min(kc[index - 6:index - 1]) <= kc[index - 1] <= kc[index - 2] and sumOpenInterest[index] > max(
-                #             sumOpenInterest[index - 2:index]) and \
-                #             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
-                #         return False
-                #     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
-                #             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
-                #         return True
-                #     elif sumOpenInterestValue[index] < sumOpenInterestValue[index - 1] and \
-                #             sumOpenInterest[index] < sumOpenInterest[index - 1]:
-                #         return True
-                # return False
+                for index in range(-2, - len(kc) + 2, -1):
+                    if min(kc[index - 6:index - 1]) <= kc[index - 1] <= kc[index - 2] and sumOpenInterest[index] > max(
+                            sumOpenInterest[index - 2:index]) and \
+                            sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
+                        return False
+                    elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                            sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
+                        return True
+                    elif sumOpenInterestValue[index] < sumOpenInterestValue[index - 1] and \
+                            sumOpenInterest[index] < sumOpenInterest[index - 1]:
+                        return True
+                return False
         except:
             return False
 
