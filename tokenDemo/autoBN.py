@@ -332,7 +332,7 @@ async def get_kline(semaphore, symbol, t: str):
             return []
 
 
-async def rzq_token(semaphore, symbol, success, symbols_info, condition):
+async def rzq_token(semaphore, symbol, success, symbols_info):
     """
     异步分析指定交易对的 K 线数据，筛选符合交易条件的交易对并执行交易
 
@@ -401,11 +401,10 @@ async def rzq_market(market):
     :param market: 市场名称，如 'BN'（币安）
     """
     now = datetime.datetime.now()
-    condition = now.hour == 8 and now.minute < 2 and now.second < 15
+    condition = now.hour == 8
     symbols = []
     # 每天早上8点重置数据
-    if condition:
-        slot_balance[0] = 0.0
+    slot_balance[0] = 0.0
     for i in range(10):
         try:
             exchange_info = await asyncio.to_thread(um_futures_client.exchange_info)
@@ -434,7 +433,7 @@ async def rzq_market(market):
     for i in range(0, len(symbols), chunk_size):
         # 分批处理以避免内存占用过高
         symbol_chunk = symbols[i:i + chunk_size]
-        tasks = [rzq_token(semaphore, symbol, success, symbols_info, condition) for symbol in symbol_chunk]
+        tasks = [rzq_token(semaphore, symbol, success, symbols_info) for symbol in symbol_chunk]
         # 等待当前批次完成
         await asyncio.gather(*tasks)
         # 进行垃圾回收以释放内存
