@@ -347,7 +347,7 @@ async def if_basis(semaphore, symbol, kc):
             kline = await asyncio.to_thread(um_futures_client.index_price_klines, pair=symbol, interval='1d', limit=1)
             # 一次性将所有数据转换为浮点数
             kline = [list(map(float, sublist)) for sublist in kline]
-            if (basis := kline[-1][4] / kc[-1]) > 1.015:
+            if (basis := kline[-1][4] / kc[-1]) > 1.005:
                 send_msg(f'{symbol} 基差异常：{basis * 100 - 100:.2f}%', True)
         except:
             return
@@ -373,8 +373,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         kline = await get_kline(semaphore, symbol, "1Dutc")
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
-        await if_basis(semaphore, symbol, kline_close)
         if not condition:
+            await if_basis(semaphore, symbol, kline_close)
             return
         success.add(symbol)
         if len(kline) < 4:  # 数据不足，跳过
