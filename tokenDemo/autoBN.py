@@ -347,8 +347,8 @@ async def if_basis(semaphore, symbol, kc):
             kline = await asyncio.to_thread(um_futures_client.index_price_klines, pair=symbol, interval='1d', limit=1)
             # 一次性将所有数据转换为浮点数
             kline = [list(map(float, sublist)) for sublist in kline]
-            if (basis := kline[-1][4] / kc[-1]) > 1.02:
-                send_msg(f'{symbol} 基差超过2%：{basis * 100 - 100:.2f}%', True)
+            if (basis := kline[-1][4] / kc[-1]) > 1.015:
+                send_msg(f'{symbol} 基差异常：{basis * 100 - 100:.2f}%', True)
         except:
             return
 
@@ -377,8 +377,6 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         if not condition:
             return
         success.add(symbol)
-        # 计算涨跌幅：收盘价/开盘价-1
-        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
         if len(kline) < 4:  # 数据不足，跳过
             return
         if close_info := alert_all['POSITIONS'].get(symbol):
@@ -388,6 +386,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
                 with open('alert_all.json', 'w') as f:
                     json.dump(alert_all, f, ensure_ascii=False, indent=4)
             return
+        # 计算涨跌幅：收盘价/开盘价-1
+        kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
         if (kline_close[-3] <= kline_close[-2] <= max(kline_close[-7:-2]) and  # 当日为阳线
                 await increase_oi(semaphore, symbol, 'LONG', kline_close)
         ):
