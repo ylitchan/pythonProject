@@ -117,6 +117,9 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
     :return: 成功开仓返回交易对符号，失败返回None
     """
     try:
+        if len(alert_all["POSITIONS"]) >= 6:
+            send_msg(f'{symbol} 开仓失败：已开仓数量过多')
+            return None
         # 获取账户可用余额
         account_data = um_futures_client.account()
         balance = float(account_data['availableBalance'])
@@ -140,7 +143,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
             return None
 
         # 计算可用资金的80%作为最大可用金额（保留部分资金作为缓冲）
-        slot_balance[0] = max(balance * 0.1, slot_balance[0])
+        slot_balance[0] = max(balance * 0.2, slot_balance[0])
         safe_balance = min(slot_balance[0], balance * 0.7)
 
         # 根据杠杆计算交易数量
