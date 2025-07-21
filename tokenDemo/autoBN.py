@@ -26,7 +26,7 @@ import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
-def send_msg(msg):
+def send_msg(msg, wx=False):
     """
     发送消息到企业微信群聊
 
@@ -37,18 +37,23 @@ def send_msg(msg):
         # 记录当前时间和消息内容
         current_time = datetime.datetime.now()
         print(f"{current_time} - 发送消息: {msg}")
-
-        # 构建企业微信消息格式
-        json_msg = {
-            "msgtype": "text",
-            "text": {'content': msg}
-        }
-
-        # 发送POST请求到企业微信API
-        response = session.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
-            json=json_msg)
-
+        if wx:
+            json_msg = {"MsgItem": [
+                {"AtWxIDList": ["string"], "ImageContent": "", "MsgType": 0, "TextContent": msg,
+                 "ToUserName": "49124710049@chatroom"}]}
+            response = session.post(
+                'http://172.31.4.119:1238/message/SendTextMessage?key=c0939a40-f214-498e-9d10-88e366d08bec',
+                json=json_msg)
+        else:
+            # 构建企业微信消息格式
+            json_msg = {
+                "msgtype": "text",
+                "text": {'content': msg}
+            }
+            # 发送POST请求到企业微信API
+            response = session.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
+                json=json_msg)
         # 检查响应状态（可选）
         if response.status_code != 200:
             print(f"消息发送失败，状态码: {response.status_code}")
@@ -343,7 +348,7 @@ async def if_basis(semaphore, symbol, kc):
             # 一次性将所有数据转换为浮点数
             kline = [list(map(float, sublist)) for sublist in kline]
             if (basis := kline[-1][4] / kc[-1]) > 1.02:
-                send_msg((f'{symbol} 基差超过2%：{basis * 100 - 100:.2f}%'))
+                send_msg(f'{symbol} 基差超过2%：{basis * 100 - 100:.2f}%', True)
         except:
             return
 
