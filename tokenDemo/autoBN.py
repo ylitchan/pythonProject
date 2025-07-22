@@ -428,7 +428,6 @@ async def rzq_market(market):
     condition = now.hour == 8 and now.minute == 5
     symbols = []
     # 每天早上8点重置数据
-    slot_balance[0] = 0.0
     for i in range(10):
         try:
             exchange_info = await asyncio.to_thread(um_futures_client.exchange_info)
