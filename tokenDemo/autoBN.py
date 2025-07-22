@@ -122,7 +122,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
     :return: 成功开仓返回交易对符号，失败返回None
     """
     try:
-        if len(alert_all["POSITIONS"]) >= 6:
+        if len(alert_all["POSITIONS"]) >= 10:
             send_msg(f'{symbol} 开仓失败：已开仓数量过多')
             return None
         # 获取账户可用余额
@@ -347,7 +347,7 @@ async def if_basis(semaphore, symbol, kc):
             kline = await asyncio.to_thread(um_futures_client.index_price_klines, pair=symbol, interval='1d', limit=1)
             # 一次性将所有数据转换为浮点数
             kline = [list(map(float, sublist)) for sublist in kline]
-            if (basis := kline[-1][4] / kc[-1]) > 1.005:
+            if (basis := kline[-1][4] / kc[-1]) > 1.01:
                 send_msg(f'{symbol} 基差异常：{basis * 100 - 100:.2f}%', True)
         except:
             return
