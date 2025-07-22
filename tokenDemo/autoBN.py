@@ -42,7 +42,7 @@ def send_msg(msg, wx=False):
                 {"AtWxIDList": ["string"], "ImageContent": "", "MsgType": 0, "TextContent": msg,
                  "ToUserName": "49124710049@chatroom"}]}
             response = session.post(
-                'http://172.31.4.119:1238/message/SendTextMessage?key=c0939a40-f214-498e-9d10-88e366d08bec',
+                'http://http://192.168.144.199/:1238/message/SendTextMessage?key=c0939a40-f214-498e-9d10-88e366d08bec',
                 json=json_msg)
         else:
             # 构建企业微信消息格式

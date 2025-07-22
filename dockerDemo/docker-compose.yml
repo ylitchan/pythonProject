@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  autoBN:
+    build:
+      context: ./  # Dockerfile 所在目录
+      dockerfile: Dockerfile  # 可省略，如果就是默认名字
+    image: autobn:latest
+    container_name: autoBN
+    restart: always

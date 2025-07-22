@@ -36,13 +36,13 @@ def send_msg(msg, wx=False):
     try:
         # 记录当前时间和消息内容
         current_time = datetime.datetime.now()
-        print(f"{current_time} - 发送消息: {msg}")
+        print(f"{current_time} - 发送消息: {msg}", flush=True)
         if wx:
             json_msg = {"MsgItem": [
                 {"AtWxIDList": ["string"], "ImageContent": "", "MsgType": 0, "TextContent": msg,
                  "ToUserName": "49124710049@chatroom"}]}
             response = session.post(
-                'http://172.31.4.119:1238/message/SendTextMessage?key=c0939a40-f214-498e-9d10-88e366d08bec',
+                'http://http://192.168.144.199/:1238/message/SendTextMessage?key=c0939a40-f214-498e-9d10-88e366d08bec',
                 json=json_msg)
         else:
             # 构建企业微信消息格式
@@ -56,9 +56,9 @@ def send_msg(msg, wx=False):
                 json=json_msg)
         # 检查响应状态（可选）
         if response.status_code != 200:
-            print(f"消息发送失败，状态码: {response.status_code}")
+            print(f"消息发送失败，状态码: {response.status_code}", flush=True)
     except Exception as e:
-        print(f"消息发送异常: {str(e)}")
+        print(f"消息发送异常: {str(e)}", flush=True)
         # 记录异常但不中断程序
 
 
@@ -251,7 +251,7 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
+            print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}', flush=True)
             if positionSide == "LONG":
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
@@ -304,7 +304,7 @@ async def decrease_oi(semaphore, symbol, positionSide):
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            print(f'{symbol} 减仓信号${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}')
+            print(f'{symbol} 减仓信号${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}', flush=True)
             if positionSide == "LONG":
                 return sumOpenInterestValue[-1] > sumOpenInterestValue[-2] and \
                     sumOpenInterest[-1] < sumOpenInterest[-2] or \
@@ -446,7 +446,7 @@ async def rzq_market(market):
             await asyncio.sleep(2)
     # 创建并发控制信号量（限制最大并发数为10）
     semaphore = asyncio.Semaphore(10)
-    print(now, f'{market}任务开始 - 总交易对数量: {len(symbols)}')
+    print(now, f'{market}任务开始 - 总交易对数量: {len(symbols)}', flush=True)
 
     # 初始化数据收集容器
     success = set()  # 成功处理的交易对
@@ -461,7 +461,7 @@ async def rzq_market(market):
         await asyncio.gather(*tasks)
         # 进行垃圾回收以释放内存
         gc.collect()
-    print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all)
+    print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all, flush=True)
     if condition:
         with open('alert_all.json', 'w') as f:
             json.dump(alert_all, f, ensure_ascii=False, indent=4)
@@ -498,7 +498,7 @@ def get_last_trading_days(today=None, days=60):
 
         # 如果没有有效日期，返回空结果
         if valid_dates.empty:
-            print(f"警告: 未找到 {today} 之前的交易日")
+            print(f"警告: 未找到 {today} 之前的交易日", flush=True)
             return None, None, []
 
         # 获取指定日期前的最近n个交易日，按时间降序排列
@@ -514,7 +514,7 @@ def get_last_trading_days(today=None, days=60):
 
         return start_date, end_date, zt_date
     except Exception as e:
-        print(f"获取交易日历失败: {str(e)}")
+        print(f"获取交易日历失败: {str(e)}", flush=True)
         # 发生异常时返回空结果
         return None, None, []
 
@@ -545,11 +545,11 @@ def filter_stocks():
         # 获取当天涨停股池
         zt_df = ak.stock_zt_pool_em(date=zt_date)
         if zt_df.empty:
-            print(f"没有在 {zt_date} 找到涨停股票。")
+            print(f"没有在 {zt_date} 找到涨停股票。", flush=True)
             continue
         # 提取股票代码和名称
         stock_codes = zt_df[['代码', '名称']].values.tolist()
-        print(f"{zt_date}涨停股：{stock_codes}")
+        print(f"{zt_date}涨停股：{stock_codes}", flush=True)
 
         # 遍历涨停股票进行筛选
         for code in stock_codes:
@@ -562,7 +562,7 @@ def filter_stocks():
                 continue
 
             code.append(str(hist.iloc[-1]['涨跌幅']))  # 添加最新涨跌幅
-            print(code)
+            print(code, flush=True)
 
             # 分别检查每个筛选条件
             if len(hist) < 60:  # 数据量不足60天
@@ -616,7 +616,7 @@ def monitor_stocks():
     """
     # 获取符合条件的股票列表
     filtered = filter_stocks()
-    print(f"符合量能条件的股票：{filtered}")
+    print(f"符合量能条件的股票：{filtered}", flush=True)
 
     # 如果有符合条件的股票，发送通知
     if filtered:
@@ -687,6 +687,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    print('autoBN启动', flush=True)
     leverage = 3
     health4open = 70
     session = requests.Session()
