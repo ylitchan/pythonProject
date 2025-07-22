@@ -1,0 +1,6 @@
+akshare==1.16.73
+APScheduler==3.10.4
+binance_connector==3.6.0
+binance_futures_connector==4.1.0
+pandas==2.3.1
+Requests==2.32.4
