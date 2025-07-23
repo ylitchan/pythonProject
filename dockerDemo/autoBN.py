@@ -380,9 +380,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         if len(kline) < 4:  # 数据不足，跳过
             return
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] or await decrease_oi(semaphore,
-                                                                                                         symbol,
-                                                                                                         close_info[3]):
+            if kline_close[-1] >= close_info[0] or kline_close[-1] <= close_info[1] \
+                    or await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'].pop(symbol)
                 with open('alert_all.json', 'w') as f:
