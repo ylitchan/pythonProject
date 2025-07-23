@@ -9,6 +9,8 @@ services:
     image: autobn:latest
     container_name: autoBN
     restart: always
+    volumes:
+      - autoBN_data:/app
     networks:
       - shared-network
     environment:
@@ -18,3 +20,6 @@ networks:
   shared-network:
     external: true
     name: deploy_wechatpadpro-network  # 关键：使用项目A创建的网络全名
+
+volumes:
+  autoBN_data:
