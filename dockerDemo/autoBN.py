@@ -42,7 +42,7 @@ def send_msg(msg, wx=False):
                 {"AtWxIDList": ["string"], "ImageContent": "", "MsgType": 0, "TextContent": msg,
                  "ToUserName": "49124710049@chatroom"}]}
             response = session.post(
-                'http://192.168.144.199:1238/message/SendTextMessage?key=fe197940-30c1-4cea-a41a-17b461423f83',
+                'http://wechatpadpro:1238/message/SendTextMessage?key=fe197940-30c1-4cea-a41a-17b461423f83',
                 json=json_msg)
         else:
             # 构建企业微信消息格式
