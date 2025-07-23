@@ -380,8 +380,9 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         if len(kline) < 4:  # 数据不足，跳过
             return
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if close_info[3] == 'LONG' and (kline[-2][3] < close_info[1] or kline[-2][2] >= close_info[0]) or \
-                    close_info[3] == 'SHORT' and (kline[-2][2] > close_info[1] or kline[-2][3] <= close_info[0]) or \
+            if close_info[3] == 'LONG' and (kline_close[-2] < close_info[1] or kline_close[-2] >= close_info[0]) or \
+                    close_info[3] == 'SHORT' and (
+                    kline_close[-2] > close_info[1] or kline_close[-2] <= close_info[0]) or \
                     await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'].pop(symbol)
