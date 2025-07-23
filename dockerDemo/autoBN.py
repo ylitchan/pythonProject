@@ -257,7 +257,7 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
                     return False
                 for index in range(-2, -len(kc) + 2, -1):
-                    if max(kc[index - 6:index - 1]) >= kc[index - 1] >= kc[index - 2] and sumOpenInterest[index] > max(
+                    if max(kc[index - 7:index - 1]) <= kc[index - 1] and sumOpenInterest[index] > max(
                             sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
                         return False
@@ -273,7 +273,7 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                         sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
                     return False
                 for index in range(-2, - len(kc) + 2, -1):
-                    if min(kc[index - 6:index - 1]) <= kc[index - 1] <= kc[index - 2] and sumOpenInterest[index] > max(
+                    if min(kc[index - 7:index - 1]) >= kc[index - 1] and sumOpenInterest[index] > max(
                             sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
                         return False
@@ -390,16 +390,17 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             return
             # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if (kline_close[-3] <= kline_close[-2] <= kline[-2][2] <= max([k[2] for k in kline[-8:-2]]) and  # 当日为阳线
-                await increase_oi(semaphore, symbol, 'LONG', kline_close)
+        kc = [k[1] for k in kline[-8:-2]] + [k[4] for k in kline[-8:-2]]
+        if (max(kc) <= kline_close[-2] and  # 当日为阳线
+                await increase_oi(semaphore, symbol, 'LONG', kc)
         ):
             zy = kline_close[-1] * 2
             zs = min([k[3] for k in kline[-8:-2]])
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
                 alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
-        elif (kline_close[-3] >= kline_close[-2] >= kline[-2][3] >= min([k[3] for k in kline[-8:-2]]) and  # 当日为阴线
-              await increase_oi(semaphore, symbol, 'SHORT', kline_close)
+        elif (min(kc) >= kline_close[-2] and  # 当日为阴线
+              await increase_oi(semaphore, symbol, 'SHORT', kc)
         ):
             zy = kline_close[-1] * 0.5
             zs = max([k[2] for k in kline[-8:-2]])
