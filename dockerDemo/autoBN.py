@@ -341,6 +341,7 @@ async def get_kline(semaphore, symbol, t: str):
 
 
 async def if_basis():
+    BASIS = {}
     while True:
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
         try:
@@ -351,8 +352,13 @@ async def if_basis():
                                                     url="https://fapi.binance.com/fapi/v2/ticker/price")).json()
             # 一次性将所有数据转换为浮点数
             for p in market_price:
-                if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) >= 1.015:
+                if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) > 1.015 and \
+                        time.time() - BASIS.get(p['symbol'], 0) > 180:
+                    BASIS[p['symbol']] = time.time()
                     send_msg(f'{p["symbol"]} 基差异常：{basis * 100 - 100:.2f}%', True)
+                elif basis >= 1.02:
+                    BASIS[p['symbol']] = time.time()
+                    send_msg(f'{p["symbol"]} 基差超过2%：{basis * 100 - 100:.2f}%', True)
         except:
             traceback.print_exc()
         finally:
