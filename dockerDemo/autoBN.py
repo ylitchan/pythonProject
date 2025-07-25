@@ -340,20 +340,26 @@ async def get_kline(semaphore, symbol, t: str):
             return []
 
 
-async def if_basis(semaphore, symbol, kc):
-    async with semaphore:
+async def if_basis():
+    while True:
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
         try:
-            kline = await asyncio.to_thread(um_futures_client.index_price_klines, pair=symbol, interval='1d', limit=1)
+            index_price = await asyncio.to_thread(session.get,
+                                                  url='https://fapi.binance.com/fapi/v1/premiumIndex')
+            index_price = {ip['symbol']: float(ip['indexPrice']) for ip in index_price.json()}
+            market_price = (await asyncio.to_thread(session.get,
+                                                    url="https://fapi.binance.com/fapi/v2/ticker/price")).json()
             # 一次性将所有数据转换为浮点数
-            kline = [list(map(float, sublist)) for sublist in kline]
-            if (basis := kline[-1][4] / kc[-1]) > 1.01:
-                send_msg(f'{symbol} 基差异常：{basis * 100 - 100:.2f}%', True)
+            for p in market_price:
+                if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) >= 1.02:
+                    send_msg(f'{p["symbol"]} 基差异常：{basis * 100 - 100:.2f}%', True)
         except:
-            return
+            traceback.print_exc()
+        finally:
+            await asyncio.sleep(2)
 
 
-async def rzq_token(semaphore, symbol, success, symbols_info, condition):
+async def rzq_token(semaphore, symbol, success, symbols_info):
     """
     异步分析指定交易对的 K 线数据，筛选符合交易条件的交易对并执行交易
 
@@ -373,9 +379,6 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         kline = await get_kline(semaphore, symbol, "1Dutc")
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
-        if not condition:
-            await if_basis(semaphore, symbol, kline_close)
-            return
         success.add(symbol)
         if len(kline) < 4:  # 数据不足，跳过
             return
@@ -384,8 +387,6 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
                     await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'].pop(symbol)
-                with open('alert_all.json', 'w') as f:
-                    json.dump(alert_all, f, ensure_ascii=False, indent=4)
             return
             # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
@@ -426,7 +427,6 @@ async def rzq_market(market):
     :param market: 市场名称，如 'BN'（币安）
     """
     now = datetime.datetime.now()
-    condition = now.hour == 8 and now.minute == 5
     symbols = []
     # 每天早上8点重置数据
     for i in range(10):
@@ -457,15 +457,14 @@ async def rzq_market(market):
     for i in range(0, len(symbols), chunk_size):
         # 分批处理以避免内存占用过高
         symbol_chunk = symbols[i:i + chunk_size]
-        tasks = [rzq_token(semaphore, symbol, success, symbols_info, condition) for symbol in symbol_chunk]
+        tasks = [rzq_token(semaphore, symbol, success, symbols_info) for symbol in symbol_chunk]
         # 等待当前批次完成
         await asyncio.gather(*tasks)
         # 进行垃圾回收以释放内存
         gc.collect()
     print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all, flush=True)
-    if condition:
-        with open('alert_all.json', 'w') as f:
-            json.dump(alert_all, f, ensure_ascii=False, indent=4)
+    with open('alert_all.json', 'w') as f:
+        json.dump(alert_all, f, ensure_ascii=False, indent=4)
 
 
 def get_last_trading_days(today=None, days=60):
@@ -668,8 +667,8 @@ async def main():
     scheduler.add_job(
         rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
-        hour='*',  # 每天8点和20点
-        minute='*/1',  # 每1分钟
+        hour='08',  # 每天8点和20点
+        minute='05',  # 每1分钟
         second='00',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数
@@ -678,12 +677,12 @@ async def main():
         coalesce=True,  # 合并错过的执行（避免积压）
         name='币安市场分析任务'  # 任务名称（便于日志识别）
     )
-
     # 启动调度器
     scheduler.start()
 
     # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
+    await if_basis()
     await stop_event.wait()  # 等待事件触发（实际不会发生）
 
 
