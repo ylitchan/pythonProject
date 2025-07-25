@@ -389,7 +389,6 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
             return
             # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        kline_open = [k[1] for k in kline]
         if (kline_close[-4] < kline_close[-3] < kline_close[-2] and  # 当日为阳线
                 await increase_oi(semaphore, symbol, 'LONG', kline_close)
         ):
