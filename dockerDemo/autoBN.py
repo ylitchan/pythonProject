@@ -351,7 +351,7 @@ async def if_basis():
                                                     url="https://fapi.binance.com/fapi/v2/ticker/price")).json()
             # 一次性将所有数据转换为浮点数
             for p in market_price:
-                if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) >= 1.02:
+                if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) >= 1.015:
                     send_msg(f'{p["symbol"]} 基差异常：{basis * 100 - 100:.2f}%', True)
         except:
             traceback.print_exc()
@@ -569,7 +569,7 @@ def filter_stocks():
                 continue
 
             # 近两天有下跌
-            if hist.iloc[-2:]['涨跌幅'].min() < 0:
+            if hist.iloc[-2:]['涨跌幅'].min() <= 0:
                 continue
 
             # 当前价格低于10天均价
@@ -591,9 +591,10 @@ def filter_stocks():
                 continue
 
             # 有连续上涨（任意两天都为正涨幅）
-            if any(x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist())):
+            if i > 0 and any(hist.iloc[x]['涨跌幅'] > 0 and hist.iloc[y]['涨跌幅'] > 0 and \
+                             hist.iloc[x]['成交量'] > hist.iloc[max(-i - 2, x - 2):x]['成交量'].max() \
+                             for x, y in pairwise(range(-2, -i - 4, -1))):
                 continue
-
             # 添加符合条件的股票
             selected.add(''.join(code))
 
