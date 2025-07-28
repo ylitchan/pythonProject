@@ -437,6 +437,8 @@ async def rzq_market(market):
     # 每天早上8点重置数据
     for i in range(10):
         try:
+            position_risk = [i['symbol'] for i in um_futures_client.get_position_risk()]
+            alert_all['POSITIONS'] = {k: v for k, v in alert_all['POSITIONS'].items() if k in position_risk}
             exchange_info = await asyncio.to_thread(um_futures_client.exchange_info)
             sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
                 f'0.{"1" * i["quantityPrecision"]}') for i in exchange_info['symbols']}
@@ -454,10 +456,8 @@ async def rzq_market(market):
     # 创建并发控制信号量（限制最大并发数为10）
     semaphore = asyncio.Semaphore(10)
     print(now, f'{market}任务开始 - 总交易对数量: {len(symbols)}', flush=True)
-
     # 初始化数据收集容器
     success = set()  # 成功处理的交易对
-
     # 创建并发任务
     chunk_size = 10  # 每批处理的交易对数量
     for i in range(0, len(symbols), chunk_size):
@@ -706,7 +706,5 @@ if __name__ == "__main__":
     um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
     with open('alert_all.json', 'r') as f:
         alert_all = json.load(f)
-        position_risk = [i['symbol'] for i in um_futures_client.get_position_risk()]
-        alert_all['POSITIONS'] = {k: v for k, v in alert_all['POSITIONS'].items() if k in position_risk}
     slot_balance = [0.0]
     asyncio.run(main())
