@@ -353,13 +353,13 @@ async def if_basis():
             time_now = time.time()
             # 一次性将所有数据转换为浮点数
             for p in market_price:
-                if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) > 1.015 and \
-                        time_now - BASIS.get(p['symbol'], 0) > 180:
-                    BASIS[p['symbol']] = time.time()
-                    send_msg(f'{p["symbol"]} 基差异常：{basis * 100 - 100:.2f}%', True)
-                elif basis >= 1.02 and time_now - BASIS.get(p['symbol'], 0) > 60:
+                if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) > 1.02 and \
+                        time_now - BASIS.get(p['symbol'], 0) > 60:
                     BASIS[p['symbol']] = time.time()
                     send_msg(f'{p["symbol"]} 基差超过2%：{basis * 100 - 100:.2f}%', True)
+                elif basis >= 1.015 and time_now - BASIS.get(p['symbol'], 0) > 180:
+                    BASIS[p['symbol']] = time.time()
+                    send_msg(f'{p["symbol"]} 基差异常：{basis * 100 - 100:.2f}%', True)
         except:
             traceback.print_exc()
         finally:
