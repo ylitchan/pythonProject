@@ -400,16 +400,16 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         if (kline_close[-4] < kline_close[-3] < kline_close[-2] and  # 当日为阳线
                 await increase_oi(semaphore, symbol, 'LONG', kline_close)
         ):
-            zy = kline_close[-1] * 2
-            zs = kline_close[-1] * 0.5
+            zy = kline_close[-1] * 1.09
+            zs = kline_close[-1] * 0.91
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
                 alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
         elif (kline_close[-4] > kline_close[-3] > kline_close[-2] and  # 当日为阴线
               await increase_oi(semaphore, symbol, 'SHORT', kline_close)
         ):
-            zy = kline_close[-1] * 0.5
-            zs = kline_close[-1] * 2
+            zy = kline_close[-1] * 0.91
+            zs = kline_close[-1] * 1.09
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
                 alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
@@ -675,8 +675,8 @@ async def main():
     scheduler.add_job(
         rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
-        hour='08',  # 每天8点和20点
-        minute='05',  # 每1分钟
+        hour='08',  # 每天8点
+        minute='03',  # 每1分钟
         second='00',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数
