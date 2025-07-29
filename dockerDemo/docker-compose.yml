@@ -11,6 +11,8 @@ services:
     restart: always
     volumes:
       - autoBN_data:/app
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     networks:
       - shared-network
     environment:
