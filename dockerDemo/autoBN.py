@@ -235,7 +235,7 @@ def close_bn_position(symbol, side, positionSide, price_close):
             amount = get_amount_close(symbol)
 
 
-async def increase_oi(semaphore, symbol, positionSide, kc):
+async def increase_oi(semaphore, symbol, positionSide):
     """
     异步获取指定交易对的 K 线数据
 
@@ -256,9 +256,8 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
                     return False
-                for index in range(-2, -len(kc) + 2, -1):
-                    if kc[index - 3] < kc[index - 2] < kc[index - 1] and \
-                            sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                for index in range(-2, -len(oi) + 2, -1):
+                    if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
                         return False
                     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
@@ -272,9 +271,8 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
                     return False
-                for index in range(-2, - len(kc) + 2, -1):
-                    if kc[index - 3] > kc[index - 2] > kc[index - 1] and \
-                            sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                for index in range(-2, - len(oi) + 2, -1):
+                    if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
                         return False
                     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
@@ -398,7 +396,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
         if (kline_close[-4] < kline_close[-3] < kline_close[-2] and  # 当日为阳线
-                await increase_oi(semaphore, symbol, 'LONG', kline_close)
+                await increase_oi(semaphore, symbol, 'LONG')
         ):
             zy = kline_close[-1] * 1.09
             zs = kline_close[-1] * 0.91
@@ -406,7 +404,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
                 alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
         elif (kline_close[-4] > kline_close[-3] > kline_close[-2] and  # 当日为阴线
-              await increase_oi(semaphore, symbol, 'SHORT', kline_close)
+              await increase_oi(semaphore, symbol, 'SHORT')
         ):
             zy = kline_close[-1] * 0.91
             zs = kline_close[-1] * 1.09
@@ -598,9 +596,8 @@ def filter_stocks():
                 continue
 
             # 有连续上涨（任意两天都为正涨幅）
-            if i > 0 and any(hist.iloc[x]['涨跌幅'] > 0 and hist.iloc[y]['涨跌幅'] > 0 and \
-                             hist.iloc[x]['成交量'] > hist.iloc[max(-i - 2, x - 2):x]['成交量'].max() \
-                             for x, y in pairwise(range(-2, -i - 4, -1))):
+            if i > 0 and any(hist.iloc[x]['成交量'] > hist.iloc[max(-i - 2, x - 2):x]['成交量'].max() \
+                             for x in range(-2, -i - 4, -1)):
                 continue
             # 添加符合条件的股票
             selected.add(''.join(code))
