@@ -409,8 +409,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             zy = kline_close[-1] * 0.91
             zs = kline_close[-1] * 1.09
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-            if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
-                alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
+            # if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
+            #     alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
     except:
         traceback.print_exc()
         return
