@@ -10,18 +10,24 @@ services:
     container_name: autoBN
     restart: always
     volumes:
-      - autoBN_data:/app
+      - ./:/app
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     networks:
       - shared-network
     environment:
       - TZ=Asia/Shanghai  # 设置为上海时区，可根据需求修改
+      - APP_NAME=${APP_NAME}
+      - APP_VERSION=${APP_VERSION}
+      - API_KEY=${API_KEY}
+      - API_SECRET=${API_SECRET}
+      - WX_KEY=${WX_KEY}
+      - USER_NAME=${USER_NAME}
 
 networks:
   shared-network:
     external: true
     name: deploy_wechatpadpro-network  # 关键：使用项目A创建的网络全名
 
-volumes:
-  autoBN_data:
+#volumes:
+#  autoBN_data:

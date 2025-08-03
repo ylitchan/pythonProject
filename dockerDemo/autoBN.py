@@ -15,10 +15,10 @@ import asyncio
 import datetime
 import gc
 import json
+import os
 import time
 import traceback
 from decimal import Decimal, ROUND_DOWN
-from itertools import pairwise
 from binance.um_futures import UMFutures
 import akshare as ak
 import pandas as pd
@@ -40,9 +40,9 @@ def send_msg(msg, wx=False):
         if wx:
             json_msg = {"MsgItem": [
                 {"AtWxIDList": ["string"], "ImageContent": "", "MsgType": 0, "TextContent": msg,
-                 "ToUserName": "49124710049@chatroom"}]}
+                 "ToUserName": user_name}]}
             response = session.post(
-                'http://wechatpadpro:1238/message/SendTextMessage?key=fe197940-30c1-4cea-a41a-17b461423f83',
+                f'http://wechatpadpro:1238/message/SendTextMessage?key={wx_key}',
                 json=json_msg)
         else:
             # 构建企业微信消息格式
@@ -694,9 +694,11 @@ if __name__ == "__main__":
     session.verify = False
     session.headers = {'Content-Type': 'application/json'}
     scheduler = AsyncIOScheduler()
-    with open('bn.json', 'r') as f:
-        bn_api = json.load(f)
-    um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
+    wx_key = os.getenv('WX_KEY', 'fe197940-30c1-4cea-a41a-17b461423f83')
+    user_name = os.getenv('USER_NAME', '49124710049@chatroom')
+    um_futures_client = UMFutures(
+        key=os.getenv('API_KEY', 'Uz3Tat0QcGBYRa9E2TQZn1nscd0iNcoEnpDbk71q2uEke3jC8d9NADQCUoXLmkn2'),
+        secret=os.getenv('API_SECRET', 'tqCsBnIj3T9BuZYnwyHJTNVWwL88LA1PQtZHqh3wVV6kWbWRRLyWEfrDknvdm09J'))
     with open('alert_all.json', 'r') as f:
         alert_all = json.load(f)
     slot_balance = [0.0]
