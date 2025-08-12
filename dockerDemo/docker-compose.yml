@@ -26,8 +26,9 @@ services:
 
 networks:
   shared-network:
-    external: true
-    name: deploy_wechatpadpro-network  # 关键：使用项目A创建的网络全名
+    driver: bridge
+#    external: true
+#    name: deploy_wechatpadpro-network  # 关键：使用项目A创建的网络全名
 
 #volumes:
 #  autoBN_data:

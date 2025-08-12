@@ -646,7 +646,7 @@ async def main():
     # 立即执行一次股票监控
     # monitor_stocks()
     # 立即执行一次币安市场分析
-    # await rzq_market('BN')
+    await rzq_market('BN')
 
     # 设置股票监控定时任务 - 在交易时段执行
     scheduler.add_job(
@@ -682,7 +682,7 @@ async def main():
 
     # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
-    await if_basis()
+    # await if_basis()
     await stop_event.wait()  # 等待事件触发（实际不会发生）
 
 
