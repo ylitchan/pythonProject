@@ -23,6 +23,15 @@ services:
       - API_SECRET=${API_SECRET}
       - WX_KEY=${WX_KEY}
       - USER_NAME=${USER_NAME}
+    # 添加定时同步时间的命令，每30秒同步一次
+    command: |
+      sh -c "
+      while true; do
+        date -s \"$$(date -u +'%Y-%m-%d %H:%M:%S')\"
+        sleep 30
+      done &
+      exec python /app/autoBN.py
+      "
 
 networks:
   shared-network:
