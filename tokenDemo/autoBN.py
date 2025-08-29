@@ -15,10 +15,10 @@ import asyncio
 import datetime
 import gc
 import json
+import os
 import time
 import traceback
 from decimal import Decimal, ROUND_DOWN
-from itertools import pairwise
 from binance.um_futures import UMFutures
 import akshare as ak
 import pandas as pd
@@ -36,13 +36,13 @@ def send_msg(msg, wx=False):
     try:
         # 记录当前时间和消息内容
         current_time = datetime.datetime.now()
-        print(f"{current_time} - 发送消息: {msg}")
+        print(f"{current_time} - 发送消息: {msg}", flush=True)
         if wx:
             json_msg = {"MsgItem": [
                 {"AtWxIDList": ["string"], "ImageContent": "", "MsgType": 0, "TextContent": msg,
-                 "ToUserName": "49124710049@chatroom"}]}
+                 "ToUserName": user_name}]}
             response = session.post(
-                'http://192.168.144.199:1238/message/SendTextMessage?key=fe197940-30c1-4cea-a41a-17b461423f83c',
+                f'http://wechatpadpro:1238/message/SendTextMessage?key={wx_key}',
                 json=json_msg)
         else:
             # 构建企业微信消息格式
@@ -56,9 +56,9 @@ def send_msg(msg, wx=False):
                 json=json_msg)
         # 检查响应状态（可选）
         if response.status_code != 200:
-            print(f"消息发送失败，状态码: {response.status_code}")
+            print(f"消息发送失败，状态码: {response.status_code}", flush=True)
     except Exception as e:
-        print(f"消息发送异常: {str(e)}")
+        print(f"消息发送异常: {str(e)}", flush=True)
         # 记录异常但不中断程序
 
 
@@ -235,7 +235,7 @@ def close_bn_position(symbol, side, positionSide, price_close):
             amount = get_amount_close(symbol)
 
 
-async def increase_oi(semaphore, symbol, positionSide, kc):
+async def increase_oi(semaphore, symbol, positionSide):
     """
     异步获取指定交易对的 K 线数据
 
@@ -251,14 +251,13 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}')
+            print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}', flush=True)
             if positionSide == "LONG":
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
                     return False
-                for index in range(-2, -len(kc) + 2, -1):
-                    if max(kc[index - 6:index - 1]) >= kc[index - 1] >= kc[index - 2] and sumOpenInterest[index] > max(
-                            sumOpenInterest[index - 2:index]) and \
+                for index in range(-2, -len(oi) + 2, -1):
+                    if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
                         return False
                     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
@@ -272,9 +271,8 @@ async def increase_oi(semaphore, symbol, positionSide, kc):
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
                     return False
-                for index in range(-2, - len(kc) + 2, -1):
-                    if min(kc[index - 6:index - 1]) <= kc[index - 1] <= kc[index - 2] and sumOpenInterest[index] > max(
-                            sumOpenInterest[index - 2:index]) and \
+                for index in range(-2, - len(oi) + 2, -1):
+                    if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
                         return False
                     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
@@ -304,7 +302,7 @@ async def decrease_oi(semaphore, symbol, positionSide):
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            print(f'{symbol} 减仓信号${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}')
+            print(f'{symbol} 减仓信号${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}', flush=True)
             if positionSide == "LONG":
                 return sumOpenInterestValue[-1] > sumOpenInterestValue[-2] and \
                     sumOpenInterest[-1] < sumOpenInterest[-2] or \
@@ -340,20 +338,33 @@ async def get_kline(semaphore, symbol, t: str):
             return []
 
 
-async def if_basis(semaphore, symbol, kc):
-    async with semaphore:
+async def if_basis():
+    BASIS = {}
+    while True:
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
         try:
-            kline = await asyncio.to_thread(um_futures_client.index_price_klines, pair=symbol, interval='1d', limit=1)
+            index_price = await asyncio.to_thread(session.get,
+                                                  url='https://fapi.binance.com/fapi/v1/premiumIndex')
+            index_price = {ip['symbol']: float(ip['indexPrice']) for ip in index_price.json()}
+            market_price = (await asyncio.to_thread(session.get,
+                                                    url="https://fapi.binance.com/fapi/v2/ticker/price")).json()
+            time_now = time.time()
             # 一次性将所有数据转换为浮点数
-            kline = [list(map(float, sublist)) for sublist in kline]
-            if (basis := kline[-1][4] / kc[-1]) > 1.01:
-                send_msg(f'{symbol} 基差异常：{basis * 100 - 100:.2f}%', True)
+            for p in market_price:
+                if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) > 1.02 and \
+                        time_now - BASIS.get(p['symbol'], 0) > 60:
+                    BASIS[p['symbol']] = time.time()
+                    send_msg(f'{p["symbol"]} 基差超过2%：{basis * 100 - 100:.2f}%', True)
+                elif basis >= 1.015 and time_now - BASIS.get(p['symbol'], 0) > 180:
+                    BASIS[p['symbol']] = time.time()
+                    send_msg(f'{p["symbol"]} 基差异常：{basis * 100 - 100:.2f}%', True)
         except:
-            return
+            traceback.print_exc()
+        finally:
+            await asyncio.sleep(2)
 
 
-async def rzq_token(semaphore, symbol, success, symbols_info, condition):
+async def rzq_token(semaphore, symbol, success, symbols_info):
     """
     异步分析指定交易对的 K 线数据，筛选符合交易条件的交易对并执行交易
 
@@ -373,37 +384,33 @@ async def rzq_token(semaphore, symbol, success, symbols_info, condition):
         kline = await get_kline(semaphore, symbol, "1Dutc")
         # 提取 K 线数据中的各项指标
         kline_close = [k[4] for k in kline]  # 收盘价列表
-        if not condition:
-            await if_basis(semaphore, symbol, kline_close)
-            return
         success.add(symbol)
         if len(kline) < 4:  # 数据不足，跳过
             return
         if close_info := alert_all['POSITIONS'].get(symbol):
-            if await decrease_oi(semaphore, symbol, close_info[3]):
+            if kline_close[-2] <= close_info[1] or kline_close[-2] >= close_info[0] or \
+                    await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'].pop(symbol)
-                with open('alert_all.json', 'w') as f:
-                    json.dump(alert_all, f, ensure_ascii=False, indent=4)
             return
-        # 计算涨跌幅：收盘价/开盘价-1
+            # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if (kline_close[-3] <= kline_close[-2] <= max(kline_close[-7:-2]) and  # 当日为阳线
-                await increase_oi(semaphore, symbol, 'LONG', kline_close)
+        if (kline_close[-3] < kline_close[-2] and  # 当日为阳线
+                await increase_oi(semaphore, symbol, 'LONG')
         ):
-            zy = kline_close[-1] * 1.1
-            zs = kline_close[-1] * 0.9
+            zy = kline_close[-1] * 1.09
+            zs = kline_close[-1] * 0.91
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
                 alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
-        elif (kline_close[-3] >= kline_close[-2] >= min(kline_close[-7:-2]) and  # 当日为阴线
-              await increase_oi(semaphore, symbol, 'SHORT', kline_close)
+        elif (kline_close[-3] > kline_close[-2] and  # 当日为阴线
+              await increase_oi(semaphore, symbol, 'SHORT')
         ):
-            zy = kline_close[-1] * 0.9
-            zs = kline_close[-1] * 1.1
+            zy = kline_close[-1] * 0.91
+            zs = kline_close[-1] * 1.09
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-            if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
-                alert_all['POSITIONS'][symbol] = [zy, zs, 'BUY', 'SHORT']
+            # if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
+            #     alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
     except:
         traceback.print_exc()
         return
@@ -425,11 +432,12 @@ async def rzq_market(market):
     :param market: 市场名称，如 'BN'（币安）
     """
     now = datetime.datetime.now()
-    condition = now.hour == 8 and now.minute == 5
     symbols = []
     # 每天早上8点重置数据
     for i in range(10):
         try:
+            position_risk = [i['symbol'] for i in um_futures_client.get_position_risk()]
+            alert_all['POSITIONS'] = {k: v for k, v in alert_all['POSITIONS'].items() if k in position_risk}
             exchange_info = await asyncio.to_thread(um_futures_client.exchange_info)
             sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
                 f'0.{"1" * i["quantityPrecision"]}') for i in exchange_info['symbols']}
@@ -446,25 +454,22 @@ async def rzq_market(market):
             await asyncio.sleep(2)
     # 创建并发控制信号量（限制最大并发数为10）
     semaphore = asyncio.Semaphore(10)
-    print(now, f'{market}任务开始 - 总交易对数量: {len(symbols)}')
-
+    print(now, f'{market}任务开始 - 总交易对数量: {len(symbols)}', flush=True)
     # 初始化数据收集容器
     success = set()  # 成功处理的交易对
-
     # 创建并发任务
     chunk_size = 10  # 每批处理的交易对数量
     for i in range(0, len(symbols), chunk_size):
         # 分批处理以避免内存占用过高
         symbol_chunk = symbols[i:i + chunk_size]
-        tasks = [rzq_token(semaphore, symbol, success, symbols_info, condition) for symbol in symbol_chunk]
+        tasks = [rzq_token(semaphore, symbol, success, symbols_info) for symbol in symbol_chunk]
         # 等待当前批次完成
         await asyncio.gather(*tasks)
         # 进行垃圾回收以释放内存
         gc.collect()
-    print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all)
-    if condition:
-        with open('alert_all.json', 'w') as f:
-            json.dump(alert_all, f, ensure_ascii=False, indent=4)
+    print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all, flush=True)
+    with open('alert_all.json', 'w') as f:
+        json.dump(alert_all, f, ensure_ascii=False, indent=4)
 
 
 def get_last_trading_days(today=None, days=60):
@@ -498,7 +503,7 @@ def get_last_trading_days(today=None, days=60):
 
         # 如果没有有效日期，返回空结果
         if valid_dates.empty:
-            print(f"警告: 未找到 {today} 之前的交易日")
+            print(f"警告: 未找到 {today} 之前的交易日", flush=True)
             return None, None, []
 
         # 获取指定日期前的最近n个交易日，按时间降序排列
@@ -514,7 +519,7 @@ def get_last_trading_days(today=None, days=60):
 
         return start_date, end_date, zt_date
     except Exception as e:
-        print(f"获取交易日历失败: {str(e)}")
+        print(f"获取交易日历失败: {str(e)}", flush=True)
         # 发生异常时返回空结果
         return None, None, []
 
@@ -545,11 +550,11 @@ def filter_stocks():
         # 获取当天涨停股池
         zt_df = ak.stock_zt_pool_em(date=zt_date)
         if zt_df.empty:
-            print(f"没有在 {zt_date} 找到涨停股票。")
+            print(f"没有在 {zt_date} 找到涨停股票。", flush=True)
             continue
         # 提取股票代码和名称
         stock_codes = zt_df[['代码', '名称']].values.tolist()
-        print(f"{zt_date}涨停股：{stock_codes}")
+        print(f"{zt_date}涨停股：{stock_codes}", flush=True)
 
         # 遍历涨停股票进行筛选
         for code in stock_codes:
@@ -562,20 +567,15 @@ def filter_stocks():
                 continue
 
             code.append(str(hist.iloc[-1]['涨跌幅']))  # 添加最新涨跌幅
-            print(code)
+            print(code, flush=True)
 
             # 分别检查每个筛选条件
             if len(hist) < 60:  # 数据量不足60天
                 continue
 
             # 近两天有下跌
-            if hist.iloc[-2:]['涨跌幅'].min() < 0:
+            if hist.iloc[-1]['涨跌幅'] <= 0:
                 continue
-
-            # 当前价格低于10天均价
-            # if not list(filter(lambda x: hist.iloc[-4 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘'],
-            #                    range(-2, -i - 5, -1))):
-            #     continue
 
             if hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] \
                     or list(filter(lambda x: hist.iloc[-9 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘'],
@@ -583,7 +583,7 @@ def filter_stocks():
                 continue
 
             # 当日成交量不是最大
-            if hist.iloc[max(-3, -i - 2):-1]['成交量'].max() > hist.iloc[-1]['成交量']:
+            if hist.iloc[-3:-1]['成交量'].max() > hist.iloc[-1]['成交量']:
                 continue
 
             # 不在近期低点
@@ -591,9 +591,9 @@ def filter_stocks():
                 continue
 
             # 有连续上涨（任意两天都为正涨幅）
-            if any(x > 0 and y > 0 for x, y in pairwise(hist.iloc[-i - 3:-1]['涨跌幅'].tolist())):
+            if i > 0 and any(hist.iloc[x]['成交量'] > hist.iloc[x - 2:x]['成交量'].max() \
+                             for x in range(-2, -i - 2, -1)):
                 continue
-
             # 添加符合条件的股票
             selected.add(''.join(code))
 
@@ -616,7 +616,7 @@ def monitor_stocks():
     """
     # 获取符合条件的股票列表
     filtered = filter_stocks()
-    print(f"符合量能条件的股票：{filtered}")
+    print(f"符合量能条件的股票：{filtered}", flush=True)
 
     # 如果有符合条件的股票，发送通知
     if filtered:
@@ -646,7 +646,7 @@ async def main():
     # 立即执行一次股票监控
     # monitor_stocks()
     # 立即执行一次币安市场分析
-    # await rzq_market('BN')
+    await rzq_market('BN')
 
     # 设置股票监控定时任务 - 在交易时段执行
     scheduler.add_job(
@@ -667,8 +667,8 @@ async def main():
     scheduler.add_job(
         rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
-        hour='*',  # 每天8点和20点
-        minute='*/1',  # 每1分钟
+        hour='08',  # 每天8点
+        minute='03',  # 每1分钟
         second='00',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数
@@ -677,28 +677,32 @@ async def main():
         coalesce=True,  # 合并错过的执行（避免积压）
         name='币安市场分析任务'  # 任务名称（便于日志识别）
     )
-
     # 启动调度器
     scheduler.start()
 
     # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
+    # await if_basis()
     await stop_event.wait()  # 等待事件触发（实际不会发生）
 
 
 if __name__ == "__main__":
+    print('autoBN启动', flush=True)
     leverage = 3
     health4open = 70
     session = requests.Session()
     session.verify = False
     session.headers = {'Content-Type': 'application/json'}
     scheduler = AsyncIOScheduler()
+    wx_key = os.getenv('WX_KEY', 'fe197940-30c1-4cea-a41a-17b461423f83')
+    user_name = os.getenv('USER_NAME', '49124710049@chatroom')
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
-    um_futures_client = UMFutures(key=bn_api.get('api_key'), secret=bn_api.get('api_secret'))
+    print(bn_api)
+    um_futures_client = UMFutures(
+        key=bn_api.get('api_key', 'Uz3Tat0QcGBYRa9E2TQZn1nscd0iNcoEnpDbk71q2uEke3jC8d9NADQCUoXLmkn2'),
+        secret=bn_api.get('api_secret', 'tqCsBnIj3T9BuZYnwyHJTNVWwL88LA1PQtZHqh3wVV6kWbWRRLyWEfrDknvdm09J'))
     with open('alert_all.json', 'r') as f:
         alert_all = json.load(f)
-        position_risk = [i['symbol'] for i in um_futures_client.get_position_risk()]
-        alert_all['POSITIONS'] = {k: v for k, v in alert_all['POSITIONS'].items() if k in position_risk}
     slot_balance = [0.0]
     asyncio.run(main())
