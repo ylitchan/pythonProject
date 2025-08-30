@@ -251,10 +251,18 @@ async def increase_oi(semaphore, symbol, positionSide):
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            print(f'{symbol} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]}', flush=True)
+            lsar = await asyncio.to_thread(um_futures_client.long_short_account_ratio, symbol=symbol,
+                                           period="5m", limit=100)
+            lsar = float(lsar[-1]['longShortRatio'])
+            print(
+                f'{symbol} 多空比{lsar} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}',
+                flush=True)
             if positionSide == "LONG":
+                # if sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
+                #         sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]) and lsar < 1:
+                #     return True
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
-                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
+                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or lsar > 1:
                     return False
                 for index in range(-2, -len(oi) + 2, -1):
                     if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
@@ -302,7 +310,9 @@ async def decrease_oi(semaphore, symbol, positionSide):
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
-            print(f'{symbol} 减仓信号${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}', flush=True)
+            print(
+                f'{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}',
+                flush=True)
             if positionSide == "LONG":
                 return sumOpenInterestValue[-1] > sumOpenInterestValue[-2] and \
                     sumOpenInterest[-1] < sumOpenInterest[-2] or \
@@ -395,7 +405,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             return
             # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if (kline_close[-3] < kline_close[-2] and  # 当日为阳线
+        if (  # kline_close[-3] < kline_close[-2] and  # 当日为阳线
                 await increase_oi(semaphore, symbol, 'LONG')
         ):
             zy = kline_close[-1] * 1.09
@@ -403,14 +413,14 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
             if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
                 alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
-        elif (kline_close[-3] > kline_close[-2] and  # 当日为阴线
-              await increase_oi(semaphore, symbol, 'SHORT')
-        ):
-            zy = kline_close[-1] * 0.91
-            zs = kline_close[-1] * 1.09
-            send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-            # if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
-            #     alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
+        # elif (#kline_close[-3] > kline_close[-2] and  # 当日为阴线
+        #       await increase_oi(semaphore, symbol, 'SHORT')
+        # ):
+        #     zy = kline_close[-1] * 0.91
+        #     zs = kline_close[-1] * 1.09
+        #     send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+        #     # if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
+        #     #     alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
     except:
         traceback.print_exc()
         return
