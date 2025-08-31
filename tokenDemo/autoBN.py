@@ -258,9 +258,6 @@ async def increase_oi(semaphore, symbol, positionSide):
                 f'{symbol} 多空比{lsar} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}',
                 flush=True)
             if positionSide == "LONG":
-                # if sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
-                #         sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]) and lsar < 1:
-                #     return True
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or lsar > 1:
                     return False
@@ -405,7 +402,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             return
             # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if (  # kline_close[-3] < kline_close[-2] and  # 当日为阳线
+        if (max(kline[-3][5], kline[-4][5]) < kline[-2][5] and  # 当日为阳线
                 await increase_oi(semaphore, symbol, 'LONG')
         ):
             zy = kline_close[-1] * 1.09
@@ -656,7 +653,7 @@ async def main():
     # 立即执行一次股票监控
     # monitor_stocks()
     # 立即执行一次币安市场分析
-    await rzq_market('BN')
+    # await rzq_market('BN')
 
     # 设置股票监控定时任务 - 在交易时段执行
     scheduler.add_job(
