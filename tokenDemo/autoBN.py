@@ -252,14 +252,15 @@ async def increase_oi(semaphore, symbol, positionSide):
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
             lsar = await asyncio.to_thread(um_futures_client.long_short_account_ratio, symbol=symbol,
-                                           period="5m", limit=100)
-            lsar = float(lsar[-1]['longShortRatio'])
+                                           period="1d", limit=100)
+            lsar = [float(i['longShortRatio']) for i in lsar]
             print(
-                f'{symbol} 多空比{lsar} 增仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}',
+                f'{symbol} 多空比{max(lsar[-3:-1])}——>{lsar[-1]} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
                 flush=True)
             if positionSide == "LONG":
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
-                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or lsar >= 1.5:
+                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or \
+                        lsar[-1] >= max(lsar[-3:-1]):
                     return False
                 for index in range(-2, -len(oi) + 1, -1):
                     if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
