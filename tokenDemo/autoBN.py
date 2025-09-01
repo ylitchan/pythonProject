@@ -259,7 +259,7 @@ async def increase_oi(semaphore, symbol, positionSide):
                 flush=True)
             if positionSide == "LONG":
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
-                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or lsar > 1:
+                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or lsar >= 1.5:
                     return False
                 for index in range(-2, -len(oi) + 1, -1):
                     if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
@@ -402,7 +402,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             return
             # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if (max(kline[-3][5], kline[-4][5]) < kline[-2][5] and  # 当日为阳线
+        if (kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and  # 当日为阳线
                 await increase_oi(semaphore, symbol, 'LONG')
         ):
             zy = kline_close[-1] * 1.09
