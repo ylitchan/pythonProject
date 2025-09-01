@@ -261,7 +261,7 @@ async def increase_oi(semaphore, symbol, positionSide):
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or lsar > 1:
                     return False
-                for index in range(-2, -len(oi) + 2, -1):
+                for index in range(-2, -len(oi) + 1, -1):
                     if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
                         return False
@@ -276,7 +276,7 @@ async def increase_oi(semaphore, symbol, positionSide):
                 if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
                     return False
-                for index in range(-2, - len(oi) + 2, -1):
+                for index in range(-2, - len(oi) + 1, -1):
                     if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
                         return False
