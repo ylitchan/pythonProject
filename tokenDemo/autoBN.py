@@ -247,7 +247,7 @@ async def increase_oi(semaphore, symbol, positionSide):
     async with semaphore:
         try:
             # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
-            oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=100)
+            oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=30)
             # 一次性将所有数据转换为浮点数
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]
@@ -274,20 +274,20 @@ async def increase_oi(semaphore, symbol, positionSide):
                         return True
                 return False
             else:
-                if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
+                if sumOpenInterest[-1] >= min(sumOpenInterest[-3:-1]) or \
                         sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]):
                     return False
-                for index in range(-2, - len(oi) + 1, -1):
-                    if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
-                            sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
-                        return False
-                    elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
-                            sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
-                        return True
-                    elif sumOpenInterestValue[index] < sumOpenInterestValue[index - 1] and \
-                            sumOpenInterest[index] < sumOpenInterest[index - 1]:
-                        return True
-                return False
+                # for index in range(-2, - len(oi) + 1, -1):
+                #     if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                #             sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
+                #         return False
+                #     elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
+                #             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
+                #         return True
+                #     elif sumOpenInterestValue[index] < sumOpenInterestValue[index - 1] and \
+                #             sumOpenInterest[index] < sumOpenInterest[index - 1]:
+                #         return True
+                return True
         except:
             return False
 
@@ -339,7 +339,7 @@ async def get_kline(semaphore, symbol, t: str):
         interval = t[:2].lower()
         # 使用 asyncio.to_thread 在线程池中执行阻塞的 API 调用
         try:
-            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=100)
+            kline = await asyncio.to_thread(um_futures_client.klines, symbol=symbol, interval=interval, limit=30)
             # 一次性将所有数据转换为浮点数
             return [list(map(float, sublist)) for sublist in kline]
         except:
@@ -401,24 +401,29 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 close_bn_position(symbol, close_info[2], close_info[3], kline_close[-1])
                 alert_all['POSITIONS'].pop(symbol)
             return
-            # 计算涨跌幅：收盘价/开盘价-1
+        # 计算涨跌幅：收盘价/开盘价-1
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-        if (kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and  # 当日为阳线
-                await increase_oi(semaphore, symbol, 'LONG')
-        ):
-            zy = kline_close[-1] * 1.09
-            zs = kline_close[-1] * 0.91
-            send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-            if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
-                alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
-        # elif (#kline_close[-3] > kline_close[-2] and  # 当日为阴线
-        #       await increase_oi(semaphore, symbol, 'SHORT')
-        # ):
-        #     zy = kline_close[-1] * 0.91
-        #     zs = kline_close[-1] * 1.09
-        #     send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-        #     # if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
-        #     #     alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
+        if kline_close[-3] < kline_close[-2]:
+            if max(kline[-3][5], kline[-4][5]) < kline[-2][5] and await increase_oi(semaphore, symbol, 'LONG'):
+                zy = kline_close[-1] * 1.09
+                zs = kline_close[-1] * 0.91
+                send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+                if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
+                    alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
+            elif  min(kline[-3][5], kline[-4][5]) > kline[-2][5]:
+                for index in range(-3, -len(kline), -1):
+                    if kline_zf[index] <=0 or (index:=index-1)==-5==-len(kline)-1:
+                        if index<-4 and sum(kline_zf[index+1:-1]) > abs(index+2)*0.09 and \
+                                min(kline[-3][5],kline[-4][5]) >kline[-2][5] and \
+                                await increase_oi(semaphore, symbol, 'SHORT'):
+                            zy = kline_close[-1] * 0.91
+                            zs = kline_close[-1] * 1.09
+                            send_msg(
+                                f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+                            # if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
+                            #     alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
+                        break
+
     except:
         traceback.print_exc()
         return
