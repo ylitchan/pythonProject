@@ -498,11 +498,11 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             if kline_close[-1] <= close_info[1]:
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
-                close_info[1] = kline_close[-1]*0.95
+                close_info[1] = kline_close[-1]*0.96
             elif kline_close[-1] >= close_info[0]:
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
-                close_info[0] = kline_close[-1]*1.05
+                close_info[0] = kline_close[-1]*1.04
             elif not is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
@@ -519,8 +519,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         if kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and await increase_oi(
                 semaphore, symbol, 'LONG', kline_close):
             # 设置止盈止损：止盈9%，止损9%
-            zy = kline_close[-1] * 1.05  # 止盈价
-            zs = kline_close[-1] * 0.95  # 止损价
+            zy = kline_close[-1] * 1.06  # 止盈价
+            zs = kline_close[-1] * 0.94  # 止损价
 
             # 发送做多信号通知
             send_msg(
@@ -538,8 +538,8 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         elif kline_close[-3] > kline_close[-2] and min(kline[-3][5], kline[-4][5]) > kline[-2][5] and await increase_oi(
                 semaphore, symbol, 'SHORT', kline_close):
             # 设置止盈止损：止盈9%，止损9%
-            zy = kline_close[-1] * 0.95  # 止盈价
-            zs = kline_close[-1] * 1.05  # 止损价
+            zy = kline_close[-1] * 0.94  # 止盈价
+            zs = kline_close[-1] * 1.06  # 止损价
 
             # 发送做空信号通知
             send_msg(
