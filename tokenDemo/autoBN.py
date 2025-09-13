@@ -799,7 +799,7 @@ async def main():
     scheduler.add_job(
         rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
-        hour='08',  # 每天8点执行
+        hour='*',  # 每天8点执行
         minute='05-59/5',  # 每1分钟
         second='00',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
