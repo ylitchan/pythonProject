@@ -229,7 +229,7 @@ def close_bn_position(symbol, side, positionSide, price_close, close_ratio=1.0, 
     """
     # 获取当前持仓数量
     amount = get_amount_close(symbol)
-
+    close_ratio = 1 if amount*price_close < 100 else close_ratio
     # 计算实际平仓数量
     close_amount = amount * close_ratio
     close_amount = float(
