@@ -214,7 +214,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
         return None
 
 
-def close_bn_position(symbol, side, positionSide, price_close, close_ratio=1.0):
+def close_bn_position(symbol, side, positionSide, price_close, close_ratio=1.0, symbols_info=None):
     """
     在币安期货市场平仓
 
@@ -225,13 +225,15 @@ def close_bn_position(symbol, side, positionSide, price_close, close_ratio=1.0):
         positionSide: 持仓方向，'LONG'或'SHORT'
         price_close: 当前价格（用于通知）
         close_ratio: 平仓比例，1.0表示全部平仓，0.7表示平仓70%
+        symbols_info: 交易对配置信息（精度等）
     """
     # 获取当前持仓数量
     amount = get_amount_close(symbol)
 
     # 计算实际平仓数量
     close_amount = amount * close_ratio
-
+    close_amount = float(
+        Decimal(str(close_amount)).quantize(symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
     # 如果平仓数量为0，直接返回
     if close_amount <= 0:
         return
@@ -261,6 +263,8 @@ def close_bn_position(symbol, side, positionSide, price_close, close_ratio=1.0):
             # 重新获取持仓数量，可能部分平仓成功
             current_amount = get_amount_close(symbol)
             close_amount = current_amount * close_ratio
+            close_amount = float(
+                Decimal(str(close_amount)).quantize(symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
 
 
 async def increase_oi(semaphore, symbol, positionSide, kline_close=None):
@@ -493,15 +497,15 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             # 平仓条件：价格触及止损/止盈 或 减仓信号触发
             if kline_close[-1] <= close_info[1]:
                 close_bn_position(
-                    symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
+                    symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
                 close_info[1] = kline_close[-1]*0.95
             elif kline_close[-1] >= close_info[0]:
                 close_bn_position(
-                    symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
+                    symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
                 close_info[0] = kline_close[-1]*1.05
             elif not is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(
-                    symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                    symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
                 alert_all['POSITIONS'].pop(symbol)
             return
         if is_early_morning:
@@ -799,8 +803,8 @@ async def main():
     scheduler.add_job(
         rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
-        hour='*',  # 每天8点执行
-        minute='05-59/5',  # 每1分钟
+        hour='*',  # 每小时执行
+        minute='05-59/5',  # 每5分钟
         second='00',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数
