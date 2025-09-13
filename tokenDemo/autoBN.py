@@ -494,13 +494,11 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             if kline_close[-1] <= close_info[1]:
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
-                close_info[0] = kline_close[-1]*1.05
                 close_info[1] = kline_close[-1]*0.95
             elif kline_close[-1] >= close_info[0]:
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
                 close_info[0] = kline_close[-1]*1.05
-                close_info[1] = kline_close[-1]*0.95
             elif not is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 1)
