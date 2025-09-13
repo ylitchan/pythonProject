@@ -1,4 +1,3 @@
-
 # 导入必要的库
 import asyncio  # 异步编程库，用于并发处理
 import datetime  # 日期时间处理
@@ -28,7 +27,7 @@ def send_msg(msg, wx=False):
         # 记录发送时间，便于调试和追踪
         current_time = datetime.datetime.now()
         print(f"{current_time} - 发送消息: {msg}", flush=True)
-        
+
         if wx:
             # 微信发送格式：使用微信API接口
             json_msg = {"MsgItem": [
@@ -46,7 +45,7 @@ def send_msg(msg, wx=False):
             response = session.post(
                 url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',
                 json=json_msg)
-        
+
         # 检查发送结果，失败时记录状态码
         if response.status_code != 200:
             print(f"消息发送失败，状态码: {response.status_code}", flush=True)
@@ -69,20 +68,20 @@ def calculate_health_bn(notional) -> int:
     # 获取账户基本信息
     account_data = um_futures_client.account()
     total_balance = float(account_data['totalMarginBalance'])  # 账户总余额
-    
+
     # 获取所有持仓信息
     position_data = um_futures_client.get_position_risk()
     total_maintenance_margin = 0.0  # 维持保证金总额
-    
+
     # 计算现有持仓的维持保证金
     for position in position_data:
         if float(position['positionAmt']) != 0:  # 只计算有持仓的合约
             maintenance_margin = float(position['maintMargin'])  # 单个持仓的维持保证金
             total_maintenance_margin += maintenance_margin
-    
+
     # 加上新增头寸的维持保证金（按0.4%计算）
     total_maintenance_margin += notional * 0.004
-    
+
     # 计算健康度
     if total_maintenance_margin == 0 and total_balance >= 0:
         return 100  # 无持仓且余额为正，最健康状态
@@ -135,7 +134,7 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
         if len(alert_all["POSITIONS"]) >= 10:
             send_msg(f'{symbol} 开仓失败：已开仓数量过多')
             return None
-        
+
         # 获取账户可用余额
         account_data = um_futures_client.account()
         balance = float(account_data['availableBalance'])
@@ -225,7 +224,7 @@ def close_bn_position(symbol, side, positionSide, price_close):
     """
     # 获取当前持仓数量
     amount = get_amount_close(symbol)
-    
+
     # 循环平仓，直到完全平仓或失败
     while amount:
         try:
@@ -270,12 +269,12 @@ async def increase_oi(semaphore, symbol, positionSide):
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=30)
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]  # 持仓价值（美元）
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]  # 持仓数量（合约数）
-            
+
             # 获取多空比历史数据（100天）
             lsar = await asyncio.to_thread(um_futures_client.long_short_account_ratio, symbol=symbol,
                                            period="1d", limit=100)
             lsar = [float(i['longShortRatio']) for i in lsar]  # 多空比列表
-            
+
             # 打印分析数据，便于监控和调试
             print(
                 f'{symbol} 多空比{max(lsar[-3:-1])}——>{lsar[-1]} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
@@ -344,7 +343,7 @@ async def decrease_oi(semaphore, symbol, positionSide):
             oi = await asyncio.to_thread(um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=30)
             sumOpenInterestValue = [float(i['sumOpenInterestValue']) for i in oi]  # 持仓价值（美元）
             sumOpenInterest = [float(i['sumOpenInterest']) for i in oi]  # 持仓数量（合约数）
-            
+
             # 打印减仓信号数据，便于监控
             print(
                 f'{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}',
@@ -409,12 +408,12 @@ async def if_basis():
             index_price = await asyncio.to_thread(session.get,
                                                   url='https://fapi.binance.com/fapi/v1/premiumIndex')
             index_price = {ip['symbol']: float(ip['indexPrice']) for ip in index_price.json()}
-            
+
             # 获取期货市场价格
             market_price = (await asyncio.to_thread(session.get,
                                                     url="https://fapi.binance.com/fapi/v2/ticker/price")).json()
             time_now = time.time()
-            
+
             # 遍历所有交易对，检查基差
             for p in market_price:
                 # 计算基差：指数价格 / 市场价格
@@ -458,7 +457,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         kline = await get_kline(semaphore, symbol, "1Dutc")
         kline_close = [k[4] for k in kline]  # 提取收盘价列表
         success.add(symbol)  # 记录成功处理的交易对
-        
+
         # 数据量检查：至少需要4根K线进行分析
         if len(kline) < 4:
             return
@@ -486,15 +485,15 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             # 设置止盈止损：止盈9%，止损9%
             zy = kline_close[-1] * 1.09  # 止盈价
             zs = kline_close[-1] * 0.91  # 止损价
-            
+
             # 发送做多信号通知
             send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-            
+
             # 执行开仓操作
             if open_bn_position(symbol, symbols_info, 'BUY', 'LONG'):
                 # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                 alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
-        
+
         # 做空信号判断：需要同时满足以下条件
         # 条件1：价格连续下跌（前3天 > 前2天 > 前1天）
         # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最小值）
@@ -504,9 +503,15 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             # 设置止盈止损：止盈9%，止损9%
             zy = kline_close[-1] * 0.91  # 止盈价
             zs = kline_close[-1] * 1.09  # 止损价
-            
+
             # 发送做空信号通知
             send_msg(f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+
+            # 执行开仓操作
+            # if open_bn_position(symbol, symbols_info, 'SELL', 'SHORT'):
+                # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
+                # alert_all['POSITIONS'][symbol] = [zs, zy, 'BUY', 'SHORT']
+
     except:
         # 异常处理：打印错误信息但不中断程序
         traceback.print_exc()
@@ -528,7 +533,7 @@ async def rzq_market(market):
     """
     now = datetime.datetime.now()
     symbols = []
-    
+
     # 重试机制：最多尝试10次获取交易对信息
     for i in range(10):
         try:
@@ -536,14 +541,14 @@ async def rzq_market(market):
             position_risk = [i['symbol'] for i in um_futures_client.get_position_risk()]
             # 只保留当前有持仓的交易对记录
             alert_all['POSITIONS'] = {k: v for k, v in alert_all['POSITIONS'].items() if k in position_risk}
-            
+
             # 获取交易所信息
             exchange_info = await asyncio.to_thread(um_futures_client.exchange_info)
-            
+
             # 计算数量精度：根据quantityPrecision生成对应的Decimal精度
             sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
                 f'0.{"1" * i["quantityPrecision"]}') for i in exchange_info['symbols']}
-            
+
             # 筛选USDT交易对：只处理USDT计价且状态为TRADING的交易对
             symbols_info = {symbol['symbol']: {
                 'quotePrecision': symbol['quotePrecision'],  # 价格精度
@@ -551,7 +556,7 @@ async def rzq_market(market):
             }
                 for symbol in exchange_info['symbols'] if
                 'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
-            
+
             symbols = list(symbols_info.keys())
             break  # 成功获取，退出重试循环
         except:
@@ -561,10 +566,10 @@ async def rzq_market(market):
     # 创建信号量，限制最大并发数为10，避免API限制
     semaphore = asyncio.Semaphore(10)
     print(now, f'{market}任务开始 - 总交易对数量: {len(symbols)}', flush=True)
-    
+
     success = set()  # 记录成功处理的交易对
     chunk_size = 10  # 分批处理，避免内存占用过高
-    
+
     # 分批处理所有交易对
     for i in range(0, len(symbols), chunk_size):
         symbol_chunk = symbols[i:i + chunk_size]  # 当前批次的交易对
@@ -573,10 +578,10 @@ async def rzq_market(market):
         # 等待当前批次所有任务完成
         await asyncio.gather(*tasks)
         gc.collect()  # 垃圾回收，释放内存
-    
+
     # 打印任务完成信息
     print(datetime.datetime.now(), f'{market}任务结束 - 总交易对数量: {len(success)}', alert_all, flush=True)
-    
+
     # 保存分析结果到文件
     with open('alert_all.json', 'w') as f:
         json.dump(alert_all, f, ensure_ascii=False, indent=4)
@@ -601,7 +606,7 @@ def get_last_trading_days(today=None, days=60):
         # 从新浪财经获取交易日历
         trade_dates = ak.tool_trade_date_hist_sina()
         trade_dates = pd.to_datetime(trade_dates["trade_date"])
-        
+
         # 过滤出不晚于指定日期的交易日
         valid_dates = trade_dates[trade_dates <= today]
 
@@ -612,8 +617,8 @@ def get_last_trading_days(today=None, days=60):
         # 获取指定日期前的最近n个交易日，按时间降序排列
         recent_trading_days = valid_dates.sort_values(ascending=False).iloc[:days]
         start_date = recent_trading_days.min().strftime("%Y%m%d")  # 最早日期
-        end_date = recent_trading_days.max().strftime("%Y%m%d")    # 最晚日期
-        
+        end_date = recent_trading_days.max().strftime("%Y%m%d")  # 最晚日期
+
         # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
         zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
 
@@ -643,7 +648,7 @@ def filter_stocks():
         if zt_df.empty:
             print(f"没有在 {zt_date} 找到涨停股票。", flush=True)
             continue
-        
+
         # 提取股票代码和名称
         stock_codes = zt_df[['代码', '名称']].values.tolist()
         print(f"{zt_date}涨停股：{stock_codes}", flush=True)
@@ -733,6 +738,7 @@ async def main():
     任务1：A股监控（交易时段执行）
     任务2：币安市场分析（每天8点执行）
     """
+    # await rzq_market('BN')
     # 设置A股监控定时任务
     scheduler.add_job(
         monitor_stocks,  # 执行的函数
@@ -762,7 +768,7 @@ async def main():
         coalesce=True,  # 合并错过的执行（避免积压）
         name='币安市场分析任务'  # 任务名称
     )
-    
+
     # 启动调度器
     scheduler.start()
 
@@ -778,39 +784,39 @@ if __name__ == "__main__":
     功能：初始化所有必要的配置和客户端，然后启动主程序
     """
     print('autoBN启动', flush=True)
-    
+
     # 交易参数配置
     leverage = 3  # 杠杆倍数
     health4open = 70  # 开仓最低健康度（百分比）
-    
+
     # 初始化HTTP会话
     session = requests.Session()
     session.verify = False  # 跳过SSL验证
     session.headers = {'Content-Type': 'application/json'}
-    
+
     # 初始化任务调度器
     scheduler = AsyncIOScheduler()
-    
+
     # 获取微信配置（从环境变量或使用默认值）
     wx_key = os.getenv('WX_KEY', 'fe197940-30c1-4cea-a41a-17b461423f83')
     user_name = os.getenv('USER_NAME', '49124710049@chatroom')
-    
+
     # 加载币安API配置
     with open('bn.json', 'r') as f:
         bn_api = json.load(f)
     print(bn_api)
-    
+
     # 初始化币安期货客户端
     um_futures_client = UMFutures(
         key=bn_api.get('api_key', 'Uz3Tat0QcGBYRa9E2TQZn1nscd0iNcoEnpDbk71q2uEke3jC8d9NADQCUoXLmkn2'),
         secret=bn_api.get('api_secret', 'tqCsBnIj3T9BuZYnwyHJTNVWwL88LA1PQtZHqh3wVV6kWbWRRLyWEfrDknvdm09J'))
-    
+
     # 加载持仓记录
     with open('alert_all.json', 'r') as f:
         alert_all = json.load(f)
-    
+
     # 初始化资金槽位（用于资金管理）
     slot_balance = [0.0]
-    
+
     # 启动主程序
     asyncio.run(main())
