@@ -495,7 +495,11 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
         if close_info := alert_all['POSITIONS'].get(symbol):
             # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
             # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-            if kline_close[-1] <= close_info[1]:
+            if is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
+                close_bn_position(
+                    symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
+                alert_all['POSITIONS'].pop(symbol)
+            elif kline_close[-1] <= close_info[1]:
                 if close_info[3] == 'SHORT':
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
@@ -511,10 +515,6 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 elif is_early_morning:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
-            elif is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
-                close_bn_position(
-                    symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
-                alert_all['POSITIONS'].pop(symbol)
             return
         if not is_early_morning:
             return
