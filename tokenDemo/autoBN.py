@@ -490,31 +490,33 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             return
         # 设置变量：当前时间为8点且分钟小于6则为True，否则为False
         now = time.localtime()
-        is_early_morning = (now.tm_hour != 8 or now.tm_min >= 10)
+        is_early_morning = (now.tm_hour == 8 and now.tm_min < 10)
         # 检查现有持仓是否需要平仓
         if close_info := alert_all['POSITIONS'].get(symbol):
             # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
             # 平仓条件：价格触及止损/止盈 或 减仓信号触发
             if kline_close[-1] <= close_info[1]:
-                close_ratio = 0.5 if close_info[0] / \
-                    close_info[1] >= 1.09/0.91 else 0.1
-                close_bn_position(
-                    symbol, close_info[2], close_info[3], kline_close[-1], close_ratio, symbols_info)
-                close_info[0] = kline_close[-1]*1.05
-                close_info[1] = kline_close[-1]*0.95
+                if close_info[3] == 'SHORT':
+                    close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
+                    close_info[1] = kline_close[-1]*0.95
+                elif is_early_morning:
+                    close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
             elif kline_close[-1] >= close_info[0]:
-                close_ratio = 0.5 if close_info[0] / \
-                    close_info[1] >= 1.09/0.91 else 0.1
-                close_bn_position(
-                    symbol, close_info[2], close_info[3], kline_close[-1], close_ratio, symbols_info)
-                close_info[0] = kline_close[-1]*1.05
-                close_info[1] = kline_close[-1]*0.95
-            elif not is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
+                if close_info[3] == 'LONG':
+                    close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
+                    close_info[0] = kline_close[-1]*1.05
+                elif is_early_morning:
+                    close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
+            elif is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
                 alert_all['POSITIONS'].pop(symbol)
             return
-        if is_early_morning:
+        if not is_early_morning:
             return
         # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
         kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
