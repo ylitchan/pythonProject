@@ -525,7 +525,6 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 elif is_early_morning:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
-            return
         if not is_early_morning:
             return
         # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
