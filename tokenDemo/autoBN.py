@@ -508,6 +508,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 elif close_info[0]/close_info[1] < 1.07/0.93:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
+                    alert_all['POSITIONS'].pop(symbol)
                 elif is_early_morning:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
@@ -520,6 +521,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 elif close_info[0]/close_info[1] < 1.07/0.93:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
+                    alert_all['POSITIONS'].pop(symbol)
                 elif is_early_morning:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
