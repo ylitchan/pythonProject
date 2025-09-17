@@ -593,11 +593,19 @@ async def rzq_market(market):
     for i in range(10):
         try:
             # 获取当前持仓信息，用于清理无效持仓
-            position_risk = [i['symbol']
-                             for i in um_futures_client.get_position_risk()]
+            position_risk = um_futures_client.get_position_risk()
+            position_risk_symbol = [i['symbol'] for i in position_risk]
             # 只保留当前有持仓的交易对记录
             alert_all['POSITIONS'] = {
-                k: v for k, v in alert_all['POSITIONS'].items() if k in position_risk}
+                k: v for k, v in alert_all['POSITIONS'].items() if k in position_risk_symbol}
+            for p in position_risk:
+                if p["symbol"] not in alert_all['POSITIONS']:
+                    if p["positionSide"] == "LONG":
+                        alert_all['POSITIONS'][p["symbol"]] = [
+                            float(p["entryPrice"])*1.09, float(p["entryPrice"])*0.91, "SELL", "LONG"]
+                    else:
+                        alert_all['POSITIONS'][p["symbol"]] = [
+                            float(p["entryPrice"])*1.09, float(p["entryPrice"])*0.91, "BUY", "SHORT"]
 
             # 获取交易所信息
             exchange_info = await asyncio.to_thread(um_futures_client.exchange_info)
