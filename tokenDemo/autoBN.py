@@ -325,7 +325,7 @@ async def increase_oi(semaphore, symbol, positionSide, kline_close=None):
                 # 条件2：检查历史数据，寻找合适的减仓信号
                 for index in range(-2, -len(oi), -1):
                     # 如果持仓价值增加，说明价格上涨，适合做空
-                    if sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
+                    if sumOpenInterestValue[index] > max(sumOpenInterestValue[:index]):
                         # 如果持仓价值达到最大时，对应的K线的收盘价不是前面所有K线收盘价的最大值，则返回False
                         if max(kline_close[index-1:index+1]) < max(kline_close):
                             return False
