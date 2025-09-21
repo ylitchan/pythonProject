@@ -131,11 +131,6 @@ def open_bn_position(symbol, symbols_info, side, positionSide):
         成功返回symbol，失败返回None
     """
     try:
-        # 风险控制1：限制同时开仓数量，防止过度分散
-        if len(alert_all["POSITIONS"]) >= 10:
-            send_msg(f'{symbol} 开仓失败：已开仓数量过多')
-            return None
-
         # 获取账户可用余额
         account_data = um_futures_client.account()
         balance = float(account_data['availableBalance'])
@@ -306,7 +301,7 @@ async def increase_oi(semaphore, symbol, positionSide, kline_close=None):
                         lsar[-1] >= 1:  # 多空比>=1说明多头占优，不适合做多
                     return False
                 # 条件2：检查历史数据，寻找合适的增仓信号
-                for index in range(-2, -len(oi) + 1, -1):
+                for index in range(-2, -len(oi), -1):
                     # 如果持仓量和价值都增加，说明是正常增仓，继续等待
                     if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
                             sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
@@ -328,7 +323,7 @@ async def increase_oi(semaphore, symbol, positionSide, kline_close=None):
                         lsar[-1] >= 1:  # 多空比>=1说明多头占优，不适合做空
                     return False
                 # 条件2：检查历史数据，寻找合适的减仓信号
-                for index in range(-2, -len(oi) + 1, -1):
+                for index in range(-2, -len(oi), -1):
                     # 如果持仓价值增加，说明价格上涨，适合做空
                     if sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
                         # 如果持仓价值达到最大时，对应的K线的收盘价不是前面所有K线收盘价的最大值，则返回False
@@ -497,34 +492,35 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             # 平仓条件：价格触及止损/止盈 或 减仓信号触发
             if is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(
-                    symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
-                alert_all['POSITIONS'].pop(symbol)
+                    symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
             elif kline_close[-1] <= close_info[1]:
                 if close_info[3] == 'SHORT':
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
                     close_info[1] = kline_close[-1]*0.95
                     close_info[0] = kline_close[-1]*1.05
-                elif close_info[0]/close_info[1] < 1.07/0.93:
+                elif close_info[0]/close_info[1] < 1.07/0.93 or is_early_morning and close_info[0]/close_info[1] > 1.1/0.9:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
                     alert_all['POSITIONS'].pop(symbol)
                 elif is_early_morning:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
+                    close_info[1] = kline_close[-1]*0.95
             elif kline_close[-1] >= close_info[0]:
                 if close_info[3] == 'LONG':
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
                     close_info[0] = kline_close[-1]*1.05
                     close_info[1] = kline_close[-1]*0.95
-                elif close_info[0]/close_info[1] < 1.07/0.93:
+                elif close_info[0]/close_info[1] < 1.07/0.93 or is_early_morning and close_info[0]/close_info[1] > 1.11/0.89:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
                     alert_all['POSITIONS'].pop(symbol)
                 elif is_early_morning:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
+                    close_info[0] = kline_close[-1]*1.05
         if not is_early_morning:
             return
         # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
@@ -538,7 +534,9 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             # 设置止盈止损：止盈9%，止损9%
             zy = kline_close[-1] * 1.09  # 止盈价
             zs = kline_close[-1] * 0.91  # 止损价
-
+            if close_info and close_info[3] == 'SHORT':
+                close_bn_position(
+                    symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
             # 发送做多信号通知
             send_msg(
                 f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
@@ -557,6 +555,9 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
             # 设置止盈止损：止盈9%，止损9%
             zy = kline_close[-1] * 0.91  # 止盈价
             zs = kline_close[-1] * 1.09  # 止损价
+            if close_info and close_info[3] == 'LONG':
+                close_bn_position(
+                    symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
 
             # 发送做空信号通知
             send_msg(
