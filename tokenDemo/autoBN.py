@@ -504,7 +504,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
                     close_info[1] = close_info[1]*0.97
-                    close_info[0] = close_info[1]*1.05
+                    close_info[0] = kline_close[-1]*1.05
             elif kline_close[-1] >= close_info[0]:
                 if close_info[3] == 'LONG':
                     close_bn_position(
