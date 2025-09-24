@@ -496,29 +496,30 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
                     close_info[1] = kline_close[-1]*0.95
                     close_info[0] = kline_close[-1]*1.05
-                elif 1.093 < close_info[0]/close_info[1] < 1.126 or is_early_morning and close_info[0]/close_info[1] < 1.093:
+                elif close_info[0]/close_info[1] < 1.132:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
                     alert_all['POSITIONS'].pop(symbol)
-                elif is_early_morning:
+                else:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
                     close_info[1] = close_info[1]*0.97
-                    close_info[0] = kline_close[-1]*1.05
+                    close_info[0] = close_info[1]*1.03
             elif kline_close[-1] >= close_info[0]:
                 if close_info[3] == 'LONG':
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
                     close_info[0] = kline_close[-1]*1.05
                     close_info[1] = kline_close[-1]*0.95
-                elif close_info[0]/close_info[1] < 1.151 or is_early_morning and close_info[0]/close_info[1] > 1.251:
+                elif close_info[0]/close_info[1] < 1.135:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
                     alert_all['POSITIONS'].pop(symbol)
-                elif is_early_morning:
+                else:
                     close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
-                    close_info[0] = close_info[0]*1.09
+                    close_info[0] = close_info[0]*1.03
+                    close_info[1] = close_info[0]*0.97
             elif is_early_morning and await decrease_oi(semaphore, symbol, close_info[3]):
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 0.5, symbols_info)
@@ -534,7 +535,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 semaphore, symbol, 'LONG', kline_close):
             # 设置止盈止损：止盈9%，止损9%
             zy = kline_close[-1] * 1.09  # 止盈价
-            zs = kline_close[-1] * 0.95  # 止损价
+            zs = kline_close[-1] * 0.94  # 止损价
             if close_info and close_info[3] == 'SHORT':
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
@@ -555,7 +556,7 @@ async def rzq_token(semaphore, symbol, success, symbols_info):
                 semaphore, symbol, 'SHORT', kline_close):
             # 设置止盈止损：止盈9%，止损9%
             zy = kline_close[-1] * 0.91  # 止盈价
-            zs = kline_close[-1] * 1.09  # 止损价
+            zs = kline_close[-1] * 1.06  # 止损价
             if close_info and close_info[3] == 'LONG':
                 close_bn_position(
                     symbol, close_info[2], close_info[3], kline_close[-1], 1, symbols_info)
