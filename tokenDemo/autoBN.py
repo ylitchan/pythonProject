@@ -301,7 +301,7 @@ class AUTOBN:
                 close_amount = float(
                     Decimal(str(close_amount)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
 
-    async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None):
+    async def increase_oi(self, semaphore, symbol, positionSide):
         """
         检查增仓信号，判断是否适合开仓
 
@@ -357,25 +357,9 @@ class AUTOBN:
                 else:
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
-                    if sumOpenInterest[-1] >= min(sumOpenInterest[-3:-1]) or \
-                            sumOpenInterestValue[-1] >= min(sumOpenInterestValue[-3:-1]) or \
-                            lsar[-1] >= 1:  # 多空比>=1说明多头占优，不适合做空
-                        return False
-                    # 条件2：检查历史数据，寻找合适的减仓信号
-                    for index in range(-2, -len(oi), -1):
-                        # 如果持仓价值增加，说明价格上涨，适合做空
-                        if sumOpenInterestValue[index] > max(sumOpenInterestValue[:index]):
-                            # 如果持仓价值达到最大时，对应的K线的收盘价不是前面所有K线收盘价的最大值，则返回False
-                            if max(kline_close[index-1:index+1]) < max(kline_close):
-                                return False
-                            return True
-                        # 如果持仓量增加，说明资金流入，不适合做空
-                        elif sumOpenInterest[index] > sumOpenInterest[index - 1]:
-                            return False
-                        # 如果持仓量和价值都减少，说明资金流出但价格下跌，不适合做空
-                        elif sumOpenInterest[index] < min(sumOpenInterest[index - 2:index]) and \
-                                sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
-                            return False
+                    if sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and \
+                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[:-1]):  # 多空比>=1说明多头占优，不适合做空
+                        return True
                     return False
             except:
                 return False
@@ -531,9 +515,9 @@ class AUTOBN:
                     if close_info[3] == 'SHORT':
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
-                        close_info[1] = kline_close[-1]*0.95
-                        close_info[0] = kline_close[-1]*1.05
-                    elif close_info[0]/close_info[1] < 1.132:
+                        close_info[1] = kline_close[-1]*0.97
+                        close_info[0] = kline_close[-1]*1.03
+                    elif close_info[0]/close_info[1] < 1.04/0.96:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.alert_all['POSITIONS'].pop(symbol)
@@ -546,9 +530,9 @@ class AUTOBN:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
-                        close_info[0] = kline_close[-1]*1.05
-                        close_info[1] = kline_close[-1]*0.95
-                    elif close_info[0]/close_info[1] < 1.135:
+                        close_info[0] = kline_close[-1]*1.03
+                        close_info[1] = kline_close[-1]*0.97
+                    elif close_info[0]/close_info[1] < 1.04/0.96:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.alert_all['POSITIONS'].pop(symbol)
@@ -568,11 +552,11 @@ class AUTOBN:
             # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
             # 条件3：持仓量增加信号（increase_oi函数返回True）
-            if kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and await self.increase_oi(
-                    semaphore, symbol, 'LONG', kline_close):
+            if kline_close[-2] < max(kline_close[:-2]) and kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and \
+                    await self.increase_oi(semaphore, symbol, 'LONG'):
                 # 设置止盈止损：止盈9%，止损9%
-                zy = kline_close[-1] * 1.09  # 止盈价
-                zs = kline_close[-1] * 0.94  # 止损价
+                zy = kline_close[-1] * 1.05  # 止盈价
+                zs = kline_close[-1] * 0.95  # 止损价
                 if close_info and close_info[3] == 'SHORT':
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
@@ -590,11 +574,10 @@ class AUTOBN:
             # 条件1：价格连续下跌（前3天 > 前2天 > 前1天）
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最小值）
             # 条件3：持仓量增加信号（increase_oi函数返回True）
-            elif kline_close[-3] > kline_close[-2] and min(kline[-3][5], kline[-4][5]) > kline[-2][5] and await self.increase_oi(
-                    semaphore, symbol, 'SHORT', kline_close):
+            elif kline_close[-2] > max(kline_close[:-2]) and await self.increase_oi(semaphore, symbol, 'SHORT'):
                 # 设置止盈止损：止盈9%，止损9%
-                zy = kline_close[-1] * 0.91  # 止盈价
-                zs = kline_close[-1] * 1.06  # 止损价
+                zy = kline_close[-1] * 0.95  # 止盈价
+                zs = kline_close[-1] * 1.05  # 止损价
                 if close_info and close_info[3] == 'LONG':
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
@@ -838,8 +821,8 @@ def monitor_stocks():
         }
         # 发送到企业微信群
         requests.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73',headers={'Content-Type': 'application/json'},
-            json=json_msg,verify=False)
+            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73', headers={'Content-Type': 'application/json'},
+            json=json_msg, verify=False)
 
 
 async def main():
@@ -852,7 +835,7 @@ async def main():
     任务1：A股监控（交易时段执行）
     任务2：币安市场分析（每天8点执行）
     """
-    # await rzq_market('BN')
+    # await autobn.rzq_market('BN')
     # 设置A股监控定时任务
     scheduler.add_job(
         monitor_stocks,  # 执行的函数
