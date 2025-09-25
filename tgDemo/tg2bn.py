@@ -20,12 +20,6 @@ api_id = 20214904
 api_hash = "9e4d64ec1b5a77c416b4e5522ce8d325"
 app = Client("my_account", api_id, api_hash)
 
-# @app.on_raw_update()
-# async def handle_raw(_, update, users, chats):
-#     print(update, flush=True)
-#     async for i in _.get_chat_history(-1002651333064, limit=5):
-#         print(i, flush=True)
-
 
 def handle_msg(message):
     print(message, flush=True)
@@ -33,7 +27,7 @@ def handle_msg(message):
     channel_id = message.chat.id if message.chat else 0
     username = message.chat.username if (
         message.chat and message.chat.username) else ""
-    if title in ['实盘监控【 熬鹰 | 风寻 | 不懂 】'] or channel_id == -1002651333064 or username == 'allin88888888':
+    if 1 or title in ['实盘监控【 熬鹰 | 风寻 | 不懂 】'] or channel_id == -1002651333064 or username == 'allin88888888':
         text = message.text or ''
         autobn.send_msg(text)
         if '【熬鹰资本聪明钱】' in text:
@@ -68,6 +62,45 @@ def handle_msg(message):
                     autobn.open_bn_position(symbol, 'BUY', positionSide)
 
 
+def handle_msg2(message):
+    print(message, flush=True)
+    # title = message.chat.title if message.chat else ""
+    # channel_id = message.chat.id if message.chat else 0
+    # username = message.chat.username if (
+    #     message.chat and message.chat.username) else ""
+    if '-----------------------------------' in message.message:
+        text = message.message or ''
+        autobn.send_msg(text)
+        texts = text.split('\n')
+        side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
+        positionSide = 'LONG' if side == "涨" else "SHORT"
+        symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
+        if '猎龙忍者' in texts[0]:
+            price = float(re.findall('价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
+            side = "BUY" if side == "涨" else "SELL"
+            autobn.send_msg(f'==={symbol}{side}===\n开仓价:{price}')
+            autobn.open_bn_position(symbol, side, positionSide)
+        elif '跟踪止损设置提醒' in texts[0]:
+            price = float(re.findall('价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
+            side = "SELL" if side == "涨" else "BUY"
+            autobn.close_bn_position(
+                symbol, side, positionSide, price, close_ratio=0.5)
+        elif '跟踪结束' in texts[0]:
+            price = float(re.findall('价格.*?(\d+(?:\.\d+)?).*?', texts[4])[0])
+            side = "SELL" if side == "涨" else "BUY"
+            autobn.close_bn_position(
+                symbol, side, positionSide, price, close_ratio=1)
+
+
+@app.on_raw_update()
+async def handle_raw(_, update, users, chats):
+    print(update, flush=True)
+    if hasattr(update, 'message'):
+        handle_msg2(update.message)
+    async for i in _.get_chat_history(-1002651333064, limit=5):
+        print(i, flush=True)
+
+
 @app.on_edited_message()
 async def on_edit(client, message):
     print('on_edited_message', flush=True)
@@ -77,7 +110,7 @@ async def on_edit(client, message):
 @app.on_message()
 async def raw(client, message):
     print('on_message', flush=True)
-    handle_msg(message)
+    handle_msg2(message)
 
 
 if __name__ == '__main__':

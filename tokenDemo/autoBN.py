@@ -173,7 +173,6 @@ class AUTOBN:
             # 获取账户可用余额
             account_data = self.um_futures_client.account()
             balance = float(account_data['availableBalance'])
-            balance = min(balance, 6)
             # 风险控制2：检查可用余额
             if balance <= 0:
                 self.send_msg(f'{symbol} 开仓失败：可用余额为零')
@@ -842,7 +841,6 @@ async def main():
     任务1：A股监控（交易时段执行）
     任务2：币安市场分析（每天8点执行）
     """
-    autobn.open_bn_position('XPLUSDT', 'SELL', 'SHORT')
     # await autobn.rzq_market('BN')
     # 设置A股监控定时任务
     scheduler.add_job(
