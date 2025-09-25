@@ -237,7 +237,9 @@ class AUTOBN:
             )
 
             # 发送成功通知
-            msg = f'{symbol}开仓{positionSide}成功，杠杆:{actual_leverage}x，交易数量:{tx.get("origQty", 0)}，标记价格:{markPrice}'
+            notional_value = tx.get("cumQuote", 0)
+            avg_price = tx.get("avgPrice", 0)
+            msg = f'{symbol}开仓{positionSide}成功\n杠杆:{actual_leverage}x\n交易数量:{tx.get("origQty", 0)}\n成交价格:{avg_price}\n名义价值:{notional_value} USDT'
             self.send_msg(msg)
             return symbol
         except Exception as e:
@@ -286,7 +288,9 @@ class AUTOBN:
                 )
 
                 # 发送成功通知
-                msg = f'bn平仓{symbol}成功，当前价格:{price_close}，交易数量:{tx.get("origQty", 0)}，平仓比例:{close_ratio*100:.0f}%'
+                realized_pnl = tx.get("realizedPnl", 0)
+                avg_price = tx.get("avgPrice", 0)
+                msg = f'bn平仓{symbol}成功\n当前价格:{price_close}\n成交价格:{avg_price}\n交易数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓收益:{realized_pnl} USDT'
                 self.send_msg(msg)
                 break  # 成功平仓，退出循环
             except:
