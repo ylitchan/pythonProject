@@ -637,9 +637,12 @@ class AUTOBN:
                         else:
                             self.alert_all['POSITIONS'][p["symbol"]] = [
                                 entryPrice*1.05, entryPrice*0.95, "BUY", "SHORT", entryPrice]
-                    elif len(self.alert_all['POSITIONS'][p["symbol"]]) != 5:
+                    elif len(self.alert_all['POSITIONS'][p["symbol"]]) < 5:
                         self.alert_all['POSITIONS'][p["symbol"]
                                                     ].append(entryPrice)
+                    else:
+                        self.alert_all['POSITIONS'][p["symbol"]
+                                                    ][-1] = entryPrice
                 # 获取交易所信息
                 exchange_info = await asyncio.to_thread(self.um_futures_client.exchange_info)
 
