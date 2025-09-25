@@ -173,7 +173,7 @@ class AUTOBN:
             # 获取账户可用余额
             account_data = self.um_futures_client.account()
             balance = float(account_data['availableBalance'])
-
+            balance = min(balance, 6)
             # 风险控制2：检查可用余额
             if balance <= 0:
                 self.send_msg(f'{symbol} 开仓失败：可用余额为零')
@@ -235,11 +235,8 @@ class AUTOBN:
                 quantity=amount,  # 开仓数量
                 positionSide=positionSide,  # 'LONG'或'SHORT'
             )
-            print(tx, flush=True)
             # 发送成功通知
-            notional_value = float(tx.get("cumQuote", 0))
-            orig_price = float(tx.get("price", 0))
-            msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{orig_price}\n名义价值:{notional_value} USDT'
+            msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT'
             self.send_msg(msg)
             return symbol
         except Exception as e:
@@ -286,13 +283,11 @@ class AUTOBN:
                     quantity=close_amount,  # 平仓数量
                     positionSide=positionSide,  # 持仓方向
                 )
-                print(tx, flush=True)
                 entryPrice = self.alert_all['POSITIONS'][symbol][-1]
                 # 发送成功通知
-                orig_price = float(tx.get("price", 0))
-                realized_pnl = (orig_price-entryPrice)/entryPrice if positionSide == 'LONG' else (
-                    entryPrice-orig_price)/entryPrice
-                msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{orig_price}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓收益:{realized_pnl*self.leverage*100:.2f}%'
+                realized_pnl = (price_close-entryPrice)/entryPrice if positionSide == 'LONG' else (
+                    entryPrice-price_close)/entryPrice
+                msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓收益:{realized_pnl*self.leverage*100:.2f}%'
                 self.send_msg(msg)
                 break  # 成功平仓，退出循环
             except:
@@ -847,6 +842,7 @@ async def main():
     任务1：A股监控（交易时段执行）
     任务2：币安市场分析（每天8点执行）
     """
+    autobn.open_bn_position('XPLUSDT', 'SELL', 'SHORT')
     # await autobn.rzq_market('BN')
     # 设置A股监控定时任务
     scheduler.add_job(
