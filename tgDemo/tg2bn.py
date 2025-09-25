@@ -19,6 +19,7 @@ from tokenDemo.autoBN import AUTOBN
 api_id = 20214904
 api_hash = "9e4d64ec1b5a77c416b4e5522ce8d325"
 app = Client("my_account", api_id, api_hash)
+last_msg = ''
 
 
 def handle_msg(message):
@@ -95,7 +96,9 @@ async def handle_raw(_, update, users, chats):
         handle_msg2(update.message)
     async for i in _.get_chat_history(-1002651333064, limit=1):
         print(i, flush=True)
-        handle_msg(i)
+        if i.text != last_msg:
+            last_msg = i.text
+            handle_msg(i)
 
 
 @app.on_edited_message()
