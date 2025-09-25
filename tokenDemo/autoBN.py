@@ -235,11 +235,11 @@ class AUTOBN:
                 quantity=amount,  # 开仓数量
                 positionSide=positionSide,  # 'LONG'或'SHORT'
             )
-
+            print(tx, flush=True)
             # 发送成功通知
-            notional_value = tx.get("cumQuote", 0)
-            avg_price = tx.get("avgPrice", 0)
-            msg = f'{symbol}开仓{positionSide}成功\n杠杆:{actual_leverage}x\n交易数量:{tx.get("origQty", 0)}\n成交价格:{avg_price}\n名义价值:{notional_value} USDT'
+            notional_value = float(tx.get("cumQuote", 0))
+            orig_price = float(tx.get("price", 0))
+            msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{orig_price}\n名义价值:{notional_value} USDT'
             self.send_msg(msg)
             return symbol
         except Exception as e:
@@ -286,11 +286,13 @@ class AUTOBN:
                     quantity=close_amount,  # 平仓数量
                     positionSide=positionSide,  # 持仓方向
                 )
-
+                print(tx, flush=True)
+                entryPrice = self.alert_all['POSITIONS'][symbol][-1]
                 # 发送成功通知
-                realized_pnl = tx.get("realizedPnl", 0)
-                avg_price = tx.get("avgPrice", 0)
-                msg = f'bn平仓{symbol}成功\n当前价格:{price_close}\n成交价格:{avg_price}\n交易数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓收益:{realized_pnl} USDT'
+                orig_price = float(tx.get("price", 0))
+                realized_pnl = (orig_price-entryPrice)/entryPrice if positionSide == 'LONG' else (
+                    entryPrice-orig_price)/entryPrice
+                msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{orig_price}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓收益:{realized_pnl*100:.2f}%'
                 self.send_msg(msg)
                 break  # 成功平仓，退出循环
             except:
@@ -627,14 +629,17 @@ class AUTOBN:
                 self.alert_all['POSITIONS'] = {
                     k: v for k, v in self.alert_all['POSITIONS'].items() if k in position_risk_symbol}
                 for p in position_risk:
+                    entryPrice = float(p["entryPrice"])
                     if p["symbol"] not in self.alert_all['POSITIONS']:
                         if p["positionSide"] == "LONG":
                             self.alert_all['POSITIONS'][p["symbol"]] = [
-                                float(p["entryPrice"])*1.05, float(p["entryPrice"])*0.95, "SELL", "LONG"]
+                                entryPrice*1.05, entryPrice*0.95, "SELL", "LONG", entryPrice]
                         else:
                             self.alert_all['POSITIONS'][p["symbol"]] = [
-                                float(p["entryPrice"])*1.05, float(p["entryPrice"])*0.95, "BUY", "SHORT"]
-
+                                entryPrice*1.05, entryPrice*0.95, "BUY", "SHORT", entryPrice]
+                    elif len(self.alert_all['POSITIONS'][p["symbol"]]) != 5:
+                        self.alert_all['POSITIONS'][p["symbol"]
+                                                    ].append(entryPrice)
                 # 获取交易所信息
                 exchange_info = await asyncio.to_thread(self.um_futures_client.exchange_info)
 
