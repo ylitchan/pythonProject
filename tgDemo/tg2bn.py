@@ -23,11 +23,7 @@ app = Client("my_account", api_id, api_hash)
 
 def handle_msg(message):
     print(message, flush=True)
-    title = message.chat.title if message.chat else ""
-    channel_id = message.chat.id if message.chat else 0
-    username = message.chat.username if (
-        message.chat and message.chat.username) else ""
-    if 1 or title in ['实盘监控【 熬鹰 | 风寻 | 不懂 】'] or channel_id == -1002651333064 or username == 'allin88888888':
+    if message.date.replace(second=0) == datetime.now().replace(second=0, microsecond=0) or 1:
         text = message.text or ''
         autobn.send_msg(text)
         if '【熬鹰资本聪明钱】' in text:
@@ -68,7 +64,7 @@ def handle_msg2(message):
     # channel_id = message.chat.id if message.chat else 0
     # username = message.chat.username if (
     #     message.chat and message.chat.username) else ""
-    if '-----------------------------------' in message.message:
+    if '贪婪恐慌等级' in message.message:
         text = message.message or ''
         autobn.send_msg(text)
         texts = text.split('\n')
@@ -97,8 +93,9 @@ async def handle_raw(_, update, users, chats):
     print(update, flush=True)
     if hasattr(update, 'message'):
         handle_msg2(update.message)
-    async for i in _.get_chat_history(-1002651333064, limit=5):
+    async for i in _.get_chat_history(-1002651333064, limit=1):
         print(i, flush=True)
+        handle_msg(i)
 
 
 @app.on_edited_message()
