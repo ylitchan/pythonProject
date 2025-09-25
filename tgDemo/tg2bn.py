@@ -2,20 +2,20 @@
 # @Author: ylitchan
 # @Source: rdti_crawl_defense
 # @Site:
-
-from enum import auto
-import base64
-import hashlib
-import os
-from datetime import datetime
-
-import requests
-from pyrogram import Client
 import re
+from pyrogram import Client
+import requests
+from datetime import datetime
+import os
+import hashlib
+import base64
+from enum import auto
 import sys
 # 添加项目根目录到系统路径
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from tokenDemo.autoBN import AUTOBN
+
+
 api_id = 20214904
 api_hash = "9e4d64ec1b5a77c416b4e5522ce8d325"
 app = Client("my_account", api_id, api_hash)
@@ -23,7 +23,7 @@ app = Client("my_account", api_id, api_hash)
 
 @app.on_message()
 async def raw(client, message):
-    print(message)
+    print(message, flush=True)
     title = message.chat.title if message.chat else ""
     channel_id = message.chat.id if message.chat else 0
     username = message.chat.username if (
