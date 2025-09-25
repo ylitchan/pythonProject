@@ -20,9 +20,14 @@ api_id = 20214904
 api_hash = "9e4d64ec1b5a77c416b4e5522ce8d325"
 app = Client("my_account", api_id, api_hash)
 
+# @app.on_raw_update()
+# async def handle_raw(_, update, users, chats):
+#     print(update, flush=True)
+#     async for i in _.get_chat_history(-1002651333064, limit=5):
+#         print(i, flush=True)
 
-@app.on_message()
-async def raw(client, message):
+
+def handle_msg(message):
     print(message, flush=True)
     title = message.chat.title if message.chat else ""
     channel_id = message.chat.id if message.chat else 0
@@ -31,7 +36,7 @@ async def raw(client, message):
     if title in ['实盘监控【 熬鹰 | 风寻 | 不懂 】'] or channel_id == -1002651333064 or username == 'allin88888888':
         text = message.text or ''
         autobn.send_msg(text)
-        if '【风寻实盘监控】' in text:
+        if '【熬鹰资本聪明钱】' in text:
             side = re.findall('开仓|加仓|减仓|平仓', text)[0]
             symbol = re.findall('【币种】.*?(\w+USDT).*?\n', text)[0]
             price = float(re.findall('【开仓价】.*?(\d+(?:\.\d+)?).*?\n', text)[0])
@@ -61,6 +66,19 @@ async def raw(client, message):
                     autobn.open_bn_position(symbol, 'BUY', positionSide)
                 elif side == '开仓':
                     autobn.open_bn_position(symbol, 'BUY', positionSide)
+
+
+@app.on_edited_message()
+async def on_edit(client, message):
+    print('on_edited_message', flush=True)
+    handle_msg(message)
+
+
+@app.on_message()
+async def raw(client, message):
+    print('on_message', flush=True)
+    handle_msg(message)
+
 
 if __name__ == '__main__':
     # 获取当前文件所在目录
