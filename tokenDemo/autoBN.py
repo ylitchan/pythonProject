@@ -515,32 +515,32 @@ class AUTOBN:
                     if close_info[3] == 'SHORT':
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
-                        close_info[1] = kline_close[-1]*0.97
-                        close_info[0] = kline_close[-1]*1.03
-                    elif close_info[0]/close_info[1] < 1.04/0.96:
+                        close_info[1] = kline_close[-1]*0.96
+                        close_info[0] = kline_close[-1]*1.04
+                    elif close_info[0]/close_info[1] < 1.045/0.955:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
-                        close_info[1] = close_info[1]*0.97
-                        close_info[0] = close_info[1]*1.03
+                        close_info[1] = close_info[1]*0.96
+                        close_info[0] = close_info[1]*1.04
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
-                        close_info[0] = kline_close[-1]*1.03
-                        close_info[1] = kline_close[-1]*0.97
-                    elif close_info[0]/close_info[1] < 1.04/0.96:
+                        close_info[0] = kline_close[-1]*1.04
+                        close_info[1] = kline_close[-1]*0.96
+                    elif close_info[0]/close_info[1] < 1.045/0.955:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
-                        close_info[0] = close_info[0]*1.03
-                        close_info[1] = close_info[0]*0.97
+                        close_info[0] = close_info[0]*1.04
+                        close_info[1] = close_info[0]*0.96
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
