@@ -626,10 +626,10 @@ class AUTOBN:
                     if p["symbol"] not in self.alert_all['POSITIONS']:
                         if p["positionSide"] == "LONG":
                             self.alert_all['POSITIONS'][p["symbol"]] = [
-                                float(p["entryPrice"])*1.09, float(p["entryPrice"])*0.91, "SELL", "LONG"]
+                                float(p["entryPrice"])*1.05, float(p["entryPrice"])*0.95, "SELL", "LONG"]
                         else:
                             self.alert_all['POSITIONS'][p["symbol"]] = [
-                                float(p["entryPrice"])*1.09, float(p["entryPrice"])*0.91, "BUY", "SHORT"]
+                                float(p["entryPrice"])*1.05, float(p["entryPrice"])*0.95, "BUY", "SHORT"]
 
                 # 获取交易所信息
                 exchange_info = await asyncio.to_thread(self.um_futures_client.exchange_info)
