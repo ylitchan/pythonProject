@@ -292,7 +292,7 @@ class AUTOBN:
                 orig_price = float(tx.get("price", 0))
                 realized_pnl = (orig_price-entryPrice)/entryPrice if positionSide == 'LONG' else (
                     entryPrice-orig_price)/entryPrice
-                msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{orig_price}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓收益:{realized_pnl*100:.2f}%'
+                msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{orig_price}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓收益:{realized_pnl*self.leverage*100:.2f}%'
                 self.send_msg(msg)
                 break  # 成功平仓，退出循环
             except:
