@@ -87,6 +87,7 @@ class HandleMsg:
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
             positionSide = 'LONG' if side == "涨" else "SHORT"
             symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
+            
             if '猎龙忍者' in texts[0]:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
@@ -94,20 +95,22 @@ class HandleMsg:
                 if self.autobn.open_bn_position(symbol, side, positionSide):
                     self.autobn.get_position_risk()
                 await self.send_balance()
+
             elif '跟踪止损设置提醒' in texts[0]:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "SELL" if side == "涨" else "BUY"
+                self.autobn.get_position_risk()
                 self.autobn.close_bn_position(
                     symbol, side, positionSide, price, close_ratio=0.5)
-                self.autobn.get_position_risk()
+
             elif '跟踪结束' in texts[0]:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[4])[0])
                 side = "SELL" if side == "涨" else "BUY"
+                self.autobn.get_position_risk()
                 self.autobn.close_bn_position(
                     symbol, side, positionSide, price, close_ratio=1)
-                self.autobn.get_position_risk()
 
 
 # @app.on_raw_update()
