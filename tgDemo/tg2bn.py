@@ -2,6 +2,7 @@
 # @Author: ylitchan
 # @Source: rdti_crawl_defense
 # @Site:
+import asyncio
 import re
 from pyrogram import Client
 import requests
@@ -119,4 +120,5 @@ if __name__ == '__main__':
     allert_all_file = os.path.join(current_dir, 'alert_all.json')
     autobn = AUTOBN.from_cfg(bn_api_file, allert_all_file,
                              '095984b1-5bc0-43ac-8037-d65a9608d120')
+    asyncio.run(autobn.get_symbols_info())
     app.run()
