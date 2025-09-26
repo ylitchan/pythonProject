@@ -61,12 +61,10 @@ def handle_msg(message):
 
 def handle_msg2(message):
     print(message, flush=True)
-    # title = message.chat.title if message.chat else ""
-    # channel_id = message.chat.id if message.chat else 0
-    # username = message.chat.username if (
-    #     message.chat and message.chat.username) else ""
-    if '贪婪恐慌等级' in message.message:
-        text = message.message or ''
+    title = message.chat.title if message.chat else ""
+    channel_id = message.chat.id if message.chat else 0
+    if  title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
+        text = message.text or ''
         autobn.send_msg(text)
         texts = text.split('\n')
         side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
@@ -75,7 +73,6 @@ def handle_msg2(message):
         if '猎龙忍者' in texts[0]:
             price = float(re.findall('价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
             side = "BUY" if side == "涨" else "SELL"
-            autobn.send_msg(f'==={symbol}{side}===\n开仓价:{price}')
             autobn.open_bn_position(symbol, side, positionSide)
         elif '跟踪止损设置提醒' in texts[0]:
             price = float(re.findall('价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
@@ -89,22 +86,22 @@ def handle_msg2(message):
                 symbol, side, positionSide, price, close_ratio=1)
 
 
-@app.on_raw_update()
-async def handle_raw(_, update, users, chats):
-    print(update, flush=True)
-    if hasattr(update, 'message'):
-        handle_msg2(update.message)
-    async for i in _.get_chat_history(-1002651333064, limit=1):
-        print(i, flush=True)
-        if i.text != last_msg[-1]:
-            last_msg[-1] = i.text
-            handle_msg(i)
+# @app.on_raw_update()
+# async def handle_raw(_, update, users, chats):
+#     print(update, flush=True)
+#     if hasattr(update, 'message'):
+#         handle_msg2(update.message)
+#     async for i in _.get_chat_history(-1002651333064, limit=1):
+#         print(i, flush=True)
+#         if i.text != last_msg[-1]:
+#             last_msg[-1] = i.text
+#             handle_msg(i)
 
 
 @app.on_edited_message()
 async def on_edit(client, message):
     print('on_edited_message', flush=True)
-    handle_msg(message)
+    handle_msg2(message)
 
 
 @app.on_message()
