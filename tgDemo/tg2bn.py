@@ -5,12 +5,8 @@
 import asyncio
 import re
 from pyrogram import Client
-import requests
 from datetime import datetime
 import os
-import hashlib
-import base64
-from enum import auto
 import sys
 # 添加项目根目录到系统路径
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -23,68 +19,92 @@ app = Client("my_account", api_id, api_hash)
 last_msg = ['']
 
 
-def handle_msg(message):
-    print(message, flush=True)
-    if message.date.replace(second=0) == datetime.now().replace(second=0, microsecond=0):
-        text = message.text or ''
-        autobn.send_msg(text)
-        if '【熬鹰资本聪明钱】' in text:
-            side = re.findall('开仓|加仓|减仓|平仓', text)[0]
-            symbol = re.findall('【币种】.*?(\w+USDT).*?\n', text)[0]
-            price = float(re.findall('【开仓价】.*?(\d+(?:\.\d+)?).*?\n', text)[0])
-            positionSide = re.findall('【方向】(.*?)\n', text)[0]
-            autobn.send_msg(f'==={symbol}{side}===\n开仓价:{price}')
-            if '空' in positionSide:
-                positionSide = 'SHORT'
-                if side == '减仓':
-                    autobn.close_bn_position(
-                        symbol, "BUY", positionSide, price, close_ratio=0.5)
-                elif side == '平仓':
-                    autobn.close_bn_position(
-                        symbol, "BUY", positionSide, price, close_ratio=1)
-                elif side == '加仓':
-                    autobn.open_bn_position(symbol, 'SELL', positionSide)
-                elif side == '开仓':
-                    autobn.open_bn_position(symbol, 'SELL', positionSide)
-            elif '多' in positionSide:
-                positionSide = 'LONG'
-                if side == '减仓':
-                    autobn.close_bn_position(
-                        symbol, "SELL", positionSide, price, close_ratio=0.5)
-                elif side == '平仓':
-                    autobn.close_bn_position(
-                        symbol, "SELL", positionSide, price, close_ratio=1)
-                elif side == '加仓':
-                    autobn.open_bn_position(symbol, 'BUY', positionSide)
-                elif side == '开仓':
-                    autobn.open_bn_position(symbol, 'BUY', positionSide)
+class HandleMsg:
+    def __init__(self):
+        # 获取当前文件所在目录
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        bn_api_file = os.path.join(current_dir, 'bn.json')
+        allert_all_file = os.path.join(current_dir, 'alert_all.json')
+        self.autobn = AUTOBN.from_cfg(bn_api_file, allert_all_file,
+                                           '095984b1-5bc0-43ac-8037-d65a9608d120')
+        self.autobn.get_symbols_info()
 
+    async def send_balance(self):
+        # 获取账户可用余额
+        account_data = self.autobn.um_futures_client.account()
+        balance = float(account_data['totalMarginBalance'])
+        self.autobn.send_msg(f'账户余额为:{balance} USDT')
 
-def handle_msg2(message):
-    print(message, flush=True)
-    title = message.chat.title if message.chat else ""
-    channel_id = message.chat.id if message.chat else 0
-    if  title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
-        text = message.text or ''
-        autobn.send_msg(text)
-        texts = text.split('\n')
-        side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
-        positionSide = 'LONG' if side == "涨" else "SHORT"
-        symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
-        if '猎龙忍者' in texts[0]:
-            price = float(re.findall('价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
-            side = "BUY" if side == "涨" else "SELL"
-            autobn.open_bn_position(symbol, side, positionSide)
-        elif '跟踪止损设置提醒' in texts[0]:
-            price = float(re.findall('价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
-            side = "SELL" if side == "涨" else "BUY"
-            autobn.close_bn_position(
-                symbol, side, positionSide, price, close_ratio=0.5)
-        elif '跟踪结束' in texts[0]:
-            price = float(re.findall('价格.*?(\d+(?:\.\d+)?).*?', texts[4])[0])
-            side = "SELL" if side == "涨" else "BUY"
-            autobn.close_bn_position(
-                symbol, side, positionSide, price, close_ratio=1)
+    async def handle_msg(self, message):
+        print(message, flush=True)
+        if message.date.replace(second=0) == datetime.now().replace(second=0, microsecond=0):
+            text = message.text or ''
+            self.autobn.send_msg(text)
+            if '【熬鹰资本聪明钱】' in text:
+                side = re.findall('开仓|加仓|减仓|平仓', text)[0]
+                symbol = re.findall('【币种】.*?(\w+USDT).*?\n', text)[0]
+                price = float(re.findall(
+                    '【开仓价】.*?(\d+(?:\.\d+)?).*?\n', text)[0])
+                positionSide = re.findall('【方向】(.*?)\n', text)[0]
+                self.autobn.send_msg(f'==={symbol}{side}===\n开仓价:{price}')
+                if '空' in positionSide:
+                    positionSide = 'SHORT'
+                    if side == '减仓':
+                        self.autobn.close_bn_position(
+                            symbol, "BUY", positionSide, price, close_ratio=0.5)
+                    elif side == '平仓':
+                        self.autobn.close_bn_position(
+                            symbol, "BUY", positionSide, price, close_ratio=1)
+                    elif side == '加仓':
+                        self.autobn.open_bn_position(
+                            symbol, 'SELL', positionSide)
+                    elif side == '开仓':
+                        self.autobn.open_bn_position(
+                            symbol, 'SELL', positionSide)
+                elif '多' in positionSide:
+                    positionSide = 'LONG'
+                    if side == '减仓':
+                        self.autobn.close_bn_position(
+                            symbol, "SELL", positionSide, price, close_ratio=0.5)
+                    elif side == '平仓':
+                        self.autobn.close_bn_position(
+                            symbol, "SELL", positionSide, price, close_ratio=1)
+                    elif side == '加仓':
+                        self.autobn.open_bn_position(
+                            symbol, 'BUY', positionSide)
+                    elif side == '开仓':
+                        self.autobn.open_bn_position(
+                            symbol, 'BUY', positionSide)
+
+    async def handle_msg2(self, message):
+        print(message, flush=True)
+        title = message.chat.title if message.chat else ""
+        channel_id = message.chat.id if message.chat else 0
+        if title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
+            text = message.text or ''
+            self.autobn.send_msg(text)
+            texts = text.split('\n')
+            side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
+            positionSide = 'LONG' if side == "涨" else "SHORT"
+            symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
+            if '猎龙忍者' in texts[0]:
+                price = float(re.findall(
+                    '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
+                side = "BUY" if side == "涨" else "SELL"
+                self.autobn.open_bn_position(symbol, side, positionSide)
+                await self.send_balance()
+            elif '跟踪止损设置提醒' in texts[0]:
+                price = float(re.findall(
+                    '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
+                side = "SELL" if side == "涨" else "BUY"
+                self.autobn.close_bn_position(
+                    symbol, side, positionSide, price, close_ratio=0.5)
+            elif '跟踪结束' in texts[0]:
+                price = float(re.findall(
+                    '价格.*?(\d+(?:\.\d+)?).*?', texts[4])[0])
+                side = "SELL" if side == "涨" else "BUY"
+                self.autobn.close_bn_position(
+                    symbol, side, positionSide, price, close_ratio=1)
 
 
 # @app.on_raw_update()
@@ -102,23 +122,15 @@ def handle_msg2(message):
 @app.on_edited_message()
 async def on_edit(client, message):
     print('on_edited_message', flush=True)
-    handle_msg2(message)
+    await handle_msg.handle_msg2(message)
 
 
 @app.on_message()
 async def raw(client, message):
     print('on_message', flush=True)
-    handle_msg2(message)
+    await handle_msg.handle_msg2(message)
 
 
 if __name__ == '__main__':
-    # 获取当前文件所在目录
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-
-    # 加载币安API配置
-    bn_api_file = os.path.join(current_dir, 'bn.json')
-    allert_all_file = os.path.join(current_dir, 'alert_all.json')
-    autobn = AUTOBN.from_cfg(bn_api_file, allert_all_file,
-                             '095984b1-5bc0-43ac-8037-d65a9608d120')
-    asyncio.run(autobn.get_symbols_info())
+    handle_msg = HandleMsg()
     app.run()

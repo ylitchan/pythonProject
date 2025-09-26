@@ -53,7 +53,6 @@ class AUTOBN:
         # 初始化资金槽位（用于资金管理）
         obj.slot_balance = [0.0]
         obj.symbols_info = {}
-        asyncio.run(obj.rzq_market('BN'))
         return obj
 
     def send_msg(self, msg, wx=False):
@@ -598,6 +597,23 @@ class AUTOBN:
             traceback.print_exc()
             return
 
+    def get_symbols_info(self):
+        # 获取交易所信息
+        exchange_info = self.um_futures_client.exchange_info()
+
+        # 计算数量精度：根据quantityPrecision生成对应的Decimal精度
+        sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
+            f'0.{"1" * i["quantityPrecision"]}') for i in exchange_info['symbols']}
+
+        # 筛选USDT交易对：只处理USDT计价且状态为TRADING的交易对
+        self.symbols_info = {symbol['symbol']: {
+            'quotePrecision': symbol['quotePrecision'],  # 价格精度
+            # 数量精度
+            'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
+        }
+            for symbol in exchange_info['symbols'] if
+            'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
+
     async def rzq_market(self, market):
         """
         市场分析主函数：获取交易对信息并批量处理
@@ -638,22 +654,7 @@ class AUTOBN:
                     else:
                         self.alert_all['POSITIONS'][p["symbol"]
                                                     ][-1] = entryPrice
-                # 获取交易所信息
-                exchange_info = await asyncio.to_thread(self.um_futures_client.exchange_info)
-
-                # 计算数量精度：根据quantityPrecision生成对应的Decimal精度
-                sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
-                    f'0.{"1" * i["quantityPrecision"]}') for i in exchange_info['symbols']}
-
-                # 筛选USDT交易对：只处理USDT计价且状态为TRADING的交易对
-                self.symbols_info = {symbol['symbol']: {
-                    'quotePrecision': symbol['quotePrecision'],  # 价格精度
-                    # 数量精度
-                    'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
-                }
-                    for symbol in exchange_info['symbols'] if
-                    'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
-
+                self.get_symbols_info()
                 symbols = list(self.symbols_info.keys())
                 break  # 成功获取，退出重试循环
             except:
