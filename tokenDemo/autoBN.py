@@ -614,6 +614,29 @@ class AUTOBN:
             for symbol in exchange_info['symbols'] if
             'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
 
+    def get_position_risk(self):
+        # 获取当前持仓信息，用于清理无效持仓
+        position_risk = self.um_futures_client.get_position_risk()
+        position_risk_symbol = [i['symbol'] for i in position_risk]
+        # 只保留当前有持仓的交易对记录
+        self.alert_all['POSITIONS'] = {
+            k: v for k, v in self.alert_all['POSITIONS'].items() if k in position_risk_symbol}
+        for p in position_risk:
+            entryPrice = float(p["entryPrice"])
+            if p["symbol"] not in self.alert_all['POSITIONS']:
+                if p["positionSide"] == "LONG":
+                    self.alert_all['POSITIONS'][p["symbol"]] = [
+                        entryPrice*1.05, entryPrice*0.95, "SELL", "LONG", entryPrice]
+                else:
+                    self.alert_all['POSITIONS'][p["symbol"]] = [
+                        entryPrice*1.05, entryPrice*0.95, "BUY", "SHORT", entryPrice]
+            elif len(self.alert_all['POSITIONS'][p["symbol"]]) < 5:
+                self.alert_all['POSITIONS'][p["symbol"]
+                                            ].append(entryPrice)
+            else:
+                self.alert_all['POSITIONS'][p["symbol"]
+                                            ][-1] = entryPrice
+
     async def rzq_market(self, market):
         """
         市场分析主函数：获取交易对信息并批量处理
@@ -633,27 +656,7 @@ class AUTOBN:
         # 重试机制：最多尝试10次获取交易对信息
         for i in range(10):
             try:
-                # 获取当前持仓信息，用于清理无效持仓
-                position_risk = self.um_futures_client.get_position_risk()
-                position_risk_symbol = [i['symbol'] for i in position_risk]
-                # 只保留当前有持仓的交易对记录
-                self.alert_all['POSITIONS'] = {
-                    k: v for k, v in self.alert_all['POSITIONS'].items() if k in position_risk_symbol}
-                for p in position_risk:
-                    entryPrice = float(p["entryPrice"])
-                    if p["symbol"] not in self.alert_all['POSITIONS']:
-                        if p["positionSide"] == "LONG":
-                            self.alert_all['POSITIONS'][p["symbol"]] = [
-                                entryPrice*1.05, entryPrice*0.95, "SELL", "LONG", entryPrice]
-                        else:
-                            self.alert_all['POSITIONS'][p["symbol"]] = [
-                                entryPrice*1.05, entryPrice*0.95, "BUY", "SHORT", entryPrice]
-                    elif len(self.alert_all['POSITIONS'][p["symbol"]]) < 5:
-                        self.alert_all['POSITIONS'][p["symbol"]
-                                                    ].append(entryPrice)
-                    else:
-                        self.alert_all['POSITIONS'][p["symbol"]
-                                                    ][-1] = entryPrice
+                self.get_position_risk()
                 self.get_symbols_info()
                 symbols = list(self.symbols_info.keys())
                 break  # 成功获取，退出重试循环
