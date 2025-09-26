@@ -53,6 +53,7 @@ class AUTOBN:
         # 初始化资金槽位（用于资金管理）
         obj.slot_balance = [0.0]
         obj.symbols_info = {}
+        asyncio.run(obj.rzq_market('BN'))
         return obj
 
     def send_msg(self, msg, wx=False):
