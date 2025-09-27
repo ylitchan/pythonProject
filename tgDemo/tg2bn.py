@@ -2,8 +2,13 @@
 # @Author: ylitchan
 # @Source: rdti_crawl_defense
 # @Site:
+import asyncio
+import gc
 import re
-from pyrogram import Client
+import time
+import traceback
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pyrogram import Client, idle
 from datetime import datetime
 import os
 import sys
@@ -33,7 +38,103 @@ class HandleMsg:
         # 初始化币安自动交易实例
         self.autobn = AUTOBN.from_cfg(bn_api_file, allert_all_file,
                                       '095984b1-5bc0-43ac-8037-d65a9608d120')
-        self.autobn.get_symbols_info()
+        self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
+        self.scheduler.add_job(
+            self.handle_market,
+            'cron',
+            hour='*',
+            minute='*/5',
+            second='00',
+            next_run_time=datetime.now(),  # 启动后立即执行一次
+            misfire_grace_time=10,
+            max_instances=1,
+            coalesce=True,
+            name='跟单止损任务'
+        )
+
+    async def handle_token(self, semaphore, symbol, success):
+        """
+        核心交易逻辑：分析K线数据并执行交易决策
+
+        功能：这是整个交易系统的核心函数，负责：
+        1. 获取K线数据
+        2. 检查现有持仓是否需要平仓
+        3. 分析市场信号决定是否开仓
+        4. 执行开仓操作
+
+        参数：
+            semaphore: 异步信号量，控制并发数量
+            symbol: 交易对符号，如'BTCUSDT'
+            success: 成功处理的交易对集合
+            symbols_info: 交易对配置信息
+        """
+        try:
+            # 获取日K线数据（30天）
+            kline = await self.autobn.get_kline(semaphore, symbol, "1Dutc")
+            kline_close = [k[4] for k in kline]  # 提取收盘价列表
+            success.add(symbol)  # 记录成功处理的交易对
+            # 检查现有持仓是否需要平仓
+            if close_info := self.alert_all['POSITIONS'].get(symbol):
+                # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
+                # 平仓条件：价格触及止损/止盈 或 减仓信号触发
+                if close_info[3] == 'LONG' and kline_close[-1] <= close_info[-1]*0.91:
+                    self.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                    self.alert_all['POSITIONS'].pop(symbol)
+                elif close_info[3] == 'SHORT' and kline_close[-1] >= close_info[-1]*1.09:
+                    self.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                    self.alert_all['POSITIONS'].pop(symbol)
+
+        except:
+            # 异常处理：打印错误信息但不中断程序
+            traceback.print_exc()
+            return
+
+    async def handle_market(self):
+        """
+        市场分析主函数：获取交易对信息并批量处理
+
+        功能：这是整个交易系统的入口函数，负责：
+        1. 获取所有可交易的USDT交易对
+        2. 清理无效的持仓记录
+        3. 批量分析所有交易对
+        4. 保存分析结果
+        """
+        now = datetime.now()
+        symbols = []
+
+        # 重试机制：最多尝试10次获取交易对信息
+        for i in range(10):
+            try:
+                self.autobn.get_position_risk()
+                self.autobn.get_symbols_info()
+                symbols = list(self.autobn.alert_all['POSITIONS'].keys())
+                break  # 成功获取，退出重试循环
+            except:
+                # 获取失败，等待2秒后重试
+                traceback.print_exc()
+                await asyncio.sleep(2)
+        # 创建信号量，限制最大并发数为10，避免API限制
+        semaphore = asyncio.Semaphore(10)
+        print(now, f'跟单止损任务开始 - 持仓交易对数量: {len(symbols)}', flush=True)
+
+        success = set()  # 记录成功处理的交易对
+        chunk_size = 10  # 分批处理，避免内存占用过高
+
+        # 分批处理所有交易对
+        for i in range(0, len(symbols), chunk_size):
+            symbol_chunk = symbols[i:i + chunk_size]  # 当前批次的交易对
+            # 创建异步任务列表
+            tasks = [self.handle_token(semaphore, symbol, success)
+                     for symbol in symbol_chunk]
+            # 等待当前批次所有任务完成
+            await asyncio.gather(*tasks)
+            gc.collect()  # 垃圾回收，释放内存
+
+        # 打印任务完成信息
+        print(datetime.now(),
+              f'跟单止损任务结束 - 持仓交易对数量: {len(success)}', self.autobn.alert_all, flush=True)
 
     async def send_balance(self, account_data):
         """
@@ -48,7 +149,7 @@ class HandleMsg:
         for p in account_data['positions']:
             position_risk.append(
                 f"==={p['symbol']}===\n开仓价格:{float(p['notional'])/float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓收益:{p['unrealizedProfit']} USDT")
-        position_risk = '\n'.join(position_risk)
+        position_risk = '\n\n'.join(position_risk)
         self.autobn.send_msg(f'账户余额:\n{balance} USDT\n持仓信息:\n{position_risk}')
 
     async def handle_msg(self, message):
@@ -201,10 +302,19 @@ async def raw(client, message):
     print('on_message', flush=True)
     await handle_msg.handle_msg2(message)
 
+# ⚡ 使用 start + idle + stop 替代 run
+
+
+async def main():
+    await app.start()             # 这时事件循环已经存在
+    handle_msg.scheduler.start()  # 立即启动定时任务
+    await idle()                  # 阻塞，保持运行
+    await app.stop()              # 停止客户端
+
 
 # 程序入口点
 if __name__ == '__main__':
     # 初始化消息处理器
     handle_msg = HandleMsg()
     # 启动Telegram客户端
-    app.run()
+    asyncio.run(main())
