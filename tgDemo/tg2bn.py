@@ -3,7 +3,6 @@
 # @Source: rdti_crawl_defense
 # @Site:
 import re
-from turtle import position
 from pyrogram import Client
 from datetime import datetime
 import os
@@ -25,6 +24,7 @@ class HandleMsg:
     """
     消息处理类，用于处理来自特定Telegram频道的消息并执行相应的币安交易操作
     """
+
     def __init__(self):
         # 获取当前文件所在目录
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +38,7 @@ class HandleMsg:
     async def send_balance(self, account_data):
         """
         发送账户余额和持仓信息到消息通道
-        
+
         Args:
             account_data (dict): 包含账户信息的字典
         """
@@ -54,7 +54,7 @@ class HandleMsg:
     async def handle_msg(self, message):
         """
         处理【熬鹰资本聪明钱】频道的消息
-        
+
         Args:
             message: Telegram消息对象
         """
@@ -110,17 +110,17 @@ class HandleMsg:
     async def handle_msg2(self, message):
         """
         处理CM AI SIGNAL频道的消息
-        
+
         Args:
             message: Telegram消息对象
         """
-        print(message, flush=True)
+        text = message.text or ''
+        print(datetime.now(), text, flush=True)
         # 获取聊天标题和ID
         title = message.chat.title if message.chat else ""
         channel_id = message.chat.id if message.chat else 0
         # 处理指定频道的消息
         if title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
-            text = message.text or ''
             # 将消息转发到通知通道
             self.autobn.send_msg(text)
             texts = text.split('\n')
@@ -138,7 +138,7 @@ class HandleMsg:
                 side = "BUY" if side == "涨" else "SELL"
                 self.autobn.get_symbols_info()
                 # 执行开仓操作并发送账户信息
-                if account_data:=self.autobn.open_bn_position(symbol, side, positionSide):
+                if account_data := self.autobn.open_bn_position(symbol, side, positionSide):
                     await self.send_balance(account_data)
 
             # 处理跟踪止损设置提醒
@@ -179,7 +179,7 @@ class HandleMsg:
 async def on_edit(client, message):
     """
     当消息被编辑时触发的回调函数
-    
+
     Args:
         client: Telegram客户端实例
         message: 被编辑的Telegram消息对象
@@ -193,7 +193,7 @@ async def on_edit(client, message):
 async def raw(client, message):
     """
     当收到新消息时触发的回调函数
-    
+
     Args:
         client: Telegram客户端实例
         message: 新的Telegram消息对象
