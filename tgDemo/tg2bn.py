@@ -76,14 +76,22 @@ class HandleMsg:
             if close_info := self.autobn.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                if close_info[3] == 'LONG' and kline_close[-1] <= close_info[-1]*0.91:
-                    self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                    self.autobn.alert_all['POSITIONS'].pop(symbol)
-                elif close_info[3] == 'SHORT' and kline_close[-1] >= close_info[-1]*1.09:
-                    self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                    self.autobn.alert_all['POSITIONS'].pop(symbol)
+                if kline_close[-1] <= close_info[-1]*0.91:
+                    if close_info[3] == 'LONG':
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                        self.autobn.alert_all['POSITIONS'].pop(symbol)
+                    else:
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.7)
+                elif kline_close[-1] >= close_info[-1]*1.09:
+                    if close_info[3] == 'SHORT':
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                        self.autobn.alert_all['POSITIONS'].pop(symbol)
+                    else:
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.7)
 
         except:
             # 异常处理：打印错误信息但不中断程序
@@ -238,7 +246,7 @@ class HandleMsg:
                 side = "BUY" if side == "涨" else "SELL"
                 self.autobn.get_symbols_info()
                 # 执行开仓操作并发送账户信息
-                if account_data := self.autobn.open_bn_position(symbol, side, positionSide):
+                if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.2):
                     await self.send_balance(account_data)
 
             # 处理跟踪止损设置提醒
@@ -299,16 +307,9 @@ async def raw(client, message):
         message: 新的Telegram消息对象
     """
     print('on_message', flush=True)
+    if handle_msg.scheduler.state == 0:
+        handle_msg.scheduler.start()
     await handle_msg.handle_msg2(message)
-
-# ⚡ 使用 start + idle + stop 替代 run
-
-
-async def main():
-    await app.start()             # 这时事件循环已经存在
-    handle_msg.scheduler.start()  # 立即启动定时任务
-    await idle()                  # 阻塞，保持运行
-    await app.stop()              # 停止客户端
 
 
 # 程序入口点
@@ -316,4 +317,4 @@ if __name__ == '__main__':
     # 初始化消息处理器
     handle_msg = HandleMsg()
     # 启动Telegram客户端
-    asyncio.run(main())
+    app.run()

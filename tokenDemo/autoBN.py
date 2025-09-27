@@ -156,7 +156,7 @@ class AUTOBN:
             # 异常时返回0，避免程序崩溃
             return 0
 
-    def open_bn_position(self, symbol, side, positionSide):
+    def open_bn_position(self, symbol, side, positionSide, open_ratio=1/3):
         """
         在币安期货市场开仓
 
@@ -193,7 +193,8 @@ class AUTOBN:
 
             # 资金管理策略：限制单次开仓金额，控制风险
             # 策略1：设置资金槽位，单次开仓不超过总资金的1/3
-            self.slot_balance[0] = max(balance / 3, self.slot_balance[0])
+            self.slot_balance[0] = max(
+                balance*open_ratio, self.slot_balance[0])
             # 策略2：实际开仓金额不超过槽位和总资金70%的较小值
             safe_balance = min(self.slot_balance[0], balance * 0.7)
 
