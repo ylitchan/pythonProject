@@ -237,7 +237,7 @@ class AUTOBN:
             # 发送成功通知
             msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT'
             self.send_msg(msg)
-            return symbol
+            return account_data
         except Exception as e:
             # 异常处理：记录错误并发送通知
             error_msg = f'{symbol} 开仓失败：{str(e)}'

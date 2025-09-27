@@ -13,26 +13,37 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from tokenDemo.autoBN import AUTOBN
 
 
+# Telegram API凭证 - 用于连接到Telegram客户端
 api_id = 20214904
 api_hash = "9e4d64ec1b5a77c416b4e5522ce8d325"
+# 创建Telegram客户端实例
 app = Client("my_account", api_id, api_hash)
 last_msg = ['']
 
 
 class HandleMsg:
+    """
+    消息处理类，用于处理来自特定Telegram频道的消息并执行相应的币安交易操作
+    """
     def __init__(self):
         # 获取当前文件所在目录
         current_dir = os.path.dirname(os.path.abspath(__file__))
         bn_api_file = os.path.join(current_dir, 'bn.json')
         allert_all_file = os.path.join(current_dir, 'alert_all.json')
+        # 初始化币安自动交易实例
         self.autobn = AUTOBN.from_cfg(bn_api_file, allert_all_file,
                                       '095984b1-5bc0-43ac-8037-d65a9608d120')
         self.autobn.get_symbols_info()
 
-    async def send_balance(self):
+    async def send_balance(self, account_data):
+        """
+        发送账户余额和持仓信息到消息通道
+        
+        Args:
+            account_data (dict): 包含账户信息的字典
+        """
         # 获取账户可用余额
-        account_data = self.autobn.um_futures_client.account()
-        balance = float(account_data['totalMarginBalance'])
+        balance = account_data['totalMarginBalance']
         position_risk = []
         for p in account_data['positions']:
             position_risk.append(
@@ -41,17 +52,32 @@ class HandleMsg:
         self.autobn.send_msg(f'账户余额:\n{balance} USDT\n持仓信息:\n{position_risk}')
 
     async def handle_msg(self, message):
+        """
+        处理【熬鹰资本聪明钱】频道的消息
+        
+        Args:
+            message: Telegram消息对象
+        """
         print(message, flush=True)
+        # 检查消息时间是否为当前时间（精确到分钟）
         if message.date.replace(second=0) == datetime.now().replace(second=0, microsecond=0):
             text = message.text or ''
+            # 将消息转发到通知通道
             self.autobn.send_msg(text)
+            # 处理特定频道的消息
             if '【熬鹰资本聪明钱】' in text:
+                # 提取交易操作类型（开仓/加仓/减仓/平仓）
                 side = re.findall('开仓|加仓|减仓|平仓', text)[0]
+                # 提取交易对符号
                 symbol = re.findall('【币种】.*?(\w+USDT).*?\n', text)[0]
+                # 提取开仓价格
                 price = float(re.findall(
                     '【开仓价】.*?(\d+(?:\.\d+)?).*?\n', text)[0])
+                # 提取持仓方向
                 positionSide = re.findall('【方向】(.*?)\n', text)[0]
+                # 发送交易提醒
                 self.autobn.send_msg(f'==={symbol}{side}===\n开仓价:{price}')
+                # 根据方向和操作类型执行相应的交易操作
                 if '空' in positionSide:
                     positionSide = 'SHORT'
                     if side == '减仓':
@@ -82,38 +108,56 @@ class HandleMsg:
                             symbol, 'BUY', positionSide)
 
     async def handle_msg2(self, message):
+        """
+        处理CM AI SIGNAL频道的消息
+        
+        Args:
+            message: Telegram消息对象
+        """
         print(message, flush=True)
+        # 获取聊天标题和ID
         title = message.chat.title if message.chat else ""
         channel_id = message.chat.id if message.chat else 0
+        # 处理指定频道的消息
         if title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
             text = message.text or ''
+            # 将消息转发到通知通道
             self.autobn.send_msg(text)
             texts = text.split('\n')
+            # 提取交易信号类型
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
+            # 确定持仓方向
             positionSide = 'LONG' if side == "涨" else "SHORT"
+            # 提取交易对符号
             symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
 
+            # 处理猎龙忍者信号
             if '猎龙忍者' in texts[0]:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "BUY" if side == "涨" else "SELL"
-                if self.autobn.open_bn_position(symbol, side, positionSide):
-                    self.autobn.get_position_risk()
-                await self.send_balance()
+                self.autobn.get_symbols_info()
+                # 执行开仓操作并发送账户信息
+                if account_data:=self.autobn.open_bn_position(symbol, side, positionSide):
+                    await self.send_balance(account_data)
 
+            # 处理跟踪止损设置提醒
             elif '跟踪止损设置提醒' in texts[0]:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "SELL" if side == "涨" else "BUY"
                 self.autobn.get_position_risk()
+                # 执行减仓操作（50%）
                 self.autobn.close_bn_position(
                     symbol, side, positionSide, price, close_ratio=0.5)
 
+            # 处理跟踪结束信号
             elif '跟踪结束' in texts[0]:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[4])[0])
                 side = "SELL" if side == "涨" else "BUY"
                 self.autobn.get_position_risk()
+                # 执行平仓操作（100%）
                 self.autobn.close_bn_position(
                     symbol, side, positionSide, price, close_ratio=1)
 
@@ -126,22 +170,41 @@ class HandleMsg:
 #     async for i in _.get_chat_history(-1002651333064, limit=1):
 #         print(i, flush=True)
 #         if i.text != last_msg[-1]:
-#             last_msg[-1] = i.text
-#             handle_msg(i)
+#         last_msg[-1] = i.text
+#         handle_msg(i)
 
 
+# 处理被编辑的消息
 @app.on_edited_message()
 async def on_edit(client, message):
+    """
+    当消息被编辑时触发的回调函数
+    
+    Args:
+        client: Telegram客户端实例
+        message: 被编辑的Telegram消息对象
+    """
     print('on_edited_message', flush=True)
     await handle_msg.handle_msg2(message)
 
 
+# 处理新消息
 @app.on_message()
 async def raw(client, message):
+    """
+    当收到新消息时触发的回调函数
+    
+    Args:
+        client: Telegram客户端实例
+        message: 新的Telegram消息对象
+    """
     print('on_message', flush=True)
     await handle_msg.handle_msg2(message)
 
 
+# 程序入口点
 if __name__ == '__main__':
+    # 初始化消息处理器
     handle_msg = HandleMsg()
+    # 启动Telegram客户端
     app.run()
