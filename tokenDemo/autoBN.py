@@ -514,7 +514,7 @@ class AUTOBN:
                 if kline_close[-1] <= close_info[1]:
                     if close_info[3] == 'SHORT':
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[1] = kline_close[-1]*0.96
                         close_info[0] = kline_close[-1]*1.04
                     elif close_info[0]/close_info[1] < 1.045/0.955:
@@ -523,13 +523,13 @@ class AUTOBN:
                         self.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[1] = close_info[1]*0.96
                         close_info[0] = close_info[1]*1.04
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
                     elif close_info[0]/close_info[1] < 1.045/0.955:
@@ -538,12 +538,12 @@ class AUTOBN:
                         self.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[0] = close_info[0]*1.04
                         close_info[1] = close_info[0]*0.96
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5)
+                        symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
             if not is_early_morning:
                 return
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
