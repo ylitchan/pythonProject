@@ -552,7 +552,7 @@ class AUTOBN:
             # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
             # 条件3：持仓量增加信号（increase_oi函数返回True）
-            if kline_close[-2] < max(kline_close[:-2]) and kline_close[-3] > min(kline_close[-5:-3]) and kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and \
+            if kline_close[-2] < max(kline_close[:-2]) and kline_close[-3] > min(kline_close[-5:-3]+[kline[-5][1], kline[-4][1]]) and kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and \
                     await self.increase_oi(semaphore, symbol, 'LONG'):
                 # 设置止盈止损：止盈9%，止损9%
                 zy = kline_close[-1] * 1.05  # 止盈价
