@@ -2,8 +2,8 @@
 # @Author: ylitchan
 # @Source: rdti_crawl_defense
 # @Site:
-import asyncio
 import re
+from turtle import position
 from pyrogram import Client
 from datetime import datetime
 import os
@@ -26,14 +26,19 @@ class HandleMsg:
         bn_api_file = os.path.join(current_dir, 'bn.json')
         allert_all_file = os.path.join(current_dir, 'alert_all.json')
         self.autobn = AUTOBN.from_cfg(bn_api_file, allert_all_file,
-                                           '095984b1-5bc0-43ac-8037-d65a9608d120')
+                                      '095984b1-5bc0-43ac-8037-d65a9608d120')
         self.autobn.get_symbols_info()
 
     async def send_balance(self):
         # 获取账户可用余额
         account_data = self.autobn.um_futures_client.account()
         balance = float(account_data['totalMarginBalance'])
-        self.autobn.send_msg(f'账户余额为:{balance} USDT')
+        position_risk = []
+        for p in account_data['positions']:
+            position_risk.append(
+                f"==={p['symbol']}===\n开仓价格:{float(p['notional'])/float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓收益:{p['unrealizedProfit']} USDT")
+        position_risk = '\n'.join(position_risk)
+        self.autobn.send_msg(f'账户余额:\n{balance} USDT\n持仓信息:\n{position_risk}')
 
     async def handle_msg(self, message):
         print(message, flush=True)
@@ -87,7 +92,7 @@ class HandleMsg:
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
             positionSide = 'LONG' if side == "涨" else "SHORT"
             symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
-            
+
             if '猎龙忍者' in texts[0]:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
