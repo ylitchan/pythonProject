@@ -149,7 +149,7 @@ class HandleMsg:
                 self.autobn.get_position_risk()
                 # 执行减仓操作（50%）
                 self.autobn.close_bn_position(
-                    symbol, side, positionSide, price, close_ratio=0.5)
+                    symbol, side, positionSide, price, close_ratio=0.7)
 
             # 处理跟踪结束信号
             elif '跟踪结束' in texts[0]:
