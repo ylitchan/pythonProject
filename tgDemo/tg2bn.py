@@ -5,7 +5,6 @@
 import asyncio
 import gc
 import re
-import time
 import traceback
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pyrogram import Client, idle
@@ -74,17 +73,17 @@ class HandleMsg:
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             success.add(symbol)  # 记录成功处理的交易对
             # 检查现有持仓是否需要平仓
-            if close_info := self.alert_all['POSITIONS'].get(symbol):
+            if close_info := self.autobn.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
                 if close_info[3] == 'LONG' and kline_close[-1] <= close_info[-1]*0.91:
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                    self.alert_all['POSITIONS'].pop(symbol)
+                    self.autobn.alert_all['POSITIONS'].pop(symbol)
                 elif close_info[3] == 'SHORT' and kline_close[-1] >= close_info[-1]*1.09:
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                    self.alert_all['POSITIONS'].pop(symbol)
+                    self.autobn.alert_all['POSITIONS'].pop(symbol)
 
         except:
             # 异常处理：打印错误信息但不中断程序
