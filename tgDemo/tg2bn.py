@@ -87,7 +87,7 @@ class HandleMsg:
             if close_info := self.autobn.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                if kline_close[-1] <= close_info[-1]*0.91:
+                if kline_close[-1] <= close_info[1]:
                     if close_info[3] == 'LONG':
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
@@ -95,7 +95,9 @@ class HandleMsg:
                     else:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.7)
-                elif kline_close[-1] >= close_info[-1]*1.09:
+                        close_info[1] = kline_close[-1]*0.96
+                        close_info[0] = kline_close[-1]*1.04
+                elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'SHORT':
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
@@ -103,6 +105,8 @@ class HandleMsg:
                     else:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.7)
+                        close_info[0] = kline_close[-1]*1.04
+                        close_info[1] = kline_close[-1]*0.96
 
         except:
             # 异常处理：打印错误信息但不中断程序
@@ -268,6 +272,9 @@ class HandleMsg:
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "SELL" if side == "涨" else "BUY"
                 self.autobn.get_position_risk()
+                if symbol in self.autobn.alert_all['POSITIONS']:
+                    self.autobn.alert_all['POSITIONS'][symbol][0] = price*1.04
+                    self.autobn.alert_all['POSITIONS'][symbol][1] = price*0.96
                 # 执行减仓操作（50%）
                 self.autobn.close_bn_position(
                     symbol, side, positionSide, price, close_ratio=0.7)
