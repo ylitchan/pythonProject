@@ -290,9 +290,9 @@ class AUTOBN:
                 pnl_percent = price_diff * close_amount
                 msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent*self.leverage*100:.2f}%'
                 self.send_msg(msg)
-                break  # 成功平仓，退出循环
+                return symbol  # 成功平仓，退出循环
             except:
-                # 平仓失败，等待3秒后重试
+                # 平仓失败，等待3秒后重试F
                 time.sleep(3)
                 traceback.print_exc()  # 打印错误信息
                 msg = f'bn平仓{symbol}失败，当前价格:{price_close}'
@@ -302,6 +302,7 @@ class AUTOBN:
                 close_amount = current_amount * close_ratio
                 close_amount = float(
                     Decimal(str(close_amount)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
+                return None
 
     async def increase_oi(self, semaphore, symbol, positionSide):
         """
