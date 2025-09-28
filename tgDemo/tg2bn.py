@@ -8,7 +8,7 @@ import json
 import re
 import traceback
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pyrogram import Client, idle
+from pyrogram import Client
 from datetime import datetime
 import os
 import sys
