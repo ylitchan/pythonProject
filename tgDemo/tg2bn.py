@@ -270,13 +270,15 @@ class HandleMsg:
                 # 执行开仓操作并发送账户信息
                 if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.2):
                     print(account_data, flush=True)
+                    # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
+                    self.alert_all['POSITIONS'][symbol] = [
+                        price * 1.09, price * 0.91, "BUY" if side == "SELL" else "SELL", positionSide]
 
             # 处理跟踪止损设置提醒
             elif '跟踪止损设置提醒' in texts[0]:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "SELL" if side == "涨" else "BUY"
-                self.autobn.get_position_risk()
                 if symbol in self.autobn.alert_all['POSITIONS']:
                     self.autobn.alert_all['POSITIONS'][symbol][0] = price*1.04
                     self.autobn.alert_all['POSITIONS'][symbol][1] = price*0.96
@@ -289,7 +291,6 @@ class HandleMsg:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[4])[0])
                 side = "SELL" if side == "涨" else "BUY"
-                self.autobn.get_position_risk()
                 # 执行平仓操作（100%）
                 self.autobn.close_bn_position(
                     symbol, side, positionSide, price, close_ratio=1)
