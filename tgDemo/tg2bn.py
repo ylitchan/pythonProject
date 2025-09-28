@@ -50,6 +50,17 @@ class HandleMsg:
             coalesce=True,
             name='跟单止损任务'
         )
+        self.scheduler.add_job(
+            self.send_balance,
+            'cron',
+            hour='08',
+            minute='00',
+            second='00',
+            misfire_grace_time=10,
+            max_instances=1,
+            coalesce=True,
+            name='账户信息推送'
+        )
 
     async def handle_token(self, semaphore, symbol, success):
         """
@@ -143,7 +154,7 @@ class HandleMsg:
         print(datetime.now(),
               f'跟单止损任务结束 - 持仓交易对数量: {len(success)}', self.autobn.alert_all, flush=True)
 
-    async def send_balance(self, account_data):
+    async def send_balance(self, account_data=None):
         """
         发送账户余额和持仓信息到消息通道
 
@@ -151,6 +162,8 @@ class HandleMsg:
             account_data (dict): 包含账户信息的字典
         """
         # 获取账户可用余额
+        if account_data is None:
+            account_data = self.autobn.um_futures_client.account()
         balance = account_data['totalMarginBalance']
         position_risk = []
         for p in account_data['positions']:
@@ -247,7 +260,7 @@ class HandleMsg:
                 self.autobn.get_symbols_info()
                 # 执行开仓操作并发送账户信息
                 if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.2):
-                    await self.send_balance(account_data)
+                    print(account_data, flush=True)
 
             # 处理跟踪止损设置提醒
             elif '跟踪止损设置提醒' in texts[0]:

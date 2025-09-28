@@ -285,9 +285,10 @@ class AUTOBN:
                 )
                 entryPrice = self.alert_all['POSITIONS'][symbol][-1]
                 # 发送成功通知
-                realized_pnl = (price_close-entryPrice)/entryPrice if positionSide == 'LONG' else (
-                    entryPrice-price_close)/entryPrice
-                msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓收益:{realized_pnl*self.leverage*100:.2f}%'
+                price_diff = price_close-entryPrice if positionSide == 'LONG' else entryPrice-price_close
+                realized_pnl = price_diff/entryPrice
+                pnl_percent = price_diff * close_amount
+                msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent*self.leverage*100:.2f}%'
                 self.send_msg(msg)
                 break  # 成功平仓，退出循环
             except:
