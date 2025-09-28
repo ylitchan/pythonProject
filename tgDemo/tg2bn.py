@@ -271,7 +271,7 @@ class HandleMsg:
                 if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.2):
                     print(account_data, flush=True)
                     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
-                    self.alert_all['POSITIONS'][symbol] = [
+                    self.autobn.alert_all['POSITIONS'][symbol] = [
                         price * 1.09, price * 0.91, "BUY" if side == "SELL" else "SELL", positionSide]
 
             # 处理跟踪止损设置提醒
