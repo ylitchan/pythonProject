@@ -4,6 +4,7 @@
 # @Site:
 import asyncio
 import gc
+import json
 import re
 import traceback
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -157,6 +158,10 @@ class HandleMsg:
         # 打印任务完成信息
         print(datetime.now(),
               f'跟单止损任务结束 - 持仓交易对数量: {len(success)}', self.autobn.alert_all, flush=True)
+        # 保存分析结果到文件
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(current_dir, 'alert_all.json'), 'w') as f:
+            json.dump(self.autobn.alert_all, f, ensure_ascii=False, indent=4)
 
     async def send_balance(self, account_data=None):
         """
