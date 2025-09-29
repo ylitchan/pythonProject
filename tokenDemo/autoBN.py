@@ -304,7 +304,7 @@ class AUTOBN:
                     Decimal(str(close_amount)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
                 return None
 
-    async def increase_oi(self, semaphore, symbol, positionSide):
+    async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None):
         """
         检查增仓信号，判断是否适合开仓
 
@@ -360,9 +360,11 @@ class AUTOBN:
                 else:
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
-                    if sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and \
-                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[:-1]):  # 多空比>=1说明多头占优，不适合做空
-                        return True
+                    for index in range(-2, int(-len(kline_close)/3)-2, -1):
+                        # 如果持仓量和价值都增加，说明是正常增仓，继续等待
+                        if kline_close[index] == max(kline_close) and kline_close[-2] > max(kline_close[-4:-2]) and sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and \
+                                sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]):
+                            return True
                     return False
             except:
                 return False
@@ -577,7 +579,7 @@ class AUTOBN:
             # 条件1：价格连续下跌（前3天 > 前2天 > 前1天）
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最小值）
             # 条件3：持仓量增加信号（increase_oi函数返回True）
-            elif kline_close[-2] > max(kline_close[:-2]) and await self.increase_oi(semaphore, symbol, 'SHORT'):
+            elif await self.increase_oi(semaphore, symbol, 'SHORT', kline_close):
                 # 设置止盈止损：止盈9%，止损9%
                 zy = kline_close[-1] * 0.95  # 止盈价
                 zs = kline_close[-1] * 1.05  # 止损价
@@ -850,6 +852,7 @@ async def main():
     任务2：币安市场分析（每天8点执行）
     """
     # await autobn.rzq_market('BN')
+    # return
     # 设置A股监控定时任务
     scheduler.add_job(
         monitor_stocks,  # 执行的函数
