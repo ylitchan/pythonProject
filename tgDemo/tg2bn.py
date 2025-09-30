@@ -36,8 +36,8 @@ class HandleMsg:
         bn_api_file = os.path.join(current_dir, 'bn.json')
         allert_all_file = os.path.join(current_dir, 'alert_all.json')
         # 初始化币安自动交易实例
-        self.autobn = AUTOBN.from_cfg(bn_api_file, allert_all_file,
-                                      '095984b1-5bc0-43ac-8037-d65a9608d120')
+        self.autobn = AUTOBN.from_cfg(bn_api_file=bn_api_file, allert_all_file=allert_all_file, margin_mode='isolated',
+                                      qy_key='095984b1-5bc0-43ac-8037-d65a9608d120', leverage=2)
         self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
         self.scheduler.add_job(
             self.handle_market,
@@ -262,17 +262,17 @@ class HandleMsg:
             symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
 
             # 处理猎龙忍者信号
-            if '狩猎指数' in text and  '分数' in text:
+            if re.search('猎龙忍者|资金雷达', text[0]):
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "BUY" if side == "涨" else "SELL"
                 self.autobn.get_symbols_info()
                 # 执行开仓操作并发送账户信息
-                if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.2):
+                if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.1):
                     print(account_data, flush=True)
                     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                     self.autobn.alert_all['POSITIONS'][symbol] = [
-                        price * 1.09, price * 0.91, "BUY" if side == "SELL" else "SELL", positionSide]
+                        price * 1.5, price * 0.5, "BUY" if side == "SELL" else "SELL", positionSide]
 
             # 处理跟踪止损设置提醒
             elif '跟踪止损设置提醒' in texts[0]:

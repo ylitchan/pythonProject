@@ -16,42 +16,60 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler  # 异步任务调�
 
 class AUTOBN:
     @classmethod
-    def from_cfg(cls, bn_api_file: str, allert_all_file: str, qy_key: str):
+    def from_cfg(cls, **kwargs):
         obj = cls.__new__(cls)
-        obj.qy_key = qy_key
-        # 交易参数配置
-        obj.leverage = 3  # 杠杆倍数
-        obj.health4open = 70  # 开仓最低健康度（百分比）
+        # 基本配置：优先使用 kwargs，其次使用默认/环境
+        obj.qy_key = kwargs.get('qy_key') or kwargs.get('qyWechatKey')
+        if not obj.qy_key:
+            raise ValueError('from_cfg 需要提供 qy_key')
 
-        # 初始化HTTP会话
-        obj.session = requests.Session()
-        obj.session.verify = False  # 跳过SSL验证
-        obj.session.headers = {'Content-Type': 'application/json'}
+        # 交易参数配置（可覆盖）
+        obj.leverage = kwargs.get('leverage', 3)
+        obj.health4open = kwargs.get('health4open', 70)
+        # 仓位模式：'CROSSED' 全仓，'ISOLATED' 逐仓；支持大小写/中文/别名
+        margin_mode_raw = str(kwargs.get('margin_mode', kwargs.get(
+            'position_mode', 'CROSSED'))).strip().lower()
+        margin_mode_map = {
+            'cross': 'CROSSED', 'crossed': 'CROSSED', '全仓': 'CROSSED', '全倉': 'CROSSED', 'c': 'CROSSED',
+            'isolated': 'ISOLATED', 'iso': 'ISOLATED', '逐仓': 'ISOLATED', '逐倉': 'ISOLATED', 'i': 'ISOLATED'
+        }
+        obj.margin_mode = margin_mode_map.get(margin_mode_raw, 'CROSSED')
 
-        # 获取微信配置（从环境变量或使用默认值）
-        obj.wx_key = os.getenv(
-            'WX_KEY', 'fe197940-30c1-4cea-a41a-17b461423f83')
-        obj.user_name = os.getenv('USER_NAME', '49124710049@chatroom')
+        # HTTP 会话配置（可覆盖）
+        obj.session = kwargs.get('session') or requests.Session()
+        obj.session.verify = kwargs.get('session_verify', False)
+        obj.session.headers = kwargs.get(
+            'session_headers', {'Content-Type': 'application/json'})
 
-        # 获取当前文件所在目录
+        # 微信配置（可覆盖 -> 环境 -> 默认）
+        obj.wx_key = kwargs.get('wx_key', os.getenv(
+            'WX_KEY', 'fe197940-30c1-4cea-a41a-17b461423f83'))
+        obj.user_name = kwargs.get('user_name', os.getenv(
+            'USER_NAME', '49124710049@chatroom'))
+
+        # 文件路径（可覆盖）
         current_dir = os.path.dirname(os.path.abspath(__file__))
+        bn_api_file = kwargs.get('bn_api_file', 'bn.json')
+        alert_all_file = kwargs.get('alert_all_file', kwargs.get(
+            'allert_all_file', 'alert_all.json'))
 
-        # 加载币安API配置
+        # 加载币安API配置并允许 kwargs 覆盖
         with open(os.path.join(current_dir, bn_api_file), 'r') as f:
             bn_api = json.load(f)
+        api_key = kwargs.get('api_key', bn_api.get(
+            'api_key', 'Uz3Tat0QcGBYRa9E2TQZn1nscd0iNcoEnpDbk71q2uEke3jC8d9NADQCUoXLmkn2'))
+        api_secret = kwargs.get('api_secret', bn_api.get(
+            'api_secret', 'tqCsBnIj3T9BuZYnwyHJTNVWwL88LA1PQtZHqh3wVV6kWbWRRLyWEfrDknvdm09J'))
 
         # 初始化币安期货客户端
-        obj.um_futures_client = UMFutures(
-            key=bn_api.get(
-                'api_key', 'Uz3Tat0QcGBYRa9E2TQZn1nscd0iNcoEnpDbk71q2uEke3jC8d9NADQCUoXLmkn2'),
-            secret=bn_api.get('api_secret', 'tqCsBnIj3T9BuZYnwyHJTNVWwL88LA1PQtZHqh3wVV6kWbWRRLyWEfrDknvdm09J'))
+        obj.um_futures_client = UMFutures(key=api_key, secret=api_secret)
 
         # 加载持仓记录
-        with open(os.path.join(current_dir, allert_all_file), 'r') as f:
+        with open(os.path.join(current_dir, alert_all_file), 'r') as f:
             obj.alert_all = json.load(f)
 
-        # 初始化资金槽位（用于资金管理）
-        obj.slot_balance = [0.0]
+        # 初始化资金槽位（用于资金管理）（可覆盖）
+        obj.slot_balance = kwargs.get('slot_balance', [0.0])
         obj.symbols_info = {}
         return obj
 
@@ -221,6 +239,13 @@ class AUTOBN:
                 self.send_msg(
                     f'{symbol} 开仓失败：预计健康度 {account_health}% 低于要求 {self.health4open}%')
                 return None
+
+            # 设置保证金模式（全仓/逐仓）。若已为目标模式，交易所会返回错误码或提示，忽略即可
+            try:
+                self.um_futures_client.change_margin_type(
+                    symbol=symbol, marginType=self.margin_mode)
+            except Exception:
+                pass
 
             # 设置杠杆倍数
             leverage_result = self.um_futures_client.change_leverage(
@@ -842,8 +867,11 @@ def monitor_stocks():
 
 
 async def main():
-    autobn = AUTOBN.from_cfg('bn.json', 'alert_all.json',
-                             '6f2ec864-c474-4c8f-b069-1e3c35eb7d73')
+    autobn = AUTOBN.from_cfg(
+        bn_api_file='bn.json',
+        alert_all_file='alert_all.json',
+        qy_key='6f2ec864-c474-4c8f-b069-1e3c35eb7d73'
+    )
     """
     主函数：设置定时任务并启动调度器
 
