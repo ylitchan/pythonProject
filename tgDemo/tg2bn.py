@@ -262,7 +262,7 @@ class HandleMsg:
             symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
 
             # 处理猎龙忍者信号
-            if re.search('猎龙忍者|资金雷达', text[0]):
+            if re.search('猎龙忍者|资金雷达', texts[0]):
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "BUY" if side == "涨" else "SELL"
