@@ -384,13 +384,15 @@ class AUTOBN:
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
                         if (
                             sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and
-                            sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index])
+                            sumOpenInterestValue[index] > max(
+                                sumOpenInterestValue[index - 2:index])
                         ):
                             return False
                         # 如果持仓量增加但价值减少，说明价格下跌但资金流入，适合做多
                         elif (
                             sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and
-                            sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index])
+                            sumOpenInterestValue[index] < min(
+                                sumOpenInterestValue[index - 2:index])
                         ):
                             return True
                         # 如果持仓价值增加但持仓量减少，说明价格上涨但资金流出，适合做多
@@ -409,7 +411,8 @@ class AUTOBN:
                             kline_close[index] == max(kline_close) and
                             kline_close[-2] > max(kline_close[-5:-2]) and
                             sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
-                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                            sumOpenInterestValue[-1] > max(
+                                sumOpenInterestValue[-3:-1])
                         ):
                             return True
                     return False
@@ -610,28 +613,29 @@ class AUTOBN:
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
             # 条件3：持仓量增加信号（increase_oi函数返回True）
             if (
+                (is_early_morning or (
+                    (symbol not in self.alert_all['POSITIONS']) and
+                    (kline[-1][1] <= kline_close[-1]) and
+                    (kline[-1][2] < kline[-1][1]*1.05))) and
                 kline_close[-3] < kline_close[-2] and
                 max(kline[-3][5], kline[-4][5]) < kline[-2][5] and
                 await self.increase_oi(semaphore, symbol, 'LONG')
             ):
-                allow_open_long = is_early_morning or (
-                    symbol not in self.alert_all['POSITIONS'] and kline[-1][1] <= kline_close[-1] and kline[-1][2] < kline[-1][1]*1.05)
-                if allow_open_long:
-                    # 设置止盈止损：止盈9%，止损9%
-                    zy = kline_close[-1] * 1.05  # 止盈价
-                    zs = kline_close[-1] * 0.95  # 止损价
-                    if close_info and close_info[3] == 'SHORT':
-                        self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                    # 发送做多信号通知
-                    self.send_msg(
-                        f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+                # 设置止盈止损：止盈9%，止损9%
+                zy = kline_close[-1] * 1.05  # 止盈价
+                zs = kline_close[-1] * 0.95  # 止损价
+                if close_info and close_info[3] == 'SHORT':
+                    self.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                # 发送做多信号通知
+                self.send_msg(
+                    f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
 
-                    # 执行开仓操作
-                    if self.open_bn_position(symbol, 'BUY', 'LONG'):
-                        # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
-                        self.alert_all['POSITIONS'][symbol] = [
-                            zy, zs, 'SELL', 'LONG']
+                # 执行开仓操作
+                if self.open_bn_position(symbol, 'BUY', 'LONG'):
+                    # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
+                    self.alert_all['POSITIONS'][symbol] = [
+                        zy, zs, 'SELL', 'LONG']
 
             # 做空信号判断：需要同时满足以下条件
             # 条件1：价格连续下跌（前3天 > 前2天 > 前1天）
@@ -862,7 +866,8 @@ def filter_stocks():
                 hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] or
                 list(
                     filter(
-                        lambda x: hist.iloc[-9 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘'],
+                        lambda x: hist.iloc[-9 + x:x +
+                                            1]['收盘'].mean() > hist.iloc[x]['收盘'],
                         range(-2, -i - 5, -1)
                     )
                 )
