@@ -19,6 +19,11 @@ class AUTOBN:
     def from_cfg(cls, **kwargs):
         obj = cls.__new__(cls)
         # 基本配置：优先使用 kwargs，其次使用默认/环境
+        # 支持键：qy_key, leverage, health4open, margin_mode/position_mode,
+        #        session/session_verify/session_headers,
+        #        wx_key, user_name,
+        #        bn_api_file, alert_all_file/allert_all_file,
+        #        api_key, api_secret, slot_balance
         obj.qy_key = kwargs.get('qy_key') or kwargs.get('qyWechatKey')
         if not obj.qy_key:
             raise ValueError('from_cfg 需要提供 qy_key')
@@ -27,6 +32,7 @@ class AUTOBN:
         obj.leverage = kwargs.get('leverage', 3)
         obj.health4open = kwargs.get('health4open', 70)
         # 仓位模式：'CROSSED' 全仓，'ISOLATED' 逐仓；支持大小写/中文/别名
+        # 仅设置新开仓/下单前的目标模式；若该 symbol 已有仓位，交易所可能拒绝切换
         margin_mode_raw = str(kwargs.get('margin_mode', kwargs.get(
             'position_mode', 'CROSSED'))).strip().lower()
         margin_mode_map = {
@@ -54,6 +60,7 @@ class AUTOBN:
             'allert_all_file', 'alert_all.json'))
 
         # 加载币安API配置并允许 kwargs 覆盖
+        # 说明：若传入 api_key/api_secret，将覆盖 bn_api_file 中的值
         with open(os.path.join(current_dir, bn_api_file), 'r') as f:
             bn_api = json.load(f)
         api_key = kwargs.get('api_key', bn_api.get(
@@ -69,6 +76,7 @@ class AUTOBN:
             obj.alert_all = json.load(f)
 
         # 初始化资金槽位（用于资金管理）（可覆盖）
+        # 含义：用于控制单次下单的资金使用上限（与 open_ratio 一起作用）
         obj.slot_balance = kwargs.get('slot_balance', [0.0])
         obj.symbols_info = {}
         return obj
@@ -116,8 +124,9 @@ class AUTOBN:
         """
         计算币安账户健康度
 
-        功能：评估账户风险水平，防止过度杠杆导致爆仓
+        功能：评估“账户级”风险水平，作为全局兜底指标（与逐仓单个仓位无直接对应）
         原理：健康度 = (1 - 维持保证金总额/账户总余额) * 100%
+        说明：逐仓仓位的维保同样计入维持保证金，但逐仓强平风险需另行计算
         参数：
             notional: 新增头寸的名义价值（USDT）
         返回：
@@ -210,7 +219,7 @@ class AUTOBN:
                 return None
 
             # 资金管理策略：限制单次开仓金额，控制风险
-            # 策略1：设置资金槽位，单次开仓不超过总资金的1/3
+            # 策略1：设置资金槽位，单次开仓不超过总资金的 open_ratio（默认 1/3）
             self.slot_balance[0] = max(
                 balance*open_ratio, self.slot_balance[0])
             # 策略2：实际开仓金额不超过槽位和总资金70%的较小值
@@ -231,16 +240,16 @@ class AUTOBN:
                 self.send_msg(f'{symbol} 开仓失败：交易额 {notional} 低于最小要求 6 USDT')
                 return None
 
-            # 风险控制：检查开仓后账户健康度
+            # 风险控制：检查“账户级健康度”（逐仓建议额外结合仓位强平距离/保证金冗余）
             # 健康度 = (1 - 维持保证金/总余额) * 100%
-            # 确保开仓后不会导致账户风险过高
+            # 目的：确保开仓后不会导致全局账户风险过高
             account_health = self.calculate_health_bn(notional)
             if account_health < self.health4open:
                 self.send_msg(
                     f'{symbol} 开仓失败：预计健康度 {account_health}% 低于要求 {self.health4open}%')
                 return None
 
-            # 设置保证金模式（全仓/逐仓）。若已为目标模式，交易所会返回错误码或提示，忽略即可
+            # 设置保证金模式（全仓/逐仓）。若已为目标模式，交易所可能返回错误码或提示，忽略即可
             try:
                 self.um_futures_client.change_margin_type(
                     symbol=symbol, marginType=self.margin_mode)
@@ -261,6 +270,7 @@ class AUTOBN:
                 positionSide=positionSide,  # 'LONG'或'SHORT'
             )
             # 发送成功通知
+            # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
             msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT'
             self.send_msg(msg)
             return account_data
@@ -363,23 +373,31 @@ class AUTOBN:
                 if positionSide == "LONG":
                     # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
-                    if sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or \
-                            sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or \
-                            lsar[-1] >= 1:  # 多空比>=1说明多头占优，不适合做多
+                    if (
+                        sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or
+                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or
+                        lsar[-1] >= 1  # 多空比>=1说明多头占优，不适合做多
+                    ):
                         return False
                     # 条件2：检查历史数据，寻找合适的增仓信号
                     for index in range(-2, -len(oi), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                        if sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
-                                sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index]):
+                        if (
+                            sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and
+                            sumOpenInterestValue[index] > max(sumOpenInterestValue[index - 2:index])
+                        ):
                             return False
                         # 如果持仓量增加但价值减少，说明价格下跌但资金流入，适合做多
-                        elif sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and \
-                                sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index]):
+                        elif (
+                            sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and
+                            sumOpenInterestValue[index] < min(sumOpenInterestValue[index - 2:index])
+                        ):
                             return True
                         # 如果持仓价值增加但持仓量减少，说明价格上涨但资金流出，适合做多
-                        elif sumOpenInterestValue[index] > sumOpenInterestValue[index - 1] and \
-                                sumOpenInterest[index] < sumOpenInterest[index - 1]:
+                        elif (
+                            sumOpenInterestValue[index] > sumOpenInterestValue[index - 1] and
+                            sumOpenInterest[index] < sumOpenInterest[index - 1]
+                        ):
                             return True
                     return False
                 else:
@@ -387,8 +405,12 @@ class AUTOBN:
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
                     for index in range(-2, int(-len(kline_close)/3)-2, -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                        if kline_close[index] == max(kline_close) and kline_close[-2] > max(kline_close[-5:-2]) and sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and \
-                                sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]):
+                        if (
+                            kline_close[index] == max(kline_close) and
+                            kline_close[-2] > max(kline_close[-5:-2]) and
+                            sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
+                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                        ):
                             return True
                     return False
             except:
@@ -423,19 +445,21 @@ class AUTOBN:
                     # 做多减仓条件：需要满足以下任一条件
                     # 条件1：持仓价值增加但持仓量减少（价格上涨但资金流出，获利了结信号）
                     # 条件2：持仓量达到近期高点但价值达到近期低点（价格下跌但持仓增加，止损信号）
-                    return sumOpenInterestValue[-1] > sumOpenInterestValue[-2] and \
-                        sumOpenInterest[-1] < sumOpenInterest[-2] or \
-                        sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and \
-                        sumOpenInterestValue[-1] < min(
-                            sumOpenInterestValue[-3:-1])
+                    return (
+                        (sumOpenInterestValue[-1] > sumOpenInterestValue[-2] and
+                         sumOpenInterest[-1] < sumOpenInterest[-2]) or
+                        (sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and
+                         sumOpenInterestValue[-1] < min(sumOpenInterestValue[-3:-1]))
+                    )
                 else:
                     # 做空减仓条件：需要满足以下任一条件
                     # 条件1：持仓价值减少但持仓量增加（价格下跌但资金流入，获利了结信号）
-                    return sumOpenInterestValue[-1] < sumOpenInterestValue[-2] and \
-                        sumOpenInterest[-1] > sumOpenInterest[-2] or \
-                        sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and \
-                        sumOpenInterestValue[-1] > max(
-                            sumOpenInterestValue[-3:-1])
+                    return (
+                        (sumOpenInterestValue[-1] < sumOpenInterestValue[-2] and
+                         sumOpenInterest[-1] > sumOpenInterest[-2]) or
+                        (sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
+                         sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]))
+                    )
             except:
                 return False
 
@@ -491,13 +515,18 @@ class AUTOBN:
                     # 计算基差：指数价格 / 市场价格
                     # 基差 > 1 表示期货价格高于现货价格（升水）
                     # 基差 < 1 表示期货价格低于现货价格（贴水）
-                    if (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) > 1.02 and \
-                            time_now - BASIS.get(p['symbol'], 0) > 60:
+                    if (
+                        (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) > 1.02 and
+                        time_now - BASIS.get(p['symbol'], 0) > 60
+                    ):
                         # 基差超过2%且距离上次通知超过60秒，发送警告
                         BASIS[p['symbol']] = time.time()
                         self.send_msg(
                             f'{p["symbol"]} 基差超过2%：{basis * 100 - 100:.2f}%', True)
-                    elif basis >= 1.015 and time_now - BASIS.get(p['symbol'], 0) > 180:
+                    elif (
+                        basis >= 1.015 and
+                        time_now - BASIS.get(p['symbol'], 0) > 180
+                    ):
                         # 基差超过1.5%且距离上次通知超过180秒，发送异常提醒
                         BASIS[p['symbol']] = time.time()
                         self.send_msg(
@@ -574,16 +603,17 @@ class AUTOBN:
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
-            if not is_early_morning:
-                return
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
             kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
             # 做多信号判断：需要同时满足以下条件
             # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
             # 条件3：持仓量增加信号（increase_oi函数返回True）
-            if kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and \
-                    await self.increase_oi(semaphore, symbol, 'LONG'):
+            if (
+                kline_close[-3] < kline_close[-2] and
+                max(kline[-3][5], kline[-4][5]) < kline[-2][5] and
+                await self.increase_oi(semaphore, symbol, 'LONG')
+            ):
                 allow_open_long = is_early_morning or (
                     symbol not in self.alert_all['POSITIONS'] and kline[-1][1] <= kline_close[-1] and kline[-1][2] < kline[-1][1]*1.05)
                 if allow_open_long:
@@ -608,12 +638,14 @@ class AUTOBN:
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最小值）
             # 条件3：持仓量增加信号（increase_oi函数返回True）
             elif (
-                (is_early_morning or (
-                    (symbol not in self.alert_all['POSITIONS']) and
-                    (kline[-1][1] >= kline_close[-1]) and
-                    (kline[-1][3] > kline[-1][1]*0.95)
-                ))
-                and await self.increase_oi(semaphore, symbol, 'SHORT', kline_close)
+                (
+                    is_early_morning or (
+                        (symbol not in self.alert_all['POSITIONS']) and
+                        (kline[-1][1] >= kline_close[-1]) and
+                        (kline[-1][3] > kline[-1][1]*0.95)
+                    )
+                ) and
+                await self.increase_oi(semaphore, symbol, 'SHORT', kline_close)
             ):
                 # 设置止盈止损：止盈9%，止损9%
                 zy = kline_close[-1] * 0.95  # 止盈价
@@ -826,9 +858,15 @@ def filter_stocks():
             # 条件3：价格位置检查
             # 3a：当前价格必须高于近10天均价（确保在上升趋势中）
             # 3b：检查近期是否有价格回调（避免追高）
-            if hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] \
-                    or list(filter(lambda x: hist.iloc[-9 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘'],
-                                   range(-2, -i - 5, -1))):
+            if (
+                hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] or
+                list(
+                    filter(
+                        lambda x: hist.iloc[-9 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘'],
+                        range(-2, -i - 5, -1)
+                    )
+                )
+            ):
                 continue
 
             # 条件4：成交量检查（当日成交量必须是近期最大）

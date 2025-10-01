@@ -57,7 +57,7 @@ class HandleMsg:
             hour='08',
             minute='00',
             second='00',
-            misfire_grace_time=10,
+            misfire_grace_time=300,
             max_instances=1,
             coalesce=True,
             name='账户信息推送'
