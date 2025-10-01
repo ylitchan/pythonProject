@@ -585,10 +585,9 @@ class AUTOBN:
             if kline_close[-3] < kline_close[-2] and max(kline[-3][5], kline[-4][5]) < kline[-2][5] and \
                     await self.increase_oi(semaphore, symbol, 'LONG'):
                 no_position = symbol not in self.alert_all['POSITIONS']
-                in_body_long = kline[-1][1] <= kline_close[-1]
-                not_spike_long = kline[-1][2] < kline[-1][1]*1.05
+                not_spike_long = kline[-1][1] <= kline_close[-1] <= kline[-1][2] < kline[-1][1]*1.05
                 allow_open_long = is_early_morning or (
-                    no_position and in_body_long and not_spike_long)
+                    no_position and not_spike_long)
                 if allow_open_long:
                     # 设置止盈止损：止盈9%，止损9%
                     zy = kline_close[-1] * 1.05  # 止盈价
