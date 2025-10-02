@@ -606,6 +606,8 @@ class AUTOBN:
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                    close_info[0] = kline_close[-1]*1.04
+                    close_info[1] = kline_close[-1]*0.96
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
             kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
             # 做多信号判断：需要同时满足以下条件
