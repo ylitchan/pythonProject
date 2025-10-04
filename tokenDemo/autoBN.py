@@ -183,7 +183,7 @@ class AUTOBN:
             # 异常时返回0，避免程序崩溃
             return 0
 
-    def open_bn_position(self, symbol, side, positionSide, open_ratio=1/3):
+    def open_bn_position(self, symbol, side, positionSide, open_ratio=1/10):
         """
         在币安期货市场开仓
 
@@ -588,13 +588,13 @@ class AUTOBN:
                         self.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
                         close_info[1] = close_info[1]*0.96
                         close_info[0] = close_info[1]*1.04
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
                     elif close_info[0]/close_info[1] < 1.045/0.955:
@@ -603,12 +603,12 @@ class AUTOBN:
                         self.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
                         close_info[0] = close_info[0]*1.04
                         close_info[1] = close_info[0]*0.96
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                        symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
                     close_info[0] = kline_close[-1]*1.04
                     close_info[1] = kline_close[-1]*0.96
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
@@ -637,7 +637,7 @@ class AUTOBN:
                     f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
 
                 # 执行开仓操作
-                if self.open_bn_position(symbol, 'BUY', 'LONG'):
+                if self.open_bn_position(symbol, 'BUY', 'LONG', 0.2):
                     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                     self.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
@@ -668,7 +668,7 @@ class AUTOBN:
                     f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
 
                 # 执行开仓操作
-                if self.open_bn_position(symbol, 'SELL', 'SHORT'):
+                if self.open_bn_position(symbol, 'SELL', 'SHORT', 0.2):
                     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                     self.alert_all['POSITIONS'][symbol] = [
                         zs, zy, 'BUY', 'SHORT']
