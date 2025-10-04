@@ -377,7 +377,7 @@ class AUTOBN:
                         sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or
                         # 多空比>=1说明多头占优，不适合做多
-                        lsar[-1] == max(lsar) or lsar[-1] == min(lsar)
+                        lsar[-1] > max(lsar[:-1]) or lsar[-1] < min(lsar[:-1])
                     ):
                         return False
                     # 条件2：检查历史数据，寻找合适的增仓信号
