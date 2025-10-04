@@ -410,7 +410,7 @@ class AUTOBN:
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
                         if (
                             kline_close[index-1] == max(kline_close) and
-                            sumOpenInterestValue[index] > max(
+                            sumOpenInterestValue[index] == max(
                                 sumOpenInterestValue) and
                             kline_close[-2] > max(kline_close[-5:-2]) and
                             sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
