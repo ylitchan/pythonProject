@@ -376,7 +376,8 @@ class AUTOBN:
                     if (
                         sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or
                         sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or
-                        lsar[-1] >= 1  # 多空比>=1说明多头占优，不适合做多
+                        # 多空比>=1说明多头占优，不适合做多
+                        lsar[-1] == max(lsar) or lsar[-1] == min(lsar)
                     ):
                         return False
                     # 条件2：检查历史数据，寻找合适的增仓信号
@@ -405,12 +406,12 @@ class AUTOBN:
                 else:
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
-                    for index in range(-2, int(-len(kline_close)/3)-2, -1):
+                    for index in range(-1, int(-len(kline_close)/3)-2, -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
                         if (
                             kline_close[index-1] == max(kline_close) and
                             sumOpenInterestValue[index] > max(
-                                sumOpenInterestValue[:index]) and
+                                sumOpenInterestValue) and
                             kline_close[-2] > max(kline_close[-5:-2]) and
                             sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
                             sumOpenInterestValue[-1] > max(
