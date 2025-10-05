@@ -183,7 +183,7 @@ class AUTOBN:
             # 异常时返回0，避免程序崩溃
             return 0
 
-    def open_bn_position(self, symbol, side, positionSide, open_ratio=1/10):
+    def open_bn_position(self, symbol, side, positionSide, open_ratio=0.1):
         """
         在币安期货市场开仓
 
