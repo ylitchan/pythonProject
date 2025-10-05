@@ -298,7 +298,7 @@ class AUTOBN:
         amount = self.get_amount_close(symbol)
         if not amount:  # 0表示无持仓
             return
-        close_ratio = 1 if amount*price_close < 100 else close_ratio
+        close_ratio = 1 if amount*price_close < 10 else close_ratio
         # 计算实际平仓数量
         close_amount = amount * close_ratio
         close_amount = float(
