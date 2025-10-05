@@ -589,8 +589,8 @@ class AUTOBN:
                     else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
-                        close_info[1] = close_info[1]*0.96
                         close_info[0] = close_info[1]*1.04
+                        close_info[1] = close_info[1]*0.96
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
@@ -604,8 +604,8 @@ class AUTOBN:
                     else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
-                        close_info[0] = close_info[0]*1.04
                         close_info[1] = close_info[0]*0.96
+                        close_info[0] = close_info[0]*1.04
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
