@@ -621,6 +621,7 @@ class AUTOBN:
                 (is_early_morning or (
                     (symbol not in self.alert_all['POSITIONS']) and
                     (kline[-1][1] <= kline_close[-1]) and
+                    (kline[-1][3] <= kline[-1][1]*0.95) and
                     (kline[-1][2] < kline[-1][1]*1.05))) and
                 kline_close[-3] < kline_close[-2] and
                 max(kline[-3][5], kline[-4][5]) < kline[-2][5] and
@@ -651,6 +652,7 @@ class AUTOBN:
                     is_early_morning or (
                         (symbol not in self.alert_all['POSITIONS']) and
                         (kline[-1][1] >= kline_close[-1]) and
+                        (kline[-1][2] >= kline[-1][1]*1.05) and
                         (kline[-1][3] > kline[-1][1]*0.95)
                     )
                 ) and
