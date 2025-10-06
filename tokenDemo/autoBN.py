@@ -576,38 +576,36 @@ class AUTOBN:
             if close_info := self.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                if kline[-1][3] <= close_info[1]:
+                if kline_close[-1] <= close_info[1]:
                     if close_info[3] == 'SHORT':
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[1] = kline_close[-1]*0.96
                         close_info[0] = kline_close[-1]*1.04
-                    elif kline_close[-1] <= close_info[1]:
-                        if close_info[0]/close_info[1] < 1.045/0.955:
-                            self.close_bn_position(
-                                symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                            self.alert_all['POSITIONS'].pop(symbol)
-                        else:
-                            self.close_bn_position(
-                                symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
-                            close_info[0] = close_info[1]*1.04
-                            close_info[1] = close_info[1]*0.96
-                elif kline[-1][2] >= close_info[0]:
+                    elif close_info[0]/close_info[1] < 1.045/0.955:
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                        self.alert_all['POSITIONS'].pop(symbol)
+                    else:
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
+                        close_info[0] = close_info[1]*1.04
+                        close_info[1] = close_info[1]*0.96
+                elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
-                    elif kline_close[-1] >= close_info[0]:
-                        if close_info[0]/close_info[1] < 1.045/0.955:
-                            self.close_bn_position(
-                                symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                            self.alert_all['POSITIONS'].pop(symbol)
-                        else:
-                            self.close_bn_position(
-                                symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
-                            close_info[1] = close_info[0]*0.96
-                            close_info[0] = close_info[0]*1.04
+                    elif close_info[0]/close_info[1] < 1.045/0.955:
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                        self.alert_all['POSITIONS'].pop(symbol)
+                    else:
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
+                        close_info[1] = close_info[0]*0.96
+                        close_info[0] = close_info[0]*1.04
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
