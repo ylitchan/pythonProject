@@ -86,12 +86,6 @@ class HandleMsg:
                         float(i['sumOpenInterestValue']) for i in oi]  # 持仓价值（美元）
                     sumOpenInterest = [float(i['sumOpenInterest'])
                                         for i in oi]  # 持仓数量（合约数）
-
-                    # 获取多空比历史数据（100天）
-                    # lsar = await asyncio.to_thread(self.um_futures_client.long_short_account_ratio, symbol=symbol,
-                    #                                period="1d", limit=30)
-                    # lsar = [float(i['longShortRatio']) for i in lsar]  # 多空比列表
-
                     # 打印分析数据，便于监控和调试
                     print(
                         f'{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
@@ -100,49 +94,10 @@ class HandleMsg:
                         # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                         # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
                         if (
-                            sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and
-                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                            sumOpenInterest[-1] > max(sumOpenInterest[:-1]) and
+                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[:-1])
                         ):
                             return True
-                        return False
-                        # 条件2：检查历史数据，寻找合适的增仓信号
-                        for index in range(-2, -len(oi), -1):
-                            # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                            if (
-                                sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and
-                                sumOpenInterestValue[index] > max(
-                                    sumOpenInterestValue[index - 2:index])
-                            ):
-                                return False
-                            # 如果持仓量增加但价值减少，说明价格下跌但资金流入，适合做多
-                            elif (
-                                sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and
-                                sumOpenInterestValue[index] < min(
-                                    sumOpenInterestValue[index - 2:index])
-                            ):
-                                return True
-                            # 如果持仓价值增加但持仓量减少，说明价格上涨但资金流出，适合做多
-                            elif (
-                                sumOpenInterestValue[index] > sumOpenInterestValue[index - 1] and
-                                sumOpenInterest[index] < sumOpenInterest[index - 1]
-                            ):
-                                return True
-                        return False
-                    else:
-                        # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
-                        # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
-                        for index in range(-1, int(-len(kline_close)/3)-2, -1):
-                            # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                            if (
-                                kline_close[index-1] == max(kline_close) and
-                                sumOpenInterestValue[index] == max(
-                                    sumOpenInterestValue) and
-                                kline_close[-2] > max(kline_close[-5:-2]) and
-                                sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
-                                sumOpenInterestValue[-1] > max(
-                                    sumOpenInterestValue[-3:-1])
-                            ):
-                                return True
                         return False
                 except:
                     return False

@@ -375,7 +375,8 @@ class AUTOBN:
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
                     if (
                         sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or
-                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1])
+                        sumOpenInterestValue[-1] <= max(
+                            sumOpenInterestValue[-3:-1])
                     ):
                         return False
                     # 条件2：检查历史数据，寻找合适的增仓信号
