@@ -362,22 +362,20 @@ class AUTOBN:
                                    for i in oi]  # 持仓数量（合约数）
 
                 # 获取多空比历史数据（100天）
-                lsar = await asyncio.to_thread(self.um_futures_client.long_short_account_ratio, symbol=symbol,
-                                               period="1d", limit=30)
-                lsar = [float(i['longShortRatio']) for i in lsar]  # 多空比列表
+                # lsar = await asyncio.to_thread(self.um_futures_client.long_short_account_ratio, symbol=symbol,
+                #                                period="1d", limit=30)
+                # lsar = [float(i['longShortRatio']) for i in lsar]  # 多空比列表
 
                 # 打印分析数据，便于监控和调试
                 print(
-                    f'{symbol} 多空比{max(lsar[-3:-1])}——>{lsar[-1]} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
+                    f'{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
                     flush=True)
                 if positionSide == "LONG":
                     # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
                     if (
                         sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or
-                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]) or
-                        # 多空比>=1说明多头占优，不适合做多
-                        lsar[-1] > 1
+                        sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1])
                     ):
                         return False
                     # 条件2：检查历史数据，寻找合适的增仓信号
@@ -483,7 +481,7 @@ class AUTOBN:
         """
         async with semaphore:
             # 提取时间周期前缀并转小写（如'1Dutc' -> '1d'）
-            interval = t[:2].lower()
+            interval = t.replace('utc', '').lower()
             try:
                 # 异步获取K线数据（30根K线）
                 kline = await asyncio.to_thread(self.um_futures_client.klines, symbol=symbol, interval=interval, limit=30)
@@ -638,7 +636,7 @@ class AUTOBN:
                     f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
 
                 # 执行开仓操作
-                if self.open_bn_position(symbol, 'BUY', 'LONG', 0.2):
+                if self.open_bn_position(symbol, 'BUY', 'LONG', 0.1):
                     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                     self.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
@@ -670,7 +668,7 @@ class AUTOBN:
                     f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
 
                 # 执行开仓操作
-                if self.open_bn_position(symbol, 'SELL', 'SHORT', 0.2):
+                if self.open_bn_position(symbol, 'SELL', 'SHORT', 0.1):
                     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                     self.alert_all['POSITIONS'][symbol] = [
                         zs, zy, 'BUY', 'SHORT']
