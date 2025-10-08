@@ -29,8 +29,6 @@ class HandleMsg:
     """
     消息处理类，用于处理来自特定Telegram频道的消息并执行相应的币安交易操作
     """
-    
-
 
     def __init__(self):
         # 获取当前文件所在目录
@@ -39,7 +37,7 @@ class HandleMsg:
         allert_all_file = os.path.join(current_dir, 'alert_all.json')
         # 初始化币安自动交易实例
         self.autobn = AUTOBN.from_cfg(bn_api_file=bn_api_file, allert_all_file=allert_all_file, margin_mode='isolated',
-                                      qy_key='095984b1-5bc0-43ac-8037-d65a9608d120', leverage=2)
+                                      qy_key='095984b1-5bc0-43ac-8037-d65a9608d120', leverage=10)
         self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
         self.scheduler.add_job(
             self.handle_market,
@@ -66,41 +64,42 @@ class HandleMsg:
         )
 
     async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None):
-            """
-            检查增仓信号，判断是否适合开仓
+        """
+        检查增仓信号，判断是否适合开仓
 
-            功能：分析持仓量变化和多空比，判断市场情绪和资金流向
-            参数：
-                semaphore: 异步信号量，控制并发数量
-                symbol: 交易对符号，如'BTCUSDT'
-                positionSide: 持仓方向，'LONG'或'SHORT'
-                kline_close: K线收盘价列表，可选参数
-            返回：
-                True表示适合开仓，False表示不适合
-            """
-            async with semaphore:
-                try:
-                    # 获取持仓量历史数据（30天）
-                    oi = await asyncio.to_thread(self.autobn.um_futures_client.open_interest_hist, symbol=symbol, period="15m", limit=30)
-                    sumOpenInterestValue = [
-                        float(i['sumOpenInterestValue']) for i in oi]  # 持仓价值（美元）
-                    sumOpenInterest = [float(i['sumOpenInterest'])
-                                        for i in oi]  # 持仓数量（合约数）
-                    # 打印分析数据，便于监控和调试
-                    print(
-                        f'{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
-                        flush=True)
-                    if positionSide == "LONG":
-                        # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
-                        # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
-                        if (
-                            sumOpenInterest[-1] > max(sumOpenInterest[:-1]) and
-                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[:-1])
-                        ):
-                            return True
-                        return False
-                except:
+        功能：分析持仓量变化和多空比，判断市场情绪和资金流向
+        参数：
+            semaphore: 异步信号量，控制并发数量
+            symbol: 交易对符号，如'BTCUSDT'
+            positionSide: 持仓方向，'LONG'或'SHORT'
+            kline_close: K线收盘价列表，可选参数
+        返回：
+            True表示适合开仓，False表示不适合
+        """
+        async with semaphore:
+            try:
+                # 获取持仓量历史数据（30天）
+                oi = await asyncio.to_thread(self.autobn.um_futures_client.open_interest_hist, symbol=symbol, period="15m", limit=30)
+                sumOpenInterestValue = [
+                    float(i['sumOpenInterestValue']) for i in oi]  # 持仓价值（美元）
+                sumOpenInterest = [float(i['sumOpenInterest'])
+                                   for i in oi]  # 持仓数量（合约数）
+                # 打印分析数据，便于监控和调试
+                print(
+                    f'{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
+                    flush=True)
+                if positionSide == "LONG":
+                    # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
+                    # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
+                    if (
+                        sumOpenInterest[-1] > max(sumOpenInterest[:-1]) and
+                        sumOpenInterestValue[-1] > max(
+                            sumOpenInterestValue[:-1])
+                    ):
+                        return True
                     return False
+            except:
+                return False
 
     async def handle_token(self, semaphore, symbol, success):
         """
@@ -132,15 +131,17 @@ class HandleMsg:
                 await self.increase_oi(semaphore, symbol, 'LONG')
             ):
                 zy = kline[-1][1] * 1.05
-                zs = kline[-1][1] * 0.95
-                self.autobn.send_msg(f'==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
-                # if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.1):
-                #     self.autobn.alert_all['POSITIONS'][symbol] = [zy, zs, 'SELL', 'LONG']
+                zs = kline[-1][1] * 0.9
+                self.autobn.send_msg(
+                    f'==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
+                if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.005):
+                    self.autobn.alert_all['POSITIONS'][symbol] = [
+                        zy, zs, 'SELL', 'LONG']
             # 检查现有持仓是否需要平仓
             if close_info := self.autobn.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                if kline_close[-1] <= close_info[1]:
+                if kline_close[-1] <= close_info[1] or kline_close[-2] < sum(kline_close[-8:-1])/7 and kline_close[-3] < sum(kline_close[-9:-2])/7:
                     if close_info[3] == 'LONG':
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
