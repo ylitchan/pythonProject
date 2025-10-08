@@ -130,7 +130,7 @@ class HandleMsg:
                 sum(kline_volume)/len(kline_volume)*9 < kline[-3][5] and
                 await self.increase_oi(semaphore, symbol, 'LONG')
             ):
-                zy = kline[-1][1] * 1.05
+                zy = kline[-1][1] * 1.03
                 zs = kline[-1][1] * 0.9
                 self.autobn.send_msg(
                     f'==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
