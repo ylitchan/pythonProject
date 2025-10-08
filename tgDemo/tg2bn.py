@@ -134,7 +134,7 @@ class HandleMsg:
                 zs = kline[-1][1] * 0.9
                 self.autobn.send_msg(
                     f'==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
-                if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.005):
+                if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
                     self.autobn.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
             # 检查现有持仓是否需要平仓
@@ -306,6 +306,7 @@ class HandleMsg:
         if title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
             # 将消息转发到通知通道
             self.autobn.send_msg(text)
+            return
             texts = text.split('\n')
             # 提取交易信号类型
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
@@ -319,13 +320,13 @@ class HandleMsg:
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "BUY" if side == "涨" else "SELL"
-                # self.autobn.get_symbols_info()
-                # # 执行开仓操作并发送账户信息
-                # if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.1):
-                #     print(account_data, flush=True)
-                #     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
-                #     self.autobn.alert_all['POSITIONS'][symbol] = [
-                #         price * 1.5, price * 0.5, "BUY" if side == "SELL" else "SELL", positionSide]
+                self.autobn.get_symbols_info()
+                # 执行开仓操作并发送账户信息
+                if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.1):
+                    print(account_data, flush=True)
+                    # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
+                    self.autobn.alert_all['POSITIONS'][symbol] = [
+                        price * 1.5, price * 0.5, "BUY" if side == "SELL" else "SELL", positionSide]
 
             # 处理跟踪止损设置提醒
             elif '跟踪止损设置提醒' in texts[0]:
