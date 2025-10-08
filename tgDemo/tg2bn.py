@@ -2,6 +2,7 @@
 # @Author: ylitchan
 # @Source: rdti_crawl_defense
 # @Site:
+from tokenDemo.autoBN import AUTOBN
 import asyncio
 import gc
 import json
@@ -14,7 +15,6 @@ import os
 import sys
 # 添加项目根目录到系统路径
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from tokenDemo.autoBN import AUTOBN
 
 
 # Telegram API凭证 - 用于连接到Telegram客户端
@@ -148,7 +148,7 @@ class HandleMsg:
                         self.autobn.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.7)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[1] = kline_close[-1]*0.96
                         close_info[0] = kline_close[-1]*1.04
                 elif kline_close[-1] >= close_info[0]:
@@ -158,7 +158,7 @@ class HandleMsg:
                         self.autobn.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.7)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
 
