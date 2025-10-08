@@ -623,6 +623,12 @@ class AUTOBN:
                     (kline[-1][3] <= kline[-1][1]*0.95) and
                     (kline[-1][2] < kline[-1][1]*1.05))) and
                 kline_close[-3] < kline_close[-2] and
+                not list(
+                    filter(
+                        lambda x: kline_close[x] < sum(kline_close[x-7:x])/7,
+                        range(-2, -4, -1)
+                    )
+                ) and
                 max(kline[-3][5], kline[-4][5]) < kline[-2][5] and
                 await self.increase_oi(semaphore, symbol, 'LONG')
             ):
