@@ -587,13 +587,13 @@ class AUTOBN:
                         self.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[0] = close_info[1]*1.04
                         close_info[1] = close_info[1]*0.96
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
                     elif close_info[0]/close_info[1] < 1.045/0.955:
@@ -602,12 +602,12 @@ class AUTOBN:
                         self.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[1] = close_info[0]*0.96
                         close_info[0] = close_info[0]*1.04
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 1/self.leverage)
+                        symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                     close_info[0] = kline_close[-1]*1.04
                     close_info[1] = kline_close[-1]*0.96
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
@@ -633,8 +633,8 @@ class AUTOBN:
                 await self.increase_oi(semaphore, symbol, 'LONG')
             ):
                 # 设置止盈止损：止盈9%，止损9%
-                zy = kline[-1][1] * 1.05  # 止盈价
-                zs = kline[-1][1] * 0.95  # 止损价
+                zy = kline[-1][1] * 1.03  # 止盈价
+                zs = kline[-1][1] * 0.97  # 止损价
                 if close_info and close_info[3] == 'SHORT':
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
@@ -664,8 +664,8 @@ class AUTOBN:
                 await self.increase_oi(semaphore, symbol, 'SHORT', kline_close)
             ):
                 # 设置止盈止损：止盈9%，止损9%
-                zy = kline[-1][1] * 0.95  # 止盈价
-                zs = kline[-1][1] * 1.05  # 止损价
+                zy = kline[-1][1] * 0.97  # 止盈价
+                zs = kline[-1][1] * 1.03  # 止损价
                 if close_info and close_info[3] == 'LONG':
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
