@@ -226,7 +226,7 @@ class HandleMsg:
         # 获取账户可用余额
         if account_data is None:
             account_data = self.autobn.um_futures_client.account()
-        balance = account_data['totalMarginBalance']
+        balance = account_data['totalWalletBalance']
         position_risk = []
         for p in account_data['positions']:
             position_risk.append(
