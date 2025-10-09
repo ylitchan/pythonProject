@@ -273,20 +273,6 @@ class AUTOBN:
             # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
             msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT'
             self.send_msg(msg)
-            close_side = 'SELL' if positionSide == 'LONG' else 'BUY'
-            qty = float(
-                Decimal(str(amount_raw/3)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
-            # 下限价卖单
-            self.um_futures_client.new_order(
-                symbol=symbol,
-                side=close_side,
-                type='LIMIT',
-                quantity=qty,
-                price=markPrice*1.05 if positionSide == 'LONG' else markPrice*0.95,
-                timeInForce='GTC',
-                reduceOnly=True,
-                positionSide=positionSide
-            )
             return account_data
         except Exception as e:
             # 异常处理：记录错误并发送通知
