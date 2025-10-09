@@ -310,7 +310,7 @@ class HandleMsg:
             emoticon_map = (self.emoticon_map[1]/self.emoticon_map[0]-1)*100
             # 将消息转发到通知通道
             self.autobn.send_msg(
-                f'情绪:{emoticon_map:.2%}-----------------------------------\n{text}')
+                f'情绪:{emoticon_map:.2%}\n-----------------------------------\n{text}')
             if emoticon_map > -1:
                 return
             texts = text.split('\n')
