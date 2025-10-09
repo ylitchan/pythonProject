@@ -62,6 +62,7 @@ class HandleMsg:
             coalesce=True,
             name='账户信息推送'
         )
+        self.emoticon_map = [0, 0]
 
     async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None):
         """
@@ -84,6 +85,8 @@ class HandleMsg:
                     float(i['sumOpenInterestValue']) for i in oi]  # 持仓价值（美元）
                 sumOpenInterest = [float(i['sumOpenInterest'])
                                    for i in oi]  # 持仓数量（合约数）
+                self.emoticon_map[0] += sumOpenInterestValue[0]
+                self.emoticon_map[1] += sumOpenInterestValue[-1]
                 # 打印分析数据，便于监控和调试
                 print(
                     f'{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
@@ -124,11 +127,11 @@ class HandleMsg:
             success.add(symbol)  # 记录成功处理的交易对
             kline_volume = [k[5] for k in kline[:-int(len(kline)/2)]]
             if (
+                await self.increase_oi(semaphore, symbol, 'LONG') and
                 symbol not in self.autobn.alert_all['POSITIONS'] and
                 kline_close[-2] > max(kline_close[:-2]) and
                 kline[-2][5] > kline[-3][5] and
-                sum(kline_volume)/len(kline_volume)*9 < kline[-3][5] and
-                await self.increase_oi(semaphore, symbol, 'LONG')
+                sum(kline_volume)/len(kline_volume)*9 < kline[-3][5]
             ):
                 zy = kline[-1][1] * 1.03
                 zs = kline[-1][1] * 0.97
@@ -210,7 +213,7 @@ class HandleMsg:
 
         # 打印任务完成信息
         print(datetime.now(),
-              f'跟单止损任务结束 - 持仓交易对数量: {len(success)}', self.autobn.alert_all, flush=True)
+              f'跟单止损任务结束 - 持仓交易对数量: {len(success)}', self.autobn.alert_all, (self.emoticon_map[1]/self.emoticon_map[0]-1)*100, flush=True)
         # 保存分析结果到文件
         current_dir = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(current_dir, 'alert_all.json'), 'w') as f:
@@ -304,9 +307,12 @@ class HandleMsg:
         channel_id = message.chat.id if message.chat else 0
         # 处理指定频道的消息
         if title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
+            emoticon_map = (self.emoticon_map[1]/self.emoticon_map[0]-1)*100
             # 将消息转发到通知通道
-            self.autobn.send_msg(text)
-            return
+            self.autobn.send_msg(
+                f'情绪:{emoticon_map:.2%}-----------------------------------\n{text}')
+            if emoticon_map > -1:
+                return
             texts = text.split('\n')
             # 提取交易信号类型
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
@@ -316,17 +322,17 @@ class HandleMsg:
             symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
 
             # 处理猎龙忍者信号
-            if re.search('猎龙忍者|资金雷达', texts[0]):
+            if '跌' in side and re.search('猎龙忍者|资金雷达', texts[0]):
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "BUY" if side == "涨" else "SELL"
                 self.autobn.get_symbols_info()
                 # 执行开仓操作并发送账户信息
-                if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.1):
+                if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.03):
                     print(account_data, flush=True)
                     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                     self.autobn.alert_all['POSITIONS'][symbol] = [
-                        price * 1.5, price * 0.5, "BUY" if side == "SELL" else "SELL", positionSide]
+                        price * 1.03, price * 0.97, "BUY" if side == "SELL" else "SELL", positionSide]
 
             # 处理跟踪止损设置提醒
             elif '跟踪止损设置提醒' in texts[0]:
