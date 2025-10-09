@@ -307,7 +307,7 @@ class HandleMsg:
         channel_id = message.chat.id if message.chat else 0
         # 处理指定频道的消息
         if title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
-            emoticon_map = (self.emoticon_map[1]/self.emoticon_map[0]-1)*100
+            emoticon_map = self.emoticon_map[1]/self.emoticon_map[0]-1
             # 将消息转发到通知通道
             self.autobn.send_msg(
                 f'情绪:{emoticon_map:.2%}\n-----------------------------------\n{text}')

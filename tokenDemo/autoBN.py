@@ -260,20 +260,23 @@ class AUTOBN:
             leverage_result = self.um_futures_client.change_leverage(
                 symbol=symbol, leverage=self.leverage)
             actual_leverage = leverage_result.get('leverage', self.leverage)
-
-            # 执行市价单开仓
-            tx = self.um_futures_client.new_order(
-                symbol=symbol,
-                side=side,  # 'BUY'或'SELL'
-                type="MARKET",  # 市价单，立即成交
-                quantity=amount,  # 开仓数量
-                positionSide=positionSide,  # 'LONG'或'SHORT'
-            )
-            # 发送成功通知
-            # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
-            msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT'
-            self.send_msg(msg)
-            return account_data
+            for i in range(3):
+                try:
+                    # 执行市价单开仓
+                    tx = self.um_futures_client.new_order(
+                        symbol=symbol,
+                        side=side,  # 'BUY'或'SELL'
+                        type="MARKET",  # 市价单，立即成交
+                        quantity=amount,  # 开仓数量
+                        positionSide=positionSide,  # 'LONG'或'SHORT'
+                    )
+                    # 发送成功通知
+                    # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
+                    msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT'
+                    self.send_msg(msg)
+                    return account_data
+                except Exception as e:
+                    traceback.print_exc()  # 打印详细错误信息
         except Exception as e:
             # 异常处理：记录错误并发送通知
             error_msg = f'{symbol} 开仓失败：{str(e)}'
