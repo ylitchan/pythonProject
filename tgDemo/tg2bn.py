@@ -128,7 +128,7 @@ class HandleMsg:
             kline_volume = [k[5] for k in kline[:-int(len(kline)/2)]]
             if (
                 await self.increase_oi(semaphore, symbol, 'LONG') and
-                symbol not in self.autobn.alert_all['POSITIONS'] and
+                datetime.now().minute in [0, 15, 30, 45] and
                 kline_close[-2] > max(kline_close[:-2]) and
                 kline[-2][5] > kline[-3][5] and
                 sum(kline_volume)/len(kline_volume)*9 < kline[-3][5]
