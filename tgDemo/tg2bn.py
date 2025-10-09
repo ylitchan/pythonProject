@@ -311,8 +311,6 @@ class HandleMsg:
             # 将消息转发到通知通道
             self.autobn.send_msg(
                 f'情绪:{emoticon_map:.2%}\n-----------------------------------\n{text}')
-            if emoticon_map > -1:
-                return
             texts = text.split('\n')
             # 提取交易信号类型
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
@@ -322,7 +320,7 @@ class HandleMsg:
             symbol = re.findall('.*?(\w+USDT).*?', texts[0])[0]
 
             # 处理猎龙忍者信号
-            if '跌' in side and re.search('猎龙忍者|资金雷达', texts[0]):
+            if re.search('猎龙忍者|资金雷达', texts[0]):
                 price = float(re.findall(
                     '价格.*?(\d+(?:\.\d+)?).*?', texts[3])[0])
                 side = "BUY" if side == "涨" else "SELL"
