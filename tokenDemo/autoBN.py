@@ -581,30 +581,20 @@ class AUTOBN:
                             symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[1] = kline_close[-1]*0.96
                         close_info[0] = kline_close[-1]*1.04
-                    elif close_info[0]/close_info[1] < 1.045/0.955:
+                    else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.alert_all['POSITIONS'].pop(symbol)
-                    else:
-                        self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
-                        close_info[0] = close_info[1]*1.04
-                        close_info[1] = close_info[1]*0.96
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
-                    elif close_info[0]/close_info[1] < 1.045/0.955:
+                    else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.alert_all['POSITIONS'].pop(symbol)
-                    else:
-                        self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
-                        close_info[1] = close_info[0]*0.96
-                        close_info[0] = close_info[0]*1.04
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
@@ -714,10 +704,10 @@ class AUTOBN:
             if p["symbol"] not in self.alert_all['POSITIONS']:
                 if p["positionSide"] == "LONG":
                     self.alert_all['POSITIONS'][p["symbol"]] = [
-                        entryPrice*1.05, entryPrice*0.95, "SELL", "LONG", entryPrice]
+                        entryPrice*1.03, entryPrice*0.97, "SELL", "LONG", entryPrice]
                 else:
                     self.alert_all['POSITIONS'][p["symbol"]] = [
-                        entryPrice*1.05, entryPrice*0.95, "BUY", "SHORT", entryPrice]
+                        entryPrice*1.03, entryPrice*0.97, "BUY", "SHORT", entryPrice]
             elif len(self.alert_all['POSITIONS'][p["symbol"]]) < 5:
                 self.alert_all['POSITIONS'][p["symbol"]
                                             ].append(entryPrice)
