@@ -212,10 +212,10 @@ class HandleMsg:
             # 等待当前批次所有任务完成
             await asyncio.gather(*tasks)
             gc.collect()  # 垃圾回收，释放内存
-
+        emoticon_map = self.emoticon_map[1]/self.emoticon_map[0]-1
         # 打印任务完成信息
         print(datetime.now(),
-              f'跟单止损任务结束 - 持仓交易对数量: {len(success)}', self.autobn.alert_all, (self.emoticon_map[1]/self.emoticon_map[0]-1)*100, flush=True)
+              f'跟单止损任务结束 - 持仓交易对数量: {len(success)}', self.autobn.alert_all, f'{emoticon_map:.2%}', flush=True)
         # 保存分析结果到文件
         current_dir = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(current_dir, 'alert_all.json'), 'w') as f:
