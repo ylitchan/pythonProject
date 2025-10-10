@@ -133,11 +133,12 @@ class HandleMsg:
                 kline_volume[-2] > kline_volume[-3] > max(kline_volume[:-3]) and
                 sum(kline_volume[:-int(len(kline)/2)]) /
                     len(kline_volume[:-int(len(kline)/2)])*9 < kline_volume[-3]
-            ):
+            ):            # 将消息转发到通知通道
                 zy = kline[-1][1] * 1.03
                 zs = kline[-1][1] * 0.97
+                emoticon_map = self.emoticon_map[1]/self.emoticon_map[0]-1
                 self.autobn.send_msg(
-                    f'==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
+                    f'==={symbol}做多===\n情绪:{emoticon_map:.2%}\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
                 if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
                     self.autobn.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
@@ -312,6 +313,7 @@ class HandleMsg:
             # 将消息转发到通知通道
             self.autobn.send_msg(
                 f'情绪:{emoticon_map:.2%}\n-----------------------------------\n{text}')
+            return
             texts = text.split('\n')
             # 提取交易信号类型
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
