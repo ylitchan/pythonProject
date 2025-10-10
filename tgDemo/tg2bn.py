@@ -144,7 +144,7 @@ class HandleMsg:
             if close_info := self.autobn.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                if kline_close[-1] <= close_info[1] or close_info[3] == 'LONG' and kline_close[-2] < sum(kline_close[-7:])/7:
+                if kline_close[-1] <= close_info[1] or close_info[3] == 'LONG' and kline_close[-1] < sum(kline_close[-7:])/7:
                     if close_info[3] == 'LONG':
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
