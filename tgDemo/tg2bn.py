@@ -36,7 +36,7 @@ class HandleMsg:
         bn_api_file = os.path.join(current_dir, 'bn.json')
         allert_all_file = os.path.join(current_dir, 'alert_all.json')
         # 初始化币安自动交易实例
-        self.autobn = AUTOBN.from_cfg(bn_api_file=bn_api_file, allert_all_file=allert_all_file, margin_mode='isolated',
+        self.autobn = AUTOBN.from_cfg(bn_api_file=bn_api_file, allert_all_file=allert_all_file, margin_mode='CROSSED',
                                       qy_key='095984b1-5bc0-43ac-8037-d65a9608d120', leverage=5)
         self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
         self.scheduler.add_job(
