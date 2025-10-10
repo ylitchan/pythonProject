@@ -610,7 +610,7 @@ class AUTOBN:
                     (symbol not in self.alert_all['POSITIONS']) and
                     (kline[-1][1] <= kline_close[-1]) and
                     (kline[-1][2] < kline[-1][1]*1.03))) and
-                kline_close[-3] < kline_close[-2] and
+                kline_close[-3] < kline_close[-2] < kline_close[-1] and
                 not list(
                     filter(
                         lambda x: kline_close[x] < sum(kline_close[x-6:x+1])/7,
@@ -648,6 +648,7 @@ class AUTOBN:
                         (kline[-1][3] > kline[-1][1]*0.97)
                     )
                 ) and
+                kline_close[-2] > kline_close[-1] and
                 await self.increase_oi(semaphore, symbol, 'SHORT', kline_close)
             ):
                 # 设置止盈止损：止盈9%，止损9%
