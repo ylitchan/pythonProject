@@ -132,7 +132,7 @@ class HandleMsg:
                 kline_close[-2] > max(kline_close[:-2]) and
                 kline_volume[-2] > kline_volume[-3] > max(kline_volume[:-3]) and
                 sum(kline_volume[:-int(len(kline)/2)]) /
-                    len(kline_volume[:-int(len(kline)/2)])*9 < kline[-3][5]
+                    len(kline_volume[:-int(len(kline)/2)])*9 < kline_volume[-3]
             ):
                 zy = kline[-1][1] * 1.03
                 zs = kline[-1][1] * 0.97
