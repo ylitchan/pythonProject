@@ -125,13 +125,14 @@ class HandleMsg:
             kline = await self.autobn.get_kline(semaphore, symbol, "15mutc")
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             success.add(symbol)  # 记录成功处理的交易对
-            kline_volume = [k[5] for k in kline[:-int(len(kline)/2)]]
+            kline_volume = [k[5] for k in kline]
             if (
                 await self.increase_oi(semaphore, symbol, 'LONG') and
                 datetime.now().minute in [0, 15, 30, 45] and
                 kline_close[-2] > max(kline_close[:-2]) and
-                kline[-2][5] > kline[-3][5] and
-                sum(kline_volume)/len(kline_volume)*9 < kline[-3][5]
+                kline_volume[-2] > kline_volume[-3] > max(kline_volume[:-3]) and
+                sum(kline_volume[:-int(len(kline)/2)]) /
+                    len(kline_volume[:-int(len(kline)/2)])*9 < kline[-3][5]
             ):
                 zy = kline[-1][1] * 1.03
                 zs = kline[-1][1] * 0.97
