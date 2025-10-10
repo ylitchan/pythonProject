@@ -250,11 +250,11 @@ class AUTOBN:
                 return None
 
             # 设置保证金模式（全仓/逐仓）。若已为目标模式，交易所可能返回错误码或提示，忽略即可
-            try:
-                self.um_futures_client.change_margin_type(
-                    symbol=symbol, marginType=self.margin_mode)
-            except Exception:
-                pass
+            # try:
+            #     self.um_futures_client.change_margin_type(
+            #         symbol=symbol, marginType=self.margin_mode)
+            # except Exception:
+            #     pass
 
             # 设置杠杆倍数
             leverage_result = self.um_futures_client.change_leverage(
