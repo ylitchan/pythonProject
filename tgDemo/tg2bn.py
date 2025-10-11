@@ -132,7 +132,7 @@ class HandleMsg:
                 kline_close[-2] > kline_close[-3] > max(kline_close[:-3]) and
                 kline_volume[-2] > kline_volume[-3] > max(kline_volume[:-3]) and
                 sum(kline_volume[:-int(len(kline)/2)]) /
-                    len(kline_volume[:-int(len(kline)*2/3)]) *
+                    len(kline_volume[:-int(len(kline)/2)]) *
                 9 < kline_volume[-3]
             ):            # 将消息转发到通知通道
                 zy = kline[-1][1] * 1.03
