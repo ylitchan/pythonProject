@@ -313,7 +313,7 @@ class HandleMsg:
             # 将消息转发到通知通道
             self.autobn.send_msg(
                 f'情绪:{emoticon_map:.2%}\n-----------------------------------\n{text}')
-            return
+            # return
             texts = text.split('\n')
             # 提取交易信号类型
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
@@ -329,11 +329,11 @@ class HandleMsg:
                 side = "BUY" if side == "涨" else "SELL"
                 self.autobn.get_symbols_info()
                 # 执行开仓操作并发送账户信息
-                if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.03):
+                if account_data := self.autobn.open_bn_position(symbol, side, positionSide, open_ratio=0.015):
                     print(account_data, flush=True)
                     # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                     self.autobn.alert_all['POSITIONS'][symbol] = [
-                        price * 1.03, price * 0.97, "BUY" if side == "SELL" else "SELL", positionSide]
+                        price * 1.05, price * 0.95, "BUY" if side == "SELL" else "SELL", positionSide]
 
             # 处理跟踪止损设置提醒
             elif '跟踪止损设置提醒' in texts[0]:
