@@ -336,7 +336,7 @@ class AUTOBN:
                 close_amount = current_amount * close_ratio
                 close_amount = float(
                     Decimal(str(close_amount)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
-                return None
+        return None
 
     async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None):
         """
@@ -596,7 +596,7 @@ class AUTOBN:
                         self.alert_all['POSITIONS'].pop(symbol)
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1],0.4)
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                     close_info[0] = kline_close[-1]*1.04
                     close_info[1] = kline_close[-1]*0.96
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价

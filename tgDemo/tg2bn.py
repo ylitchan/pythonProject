@@ -314,7 +314,7 @@ class HandleMsg:
             # 将消息转发到通知通道
             self.autobn.send_msg(
                 f'情绪:{emoticon_map:.2%}\n-----------------------------------\n{text}')
-            # return
+            return
             texts = text.split('\n')
             # 提取交易信号类型
             side = re.findall('涨|跌|开仓|加仓|减仓|平仓', texts[0])[0]
