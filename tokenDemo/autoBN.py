@@ -608,7 +608,6 @@ class AUTOBN:
             if (
                 (is_early_morning or (
                     (symbol not in self.alert_all['POSITIONS']) and
-                    (kline[-1][1] <= kline_close[-1]) and
                     (kline[-1][2] < kline[-1][1]*1.03))) and
                 kline_close[-3] < kline_close[-2] < kline_close[-1] and
                 not list(
@@ -644,7 +643,6 @@ class AUTOBN:
                 (
                     is_early_morning or (
                         (symbol not in self.alert_all['POSITIONS']) and
-                        (kline[-1][1] >= kline_close[-1]) and
                         (kline[-1][3] > kline[-1][1]*0.97)
                     )
                 ) and
