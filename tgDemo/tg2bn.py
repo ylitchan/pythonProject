@@ -100,6 +100,19 @@ class HandleMsg:
                             sumOpenInterestValue[:-1])
                     ):
                         return True
+                    else:
+                        for index in range(-1, int(-len(kline_close)/3)-2, -1):
+                            # 如果持仓量和价值都增加，说明是正常增仓，继续等待
+                            if (
+                                kline_close[index-1] == max(kline_close) and
+                                sumOpenInterestValue[index] == max(
+                                    sumOpenInterestValue) and
+                                kline_close[-2] > max(kline_close[-5:-2]) and
+                                sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
+                                sumOpenInterestValue[-1] > max(
+                                    sumOpenInterestValue[-3:-1])
+                            ):
+                                return 1
                     return False
             except:
                 return False
@@ -126,23 +139,6 @@ class HandleMsg:
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             success.add(symbol)  # 记录成功处理的交易对
             kline_volume = [k[5] for k in kline]
-            if (
-                await self.increase_oi(semaphore, symbol, 'LONG') and
-                datetime.now().minute in [0, 15, 30, 45] and
-                kline_close[-2] > kline_close[-3] > max(kline_close[:-3]) and
-                kline_volume[-2] > kline_volume[-3] > max(kline_volume[:-3]) and
-                sum(kline_volume[:-int(len(kline)/2)]) /
-                    len(kline_volume[:-int(len(kline)/2)]) *
-                9 < kline_volume[-3]
-            ):            # 将消息转发到通知通道
-                zy = kline[-1][1] * 1.03
-                zs = kline[-1][1] * 0.95
-                emoticon_map = self.emoticon_map[1]/self.emoticon_map[0]-1
-                self.autobn.send_msg(
-                    f'==={symbol}做多===\n情绪:{emoticon_map:.2%}\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
-                if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
-                    self.autobn.alert_all['POSITIONS'][symbol] = [
-                        zy, zs, 'SELL', 'LONG']
             # 检查现有持仓是否需要平仓
             if close_info := self.autobn.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
@@ -167,7 +163,39 @@ class HandleMsg:
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
-
+            signal = await self.increase_oi(semaphore, symbol, 'LONG')
+            if (
+                signal is True and
+                datetime.now().minute in [0, 15, 30, 45] and
+                kline_close[-2] > kline_close[-3] > max(kline_close[:-3]) and
+                kline_volume[-2] > kline_volume[-3] > max(kline_volume[:-3]) and
+                sum(kline_volume[:-int(len(kline)/2)]) /
+                    len(kline_volume[:-int(len(kline)/2)]) *
+                9 < kline_volume[-3]
+            ):
+                zy = kline[-1][1] * 1.03
+                zs = kline[-1][1] * 0.95
+                if close_info and close_info[3] == 'SHORT':
+                    self.autobn.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                emoticon_map = self.emoticon_map[1]/self.emoticon_map[0]-1
+                self.autobn.send_msg(
+                    f'==={symbol}做多===\n情绪:{emoticon_map:.2%}\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
+                if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
+                    self.autobn.alert_all['POSITIONS'][symbol] = [
+                        zy, zs, 'SELL', 'LONG']
+            elif signal is 1:
+                zy = kline[-1][1] * 0.97  # 止盈价
+                zs = kline[-1][1] * 1.05  # 止损价
+                # if close_info and close_info[3] == 'LONG':
+                #     self.close_bn_position(
+                #         symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                emoticon_map = self.emoticon_map[1]/self.emoticon_map[0]-1
+                self.autobn.send_msg(
+                    f'==={symbol}做空===\n情绪:{emoticon_map:.2%}\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
+                # if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
+                #     self.autobn.alert_all['POSITIONS'][symbol] = [
+                #         zy, zs, 'BUY', 'SHORT']
         except:
             # 异常处理：打印错误信息但不中断程序
             traceback.print_exc()
