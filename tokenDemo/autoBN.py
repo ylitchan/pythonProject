@@ -577,7 +577,7 @@ class AUTOBN:
                 if kline_close[-1] <= close_info[1] or close_info[3] == 'LONG' and kline_close[-1] < sum(kline_close[-7:])/7:
                     if close_info[3] == 'SHORT':
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                         close_info[1] = kline_close[-1]*0.96
                         close_info[0] = kline_close[-1]*1.04
                     else:
@@ -587,7 +587,7 @@ class AUTOBN:
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == 'LONG':
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
                     else:
@@ -596,7 +596,7 @@ class AUTOBN:
                         self.alert_all['POSITIONS'].pop(symbol)
                 elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                        symbol, close_info[2], close_info[3], kline_close[-1],0.4)
                     close_info[0] = kline_close[-1]*1.04
                     close_info[1] = kline_close[-1]*0.96
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
@@ -608,7 +608,7 @@ class AUTOBN:
             if (
                 (is_early_morning or (
                     (symbol not in self.alert_all['POSITIONS']) and
-                    (kline[-1][2] < kline[-1][1]*1.03))) and
+                    (kline[-1][2] < kline[-1][1]*1.05))) and
                 kline_close[-3] < kline_close[-2] < kline_close[-1] and
                 not list(
                     filter(
@@ -643,7 +643,7 @@ class AUTOBN:
                 (
                     is_early_morning or (
                         (symbol not in self.alert_all['POSITIONS']) and
-                        (kline[-1][3] > kline[-1][1]*0.97)
+                        (kline[-1][3] > kline[-1][1]*0.95)
                     )
                 ) and
                 kline_close[-2] > kline_close[-1] and

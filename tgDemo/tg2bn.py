@@ -154,7 +154,7 @@ class HandleMsg:
                         self.autobn.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                         close_info[1] = kline_close[-1]*0.96
                         close_info[0] = kline_close[-1]*1.04
                 elif kline_close[-1] >= close_info[0]:
@@ -164,7 +164,7 @@ class HandleMsg:
                         self.autobn.alert_all['POSITIONS'].pop(symbol)
                     else:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1/3)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
 
