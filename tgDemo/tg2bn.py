@@ -136,7 +136,7 @@ class HandleMsg:
                 9 < kline_volume[-3]
             ):            # 将消息转发到通知通道
                 zy = kline[-1][1] * 1.03
-                zs = kline[-1][1] * 0.97
+                zs = kline[-1][1] * 0.95
                 emoticon_map = self.emoticon_map[1]/self.emoticon_map[0]-1
                 self.autobn.send_msg(
                     f'==={symbol}做多===\n情绪:{emoticon_map:.2%}\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
