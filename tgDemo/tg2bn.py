@@ -184,7 +184,7 @@ class HandleMsg:
                 if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
                     self.autobn.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
-            elif signal is 1:
+            elif signal == 1:
                 zy = kline[-1][1] * 0.97  # 止盈价
                 zs = kline[-1][1] * 1.05  # 止损价
                 # if close_info and close_info[3] == 'LONG':
