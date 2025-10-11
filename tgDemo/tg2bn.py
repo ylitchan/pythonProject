@@ -112,7 +112,7 @@ class HandleMsg:
                                 sumOpenInterestValue[-1] > max(
                                     sumOpenInterestValue[-3:-1])
                             ):
-                                return 1
+                                return None
                     return False
             except:
                 return False
@@ -165,7 +165,7 @@ class HandleMsg:
                         close_info[1] = kline_close[-1]*0.96
             signal = await self.increase_oi(semaphore, symbol, 'LONG')
             if (
-                signal is True and
+                signal == True and
                 datetime.now().minute in [0, 15, 30, 45] and
                 kline_close[-2] > kline_close[-3] > max(kline_close[:-3]) and
                 kline_volume[-2] > kline_volume[-3] > max(kline_volume[:-3]) and
@@ -184,7 +184,7 @@ class HandleMsg:
                 if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
                     self.autobn.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
-            elif signal == 1:
+            elif signal == None:
                 zy = kline[-1][1] * 0.97  # 止盈价
                 zs = kline[-1][1] * 1.05  # 止损价
                 # if close_info and close_info[3] == 'LONG':
