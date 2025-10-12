@@ -330,7 +330,7 @@ class HandleMsg:
         title = message.chat.title if message.chat else ""
         channel_id = message.chat.id if message.chat else 0
         # 处理指定频道的消息
-        if title in ['CM AI SIGNAL'] or channel_id == -1002291145819:
+        if title in ['方程式新闻 BWEnews'] or channel_id == -1001279597711:
             # 将消息转发到通知通道
             self.autobn.send_msg(text)
             return
