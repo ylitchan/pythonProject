@@ -164,7 +164,6 @@ class HandleMsg:
                 signal == True and
                 datetime.now().minute in [0, 15, 30, 45] and
                 kline_close[-2] > kline_close[-3] > max(kline_close[:-3]) and
-                all(price[4] > price[1] for price in kline[-7:-1]) and
                 all(kline_close[x] > sum(kline_close[x-6:x+1])/len(kline_close[x-6:x+1]) for x in range(-2, -8, -1)) and
                 kline_volume[-2] > max(kline_volume[:-2]) and
                 sum(kline_volume[:-int(len(kline)/2)]) /
