@@ -98,16 +98,17 @@ class HandleMsg:
                     ):
                         return True
                     else:
-                        result= any(
-                        (
-                            kline_close[index-1] == max(kline_close) and
-                            sumOpenInterestValue[index] == max(sumOpenInterestValue) and
-                            kline_close[-2] > max(kline_close[-5:-2]) and
-                            sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
-                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                        result = any(
+                            (
+                                kline_close[index-1] == max(kline_close) and
+                                sumOpenInterestValue[index] == max(sumOpenInterestValue) and
+                                kline_close[-2] > max(kline_close[-5:-2]) and
+                                sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
+                                sumOpenInterestValue[-1] > max(
+                                    sumOpenInterestValue[-3:-1])
+                            )
+                            for index in range(-1, int(-len(kline_close)/3)-2, -1)
                         )
-                        for index in range(-1, int(-len(kline_close)/3)-2, -1)
-                    )
                     return None if result else False
             except:
                 return False
@@ -138,7 +139,7 @@ class HandleMsg:
             if close_info := self.autobn.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                if kline_close[-1] <= close_info[1] or close_info[3] == 'LONG' and kline_close[-1] < sum(kline_close[-7:])/7:
+                if kline_close[-1] <= close_info[1] or close_info[3] == 'LONG' and kline_close[-1] < sum(kline_close[-7:])/len(kline_close[-7:]):
                     if close_info[3] == 'LONG':
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
@@ -164,6 +165,7 @@ class HandleMsg:
                 datetime.now().minute in [0, 15, 30, 45] and
                 kline_close[-2] > kline_close[-3] > max(kline_close[:-3]) and
                 all(price[4] > price[1] for price in kline[-7:-1]) and
+                all(kline_close[x] > sum(kline_close[x-6:x+1])/len(kline_close[x-6:x+1]) for x in range(-2, -8, -1)) and
                 kline_volume[-2] > kline_volume[-3] > max(kline_volume[:-3]) and
                 sum(kline_volume[:-int(len(kline)/2)]) /
                     len(kline_volume[:-int(len(kline)/2)]) *
