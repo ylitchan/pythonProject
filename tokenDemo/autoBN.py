@@ -79,6 +79,7 @@ class AUTOBN:
         # 含义：用于控制单次下单的资金使用上限（与 open_ratio 一起作用）
         obj.slot_balance = kwargs.get('slot_balance', [0.0])
         obj.symbols_info = {}
+        obj.is_early_morning = False
         return obj
 
     def send_msg(self, msg, wx=False):
@@ -410,7 +411,8 @@ class AUTOBN:
                             sumOpenInterestValue[index] == max(sumOpenInterestValue) and
                             kline_close[-2] > max(kline_close[-5:-2]) and
                             sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
-                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                            sumOpenInterestValue[-1] > max(
+                                sumOpenInterestValue[-3:-1])
                         )
                         for index in range(-1, int(-len(kline_close)/3)-2, -1)
                     )
@@ -564,9 +566,6 @@ class AUTOBN:
             # 数据量检查：至少需要4根K线进行分析
             if len(kline) < 4:
                 return
-            # 设置变量：当前时间为8点且分钟小于6则为True，否则为False
-            now = time.localtime()
-            is_early_morning = (now.tm_hour == 8 and now.tm_min < 10)
             # 检查现有持仓是否需要平仓
             if close_info := self.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
@@ -591,7 +590,7 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.alert_all['POSITIONS'].pop(symbol)
-                elif is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
+                elif self.is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
                     self.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                     close_info[0] = kline_close[-1]*1.04
@@ -603,7 +602,7 @@ class AUTOBN:
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
             # 条件3：持仓量增加信号（increase_oi函数返回True）
             if (
-                (is_early_morning or (
+                (self.is_early_morning or (
                     (symbol not in self.alert_all['POSITIONS']) and
                     (kline[-1][2] < kline[-1][1]*1.05))) and
                 kline_close[-3] < kline_close[-2] < kline_close[-1] and
@@ -636,7 +635,7 @@ class AUTOBN:
             # 条件3：持仓量增加信号（increase_oi函数返回True）
             elif (
                 (
-                    is_early_morning or (
+                    self.is_early_morning or (
                         (symbol not in self.alert_all['POSITIONS']) and
                         (kline[-1][3] > kline[-1][1]*0.95)
                     )
@@ -720,6 +719,9 @@ class AUTOBN:
             market: 市场名称，如'BN'（币安）
         """
         now = datetime.datetime.now()
+        self.is_early_morning = now.hour == 8 and now.minute < 10
+        if self.is_early_morning:
+            self.send_msg(f'{market}任务开始 - {now}')
         symbols = []
 
         # 重试机制：最多尝试10次获取交易对信息
@@ -760,153 +762,156 @@ class AUTOBN:
             json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
 
 
-def get_last_trading_days(today=None, days=60):
-    """
-    获取A股交易日历
+class AUTOA:
+    @staticmethod
+    def get_last_trading_days(today=None, days=60):
+        """
+        获取A股交易日历
 
-    功能：从新浪财经获取A股交易日历，用于股票筛选
-    参数：
-        today: 指定日期，默认为当前日期
-        days: 获取最近交易日的天数，默认为60天
-    返回：
-        (start_date, end_date, zt_date): 起始日期、结束日期、涨停股查询日期列表
-    """
-    # 设置默认日期为今天
-    if not today:
-        today = datetime.datetime.today()
+        功能：从新浪财经获取A股交易日历，用于股票筛选
+        参数：
+            today: 指定日期，默认为当前日期
+            days: 获取最近交易日的天数，默认为60天
+        返回：
+            (start_date, end_date, zt_date): 起始日期、结束日期、涨停股查询日期列表
+        """
+        # 设置默认日期为今天
+        if not today:
+            today = datetime.datetime.today()
 
-    try:
-        # 从新浪财经获取交易日历
-        trade_dates = ak.tool_trade_date_hist_sina()
-        trade_dates = pd.to_datetime(trade_dates["trade_date"])
+        try:
+            # 从新浪财经获取交易日历
+            trade_dates = ak.tool_trade_date_hist_sina()
+            trade_dates = pd.to_datetime(trade_dates["trade_date"])
 
-        # 过滤出不晚于指定日期的交易日
-        valid_dates = trade_dates[trade_dates <= today]
+            # 过滤出不晚于指定日期的交易日
+            valid_dates = trade_dates[trade_dates <= today]
 
-        if valid_dates.empty:
-            print(f"警告: 未找到 {today} 之前的交易日", flush=True)
+            if valid_dates.empty:
+                print(f"警告: 未找到 {today} 之前的交易日", flush=True)
+                return None, None, []
+
+            # 获取指定日期前的最近n个交易日，按时间降序排列
+            recent_trading_days = valid_dates.sort_values(
+                ascending=False).iloc[:days]
+            start_date = recent_trading_days.min().strftime("%Y%m%d")  # 最早日期
+            end_date = recent_trading_days.max().strftime("%Y%m%d")  # 最晚日期
+
+            # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
+            zt_date = [i.strftime("%Y%m%d")
+                       for i in recent_trading_days.iloc[3:10]]
+
+            return start_date, end_date, zt_date
+        except Exception as e:
+            print(f"获取交易日历失败: {str(e)}", flush=True)
             return None, None, []
 
-        # 获取指定日期前的最近n个交易日，按时间降序排列
-        recent_trading_days = valid_dates.sort_values(
-            ascending=False).iloc[:days]
-        start_date = recent_trading_days.min().strftime("%Y%m%d")  # 最早日期
-        end_date = recent_trading_days.max().strftime("%Y%m%d")  # 最晚日期
+    @classmethod
+    def filter_stocks(cls):
+        """
+        筛选符合量能条件的A股股票
 
-        # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
-        zt_date = [i.strftime("%Y%m%d")
-                   for i in recent_trading_days.iloc[3:10]]
+        功能：从涨停股池中筛选出符合低吸条件的股票
+        策略：寻找有上涨动能但可能进入回调的优质股票
+        返回：
+            符合条件的股票代码和名称集合
+        """
+        # 获取交易日历信息
+        start_date, end_date, zt_dates = cls.get_last_trading_days()
+        selected = set()  # 存储符合条件的股票
 
-        return start_date, end_date, zt_date
-    except Exception as e:
-        print(f"获取交易日历失败: {str(e)}", flush=True)
-        return None, None, []
-
-
-def filter_stocks():
-    """
-    筛选符合量能条件的A股股票
-
-    功能：从涨停股池中筛选出符合低吸条件的股票
-    策略：寻找有上涨动能但可能进入回调的优质股票
-    返回：
-        符合条件的股票代码和名称集合
-    """
-    # 获取交易日历信息
-    start_date, end_date, zt_dates = get_last_trading_days()
-    selected = set()  # 存储符合条件的股票
-
-    # 遍历近期涨停日期，获取涨停股池
-    for i, zt_date in enumerate(zt_dates):
-        # 获取当天涨停股票列表
-        zt_df = ak.stock_zt_pool_em(date=zt_date)
-        if zt_df.empty:
-            print(f"没有在 {zt_date} 找到涨停股票。", flush=True)
-            continue
-
-        # 提取股票代码和名称
-        stock_codes = zt_df[['代码', '名称']].values.tolist()
-        print(f"{zt_date}涨停股：{stock_codes}", flush=True)
-
-        # 遍历涨停股票，进行技术分析
-        for code in stock_codes:
-            try:
-                # 获取股票历史数据（前复权）
-                hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
-                                          adjust="qfq")
-            except:
-                # 获取数据失败，跳过该股票
-                traceback.print_exc()
+        # 遍历近期涨停日期，获取涨停股池
+        for i, zt_date in enumerate(zt_dates):
+            # 获取当天涨停股票列表
+            zt_df = ak.stock_zt_pool_em(date=zt_date)
+            if zt_df.empty:
+                print(f"没有在 {zt_date} 找到涨停股票。", flush=True)
                 continue
 
-            # 添加最新涨跌幅到股票信息中
-            code.append(str(hist.iloc[-1]['涨跌幅']))
-            print(code, flush=True)
+            # 提取股票代码和名称
+            stock_codes = zt_df[['代码', '名称']].values.tolist()
+            print(f"{zt_date}涨停股：{stock_codes}", flush=True)
 
-            # 股票筛选条件：多维度筛选优质股票
-            # 条件1：数据量充足（至少60天历史数据）
-            if len(hist) < 60:
-                continue
+            # 遍历涨停股票，进行技术分析
+            for code in stock_codes:
+                try:
+                    # 获取股票历史数据（前复权）
+                    hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
+                                              adjust="qfq")
+                except:
+                    # 获取数据失败，跳过该股票
+                    traceback.print_exc()
+                    continue
 
-            # 条件2：当日必须上涨（涨跌幅>0）
-            if hist.iloc[-1]['涨跌幅'] <= 0:
-                continue
+                # 添加最新涨跌幅到股票信息中
+                code.append(str(hist.iloc[-1]['涨跌幅']))
+                print(code, flush=True)
 
-            # 条件3：价格位置检查
-            # 3a：当前价格必须高于近10天均价（确保在上升趋势中）
-            # 3b：检查近期是否有价格回调（避免追高）
-            if (
-                hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] or
-                any(
-                    hist.iloc[-9 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘']
-                    for x in range(-2, -i - 5, -1)
-                )
-            ):
-                continue
+                # 股票筛选条件：多维度筛选优质股票
+                # 条件1：数据量充足（至少60天历史数据）
+                if len(hist) < 60:
+                    continue
 
-            # 条件4：成交量检查（当日成交量必须是近期最大）
-            # 确保有足够的资金关注和参与
-            if hist.iloc[-3:-1]['成交量'].max() > hist.iloc[-1]['成交量']:
-                continue
+                # 条件2：当日必须上涨（涨跌幅>0）
+                if hist.iloc[-1]['涨跌幅'] <= 0:
+                    continue
 
-            # 条件5：价格位置检查（当前价格必须在近期低点附近）
-            # 避免在高位追涨，寻找回调买入机会
-            if hist.iloc[:-i - 4]['收盘'].max() > hist.iloc[-i - 4]['收盘']:
-                continue
+                # 条件3：价格位置检查
+                # 3a：当前价格必须高于近10天均价（确保在上升趋势中）
+                # 3b：检查近期是否有价格回调（避免追高）
+                if (
+                    hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] or
+                    any(
+                        hist.iloc[-9 + x:x +
+                                  1]['收盘'].mean() > hist.iloc[x]['收盘']
+                        for x in range(-2, -i - 5, -1)
+                    )
+                ):
+                    continue
 
-            # 条件6：避免连续上涨（防止追高）
-            # 检查近期是否有连续放量上涨的情况
-            if i > 0 and any(hist.iloc[x]['成交量'] > hist.iloc[x - 2:x]['成交量'].max()
-                             for x in range(-2, -i - 2, -1)):
-                continue
-            # 通过所有筛选条件，添加到结果集合
-            selected.add(''.join(code))
+                # 条件4：成交量检查（当日成交量必须是近期最大）
+                # 确保有足够的资金关注和参与
+                if hist.iloc[-3:-1]['成交量'].max() > hist.iloc[-1]['成交量']:
+                    continue
 
-    return selected
+                # 条件5：价格位置检查（当前价格必须在近期低点附近）
+                # 避免在高位追涨，寻找回调买入机会
+                if hist.iloc[:-i - 4]['收盘'].max() > hist.iloc[-i - 4]['收盘']:
+                    continue
 
+                # 条件6：避免连续上涨（防止追高）
+                # 检查近期是否有连续放量上涨的情况
+                if i > 0 and any(hist.iloc[x]['成交量'] > hist.iloc[x - 2:x]['成交量'].max()
+                                 for x in range(-2, -i - 2, -1)):
+                    continue
+                # 通过所有筛选条件，添加到结果集合
+                selected.add(''.join(code))
 
-def monitor_stocks():
-    """
-    监控A股并发送通知
+        return selected
 
-    功能：筛选符合条件的A股股票，并通过企业微信发送通知
-    策略：低吸策略，寻找回调买入机会
-    """
-    # 筛选符合量能条件的股票
-    filtered = filter_stocks()
-    print(f"符合量能条件的股票：{filtered}", flush=True)
+    @classmethod
+    def monitor_stocks(cls):
+        """
+        监控A股并发送通知
 
-    # 如果有符合条件的股票，发送通知
-    if filtered:
-        # 构建企业微信消息格式
-        json_msg = {
-            "msgtype": "text",
-            "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
-        }
-        # 发送到企业微信群
-        requests.post(
-            url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73', headers={'Content-Type': 'application/json'},
-            json=json_msg, verify=False)
+        功能：筛选符合条件的A股股票，并通过企业微信发送通知
+        策略：低吸策略，寻找回调买入机会
+        """
+        # 筛选符合量能条件的股票
+        filtered = cls.filter_stocks()
+        print(f"符合量能条件的股票：{filtered}", flush=True)
+
+        # 如果有符合条件的股票，发送通知
+        if filtered:
+            # 构建企业微信消息格式
+            json_msg = {
+                "msgtype": "text",
+                "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
+            }
+            # 发送到企业微信群
+            requests.post(
+                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73', headers={'Content-Type': 'application/json'},
+                json=json_msg, verify=False)
 
 
 async def main():
@@ -926,7 +931,7 @@ async def main():
     # return
     # 设置A股监控定时任务
     scheduler.add_job(
-        monitor_stocks,  # 执行的函数
+        AUTOA.monitor_stocks,  # 执行的函数
         'cron',  # 调度类型：按日历规则
         hour='12,14',  # 交易时段：12点和14点
         minute='52-57',  # 每小时的52-57分
