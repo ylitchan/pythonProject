@@ -172,7 +172,7 @@ class HandleMsg:
                 9 < kline_volume[-2]
             ):
                 zy = kline[-1][1] * 1.03
-                zs = kline[-1][1] * 0.95
+                zs = kline[-1][1] * 0.1
                 if close_info and close_info[3] == 'SHORT':
                     self.autobn.close_bn_position(
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
