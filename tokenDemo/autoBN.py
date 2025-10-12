@@ -404,19 +404,16 @@ class AUTOBN:
                 else:
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
-                    for index in range(-1, int(-len(kline_close)/3)-2, -1):
-                        # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                        if (
+                    return any(
+                        (
                             kline_close[index-1] == max(kline_close) and
-                            sumOpenInterestValue[index] == max(
-                                sumOpenInterestValue) and
+                            sumOpenInterestValue[index] == max(sumOpenInterestValue) and
                             kline_close[-2] > max(kline_close[-5:-2]) and
                             sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
-                            sumOpenInterestValue[-1] > max(
-                                sumOpenInterestValue[-3:-1])
-                        ):
-                            return True
-                    return False
+                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                        )
+                        for index in range(-1, int(-len(kline_close)/3)-2, -1)
+                    )
             except:
                 return False
 
@@ -610,11 +607,9 @@ class AUTOBN:
                     (symbol not in self.alert_all['POSITIONS']) and
                     (kline[-1][2] < kline[-1][1]*1.05))) and
                 kline_close[-3] < kline_close[-2] < kline_close[-1] and
-                not list(
-                    filter(
-                        lambda x: kline_close[x] < sum(kline_close[x-6:x+1])/7,
-                        range(-2, -4, -1)
-                    )
+                all(
+                    kline_close[x] >= sum(kline_close[x-6:x+1])/7
+                    for x in range(-2, -4, -1)
                 ) and
                 max(kline[-3][5], kline[-4][5]) < kline[-2][5] and
                 await self.increase_oi(semaphore, symbol, 'LONG')
@@ -862,12 +857,9 @@ def filter_stocks():
             # 3b：检查近期是否有价格回调（避免追高）
             if (
                 hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] or
-                list(
-                    filter(
-                        lambda x: hist.iloc[-9 + x:x +
-                                            1]['收盘'].mean() > hist.iloc[x]['收盘'],
-                        range(-2, -i - 5, -1)
-                    )
+                any(
+                    hist.iloc[-9 + x:x + 1]['收盘'].mean() > hist.iloc[x]['收盘']
+                    for x in range(-2, -i - 5, -1)
                 )
             ):
                 continue
