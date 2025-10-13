@@ -192,7 +192,7 @@ class HandleMsg:
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
                 self.autobn.send_msg(
                     f'==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
-                if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
+                if self.autobn.open_bn_position(symbol, 'SELL', 'LONG', 0.03):
                     self.autobn.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
             elif signal == None and self.autobn.alert_all['POSITIONS'].get(symbol, [0, 0, 'SELL', 'LONG'])[3] != 'SHORT':
@@ -203,7 +203,7 @@ class HandleMsg:
                         symbol, close_info[2], close_info[3], kline_close[-1], 1)
                 self.autobn.send_msg(
                     f'==={symbol}做空===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
-                if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
+                if self.autobn.open_bn_position(symbol, 'BUY', 'SHORT', 0.03):
                     self.autobn.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'BUY', 'SHORT']
         except:
