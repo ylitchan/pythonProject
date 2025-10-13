@@ -173,6 +173,7 @@ class HandleMsg:
                     if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
                         self.autobn.alert_all['POSITIONS'][symbol] = [
                             zy, zs, 'SELL', 'LONG']
+                        self.autobn.alert_all['OBSERVATIONS'].pop(symbol)
             signal = await self.increase_oi(semaphore, symbol, 'LONG')
             if (
                 signal == True and
