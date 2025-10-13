@@ -108,7 +108,7 @@ class HandleMsg:
                                 sumOpenInterestValue[-1] > max(
                                     sumOpenInterestValue[-3:-1])
                             )
-                            for index in range(-1, int(-len(kline_close)/3)-2, -1)
+                            for index in range(-1, -2, -1)
                         )
                     return None if result else False
             except:
