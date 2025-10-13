@@ -6,6 +6,7 @@ import asyncio
 import gc
 import json
 import re
+import time
 import traceback
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pyrogram import Client
@@ -144,6 +145,8 @@ class HandleMsg:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.autobn.alert_all['POSITIONS'].pop(symbol)
+                        self.autobn.alert_all['OBSERVATIONS'][symbol] = [
+                            close_info[0], time.time(), 'SELL', 'LONG']
                     else:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
@@ -159,6 +162,17 @@ class HandleMsg:
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
+            elif open_info := self.autobn.alert_all['OBSERVATIONS'].get(symbol):
+                if time.time()-open_info[1] > 15*30*60:
+                    self.autobn.alert_all['OBSERVATIONS'].pop(symbol)
+                elif open_info[3] == 'LONG' and kline_close[-2] > open_info[0]:
+                    zy = kline[-1][1] * 1.03
+                    zs = kline[-1][1] * 0.1
+                    self.autobn.send_msg(
+                        f'==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
+                    if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
+                        self.autobn.alert_all['POSITIONS'][symbol] = [
+                            zy, zs, 'SELL', 'LONG']
             signal = await self.increase_oi(semaphore, symbol, 'LONG')
             if (
                 signal == True and
