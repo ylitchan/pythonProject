@@ -165,7 +165,7 @@ class HandleMsg:
             elif open_info := self.autobn.alert_all['OBSERVATIONS'].get(symbol):
                 if time.time()-open_info[1] > 15*30*60:
                     self.autobn.alert_all['OBSERVATIONS'].pop(symbol)
-                elif open_info[3] == 'LONG' and kline_close[-2] > open_info[0]:
+                elif open_info[3] == 'LONG' and kline_close[-1] > open_info[0]:
                     zy = kline[-1][1] * 1.03
                     zs = kline[-1][1] * 0.95
                     self.autobn.send_msg(
