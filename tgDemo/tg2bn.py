@@ -174,11 +174,10 @@ class HandleMsg:
                         self.autobn.alert_all['POSITIONS'][symbol] = [
                             zy, zs, 'SELL', 'LONG']
                         self.autobn.alert_all['OBSERVATIONS'].pop(symbol)
-            signal = await self.increase_oi(semaphore, symbol, 'LONG',kline_close)
+            signal = await self.increase_oi(semaphore, symbol, 'LONG', kline_close)
             if (
                 signal == True and
-                symbol not in self.autobn.alert_all['POSITIONS'] and
-                datetime.now().minute in [0, 15, 30, 45] and
+                self.autobn.alert_all['POSITIONS'].get(symbol, [0, 0, 'BUY', 'SHORT'])[3] != 'LONG' and
                 kline_close[-2] > max(kline_close[:-2]) and
                 all(kline_close[x] > sum(kline_close[x-6:x+1])/len(kline_close[x-6:x+1]) for x in range(-2, -8, -1)) and
                 kline_volume[-2] > max(kline_volume[:-2]) and
@@ -196,17 +195,17 @@ class HandleMsg:
                 if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
                     self.autobn.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
-            elif signal == None:
+            elif signal == None and self.autobn.alert_all['POSITIONS'].get(symbol, [0, 0, 'SELL', 'LONG'])[3] != 'SHORT':
                 zy = kline[-1][1] * 0.97  # 止盈价
                 zs = kline[-1][1] * 1.05  # 止损价
-                # if close_info and close_info[3] == 'LONG':
-                #     self.close_bn_position(
-                #         symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                if close_info and close_info[3] == 'LONG':
+                    self.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
                 self.autobn.send_msg(
                     f'==={symbol}做空===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}')
-                # if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
-                #     self.autobn.alert_all['POSITIONS'][symbol] = [
-                #         zy, zs, 'BUY', 'SHORT']
+                if self.autobn.open_bn_position(symbol, 'BUY', 'LONG', 0.03):
+                    self.autobn.alert_all['POSITIONS'][symbol] = [
+                        zy, zs, 'BUY', 'SHORT']
         except:
             # 异常处理：打印错误信息但不中断程序
             traceback.print_exc()
