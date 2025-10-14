@@ -24,60 +24,85 @@ class AUTOBN:
         #        wx_key, user_name,
         #        bn_api_file, alert_all_file/allert_all_file,
         #        api_key, api_secret, slot_balance
-        obj.qy_key = kwargs.get('qy_key') or kwargs.get('qyWechatKey')
+        obj.qy_key = kwargs.get("qy_key") or kwargs.get("qyWechatKey")
         if not obj.qy_key:
-            raise ValueError('from_cfg 需要提供 qy_key')
+            raise ValueError("from_cfg 需要提供 qy_key")
 
         # 交易参数配置（可覆盖）
-        obj.leverage = kwargs.get('leverage', 3)
-        obj.health4open = kwargs.get('health4open', 70)
+        obj.leverage = kwargs.get("leverage", 3)
+        obj.health4open = kwargs.get("health4open", 70)
         # 仓位模式：'CROSSED' 全仓，'ISOLATED' 逐仓；支持大小写/中文/别名
         # 仅设置新开仓/下单前的目标模式；若该 symbol 已有仓位，交易所可能拒绝切换
-        margin_mode_raw = str(kwargs.get('margin_mode', kwargs.get(
-            'position_mode', 'CROSSED'))).strip().lower()
+        margin_mode_raw = (
+            str(kwargs.get("margin_mode", kwargs.get("position_mode", "CROSSED")))
+            .strip()
+            .lower()
+        )
         margin_mode_map = {
-            'cross': 'CROSSED', 'crossed': 'CROSSED', '全仓': 'CROSSED', '全倉': 'CROSSED', 'c': 'CROSSED',
-            'isolated': 'ISOLATED', 'iso': 'ISOLATED', '逐仓': 'ISOLATED', '逐倉': 'ISOLATED', 'i': 'ISOLATED'
+            "cross": "CROSSED",
+            "crossed": "CROSSED",
+            "全仓": "CROSSED",
+            "全倉": "CROSSED",
+            "c": "CROSSED",
+            "isolated": "ISOLATED",
+            "iso": "ISOLATED",
+            "逐仓": "ISOLATED",
+            "逐倉": "ISOLATED",
+            "i": "ISOLATED",
         }
-        obj.margin_mode = margin_mode_map.get(margin_mode_raw, 'CROSSED')
+        obj.margin_mode = margin_mode_map.get(margin_mode_raw, "CROSSED")
 
         # HTTP 会话配置（可覆盖）
-        obj.session = kwargs.get('session') or requests.Session()
-        obj.session.verify = kwargs.get('session_verify', False)
+        obj.session = kwargs.get("session") or requests.Session()
+        obj.session.verify = kwargs.get("session_verify", False)
         obj.session.headers = kwargs.get(
-            'session_headers', {'Content-Type': 'application/json'})
+            "session_headers", {"Content-Type": "application/json"}
+        )
 
         # 微信配置（可覆盖 -> 环境 -> 默认）
-        obj.wx_key = kwargs.get('wx_key', os.getenv(
-            'WX_KEY', 'fe197940-30c1-4cea-a41a-17b461423f83'))
-        obj.user_name = kwargs.get('user_name', os.getenv(
-            'USER_NAME', '49124710049@chatroom'))
+        obj.wx_key = kwargs.get(
+            "wx_key", os.getenv("WX_KEY", "fe197940-30c1-4cea-a41a-17b461423f83")
+        )
+        obj.user_name = kwargs.get(
+            "user_name", os.getenv("USER_NAME", "49124710049@chatroom")
+        )
 
         # 文件路径（可覆盖）
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        bn_api_file = kwargs.get('bn_api_file', 'bn.json')
-        alert_all_file = kwargs.get('alert_all_file', kwargs.get(
-            'allert_all_file', 'alert_all.json'))
+        bn_api_file = kwargs.get("bn_api_file", "bn.json")
+        alert_all_file = kwargs.get(
+            "alert_all_file", kwargs.get("allert_all_file", "alert_all.json")
+        )
 
         # 加载币安API配置并允许 kwargs 覆盖
         # 说明：若传入 api_key/api_secret，将覆盖 bn_api_file 中的值
-        with open(os.path.join(current_dir, bn_api_file), 'r') as f:
+        with open(os.path.join(current_dir, bn_api_file), "r") as f:
             bn_api = json.load(f)
-        api_key = kwargs.get('api_key', bn_api.get(
-            'api_key', 'Uz3Tat0QcGBYRa9E2TQZn1nscd0iNcoEnpDbk71q2uEke3jC8d9NADQCUoXLmkn2'))
-        api_secret = kwargs.get('api_secret', bn_api.get(
-            'api_secret', 'tqCsBnIj3T9BuZYnwyHJTNVWwL88LA1PQtZHqh3wVV6kWbWRRLyWEfrDknvdm09J'))
+        api_key = kwargs.get(
+            "api_key",
+            bn_api.get(
+                "api_key",
+                "Uz3Tat0QcGBYRa9E2TQZn1nscd0iNcoEnpDbk71q2uEke3jC8d9NADQCUoXLmkn2",
+            ),
+        )
+        api_secret = kwargs.get(
+            "api_secret",
+            bn_api.get(
+                "api_secret",
+                "tqCsBnIj3T9BuZYnwyHJTNVWwL88LA1PQtZHqh3wVV6kWbWRRLyWEfrDknvdm09J",
+            ),
+        )
 
         # 初始化币安期货客户端
         obj.um_futures_client = UMFutures(key=api_key, secret=api_secret)
 
         # 加载持仓记录
-        with open(os.path.join(current_dir, alert_all_file), 'r') as f:
+        with open(os.path.join(current_dir, alert_all_file), "r") as f:
             obj.alert_all = json.load(f)
 
         # 初始化资金槽位（用于资金管理）（可覆盖）
         # 含义：用于控制单次下单的资金使用上限（与 open_ratio 一起作用）
-        obj.slot_balance = kwargs.get('slot_balance', [0.0])
+        obj.slot_balance = kwargs.get("slot_balance", [0.0])
         obj.symbols_info = {}
         obj.is_early_morning = False
         return obj
@@ -98,21 +123,28 @@ class AUTOBN:
 
             if wx:
                 # 微信发送格式：使用微信API接口
-                json_msg = {"MsgItem": [
-                    {"AtWxIDList": ["string"], "ImageContent": "", "MsgType": 0, "TextContent": msg,
-                     "ToUserName": self.user_name}]}
-                response = self.session.post(
-                    f'http://wechatpadpro:1238/message/SendTextMessage?key={self.wx_key}',
-                    json=json_msg)
-            else:
-                # 企业微信发送格式：使用企业微信机器人webhook
                 json_msg = {
-                    "msgtype": "text",
-                    "text": {'content': msg}
+                    "MsgItem": [
+                        {
+                            "AtWxIDList": ["string"],
+                            "ImageContent": "",
+                            "MsgType": 0,
+                            "TextContent": msg,
+                            "ToUserName": self.user_name,
+                        }
+                    ]
                 }
                 response = self.session.post(
-                    url=f'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={self.qy_key}',
-                    json=json_msg)
+                    f"http://wechatpadpro:1238/message/SendTextMessage?key={self.wx_key}",
+                    json=json_msg,
+                )
+            else:
+                # 企业微信发送格式：使用企业微信机器人webhook
+                json_msg = {"msgtype": "text", "text": {"content": msg}}
+                response = self.session.post(
+                    url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={self.qy_key}",
+                    json=json_msg,
+                )
 
             # 检查发送结果，失败时记录状态码
             if response.status_code != 200:
@@ -135,7 +167,7 @@ class AUTOBN:
         """
         # 获取账户基本信息
         account_data = self.um_futures_client.account()
-        total_balance = float(account_data['totalMarginBalance'])  # 账户总余额
+        total_balance = float(account_data["totalMarginBalance"])  # 账户总余额
 
         # 获取所有持仓信息
         position_data = self.um_futures_client.get_position_risk()
@@ -143,9 +175,10 @@ class AUTOBN:
 
         # 计算现有持仓的维持保证金
         for position in position_data:
-            if float(position['positionAmt']) != 0:  # 只计算有持仓的合约
+            if float(position["positionAmt"]) != 0:  # 只计算有持仓的合约
                 maintenance_margin = float(
-                    position['maintMargin'])  # 单个持仓的维持保证金
+                    position["maintMargin"]
+                )  # 单个持仓的维持保证金
                 total_maintenance_margin += maintenance_margin
 
         # 加上新增头寸的维持保证金（按0.4%计算）
@@ -177,10 +210,12 @@ class AUTOBN:
             # 获取所有持仓信息，转换为字典格式
             # positionAmt: 持仓数量（正数=多头，负数=空头）
             # 使用abs()取绝对值，统一处理多空持仓
-            position = {k['symbol']: abs(float(k['positionAmt']))
-                        for k in self.um_futures_client.get_position_risk()}
+            position = {
+                k["symbol"]: abs(float(k["positionAmt"]))
+                for k in self.um_futures_client.get_position_risk()
+            }
             return position.get(symbol, 0)  # 返回指定交易对的持仓数量
-        except:
+        except Exception:
             # 异常时返回0，避免程序崩溃
             return 0
 
@@ -200,29 +235,28 @@ class AUTOBN:
         try:
             # 获取账户可用余额
             account_data = self.um_futures_client.account()
-            balance = float(account_data['availableBalance'])
+            balance = float(account_data["availableBalance"])
             # 风险控制2：检查可用余额
             if balance <= 0:
-                self.send_msg(f'{symbol} 开仓失败：可用余额为零')
+                self.send_msg(f"{symbol} 开仓失败：可用余额为零")
                 return None
 
             # 获取当前标记价格（用于计算开仓数量）
             mark_price_data = self.um_futures_client.mark_price(symbol)
             if not mark_price_data:
-                self.send_msg(f'{symbol} 开仓失败：无法获取标记价格')
+                self.send_msg(f"{symbol} 开仓失败：无法获取标记价格")
                 return None
 
-            markPrice = float(mark_price_data['markPrice'])
+            markPrice = float(mark_price_data["markPrice"])
 
             # 风险控制3：检查交易对配置是否存在
             if symbol not in self.symbols_info:
-                self.send_msg(f'{symbol} 开仓失败：找不到交易对信息')
+                self.send_msg(f"{symbol} 开仓失败：找不到交易对信息")
                 return None
 
             # 资金管理策略：限制单次开仓金额，控制风险
             # 策略1：设置资金槽位，单次开仓不超过总资金的 open_ratio（默认 1/3）
-            self.slot_balance[0] = max(
-                balance*open_ratio, self.slot_balance[0])
+            self.slot_balance[0] = max(balance * open_ratio, self.slot_balance[0])
             # 策略2：实际开仓金额不超过槽位和总资金70%的较小值
             safe_balance = min(self.slot_balance[0], balance * 0.7)
 
@@ -231,14 +265,20 @@ class AUTOBN:
 
             # 按交易对精度要求调整数量（向下取整，避免超出可用余额）
             amount = float(
-                Decimal(str(amount_raw)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
+                Decimal(str(amount_raw)).quantize(
+                    self.symbols_info.get(symbol)["quantityPrecision"],
+                    rounding=ROUND_DOWN,
+                )
+            )
 
             # 计算名义价值（用于风险控制）
             notional = amount * markPrice
 
             # 最小交易额检查（币安要求最低6 USDT）
             if notional < 6:
-                self.send_msg(f'{symbol} 开仓失败：交易额 {notional} 低于最小要求 6 USDT')
+                self.send_msg(
+                    f"{symbol} 开仓失败：交易额 {notional} 低于最小要求 6 USDT"
+                )
                 return None
 
             # 风险控制：检查“账户级健康度”（逐仓建议额外结合仓位强平距离/保证金冗余）
@@ -247,7 +287,8 @@ class AUTOBN:
             account_health = self.calculate_health_bn(notional)
             if account_health < self.health4open:
                 self.send_msg(
-                    f'{symbol} 开仓失败：预计健康度 {account_health}% 低于要求 {self.health4open}%')
+                    f"{symbol} 开仓失败：预计健康度 {account_health}% 低于要求 {self.health4open}%"
+                )
                 return None
 
             # 设置保证金模式（全仓/逐仓）。若已为目标模式，交易所可能返回错误码或提示，忽略即可
@@ -259,8 +300,9 @@ class AUTOBN:
 
             # 设置杠杆倍数
             leverage_result = self.um_futures_client.change_leverage(
-                symbol=symbol, leverage=self.leverage)
-            actual_leverage = leverage_result.get('leverage', self.leverage)
+                symbol=symbol, leverage=self.leverage
+            )
+            actual_leverage = leverage_result.get("leverage", self.leverage)
             # 执行市价单开仓
             tx = self.um_futures_client.new_order(
                 symbol=symbol,
@@ -271,17 +313,19 @@ class AUTOBN:
             )
             # 发送成功通知
             # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
-            msg = f'{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get("origQty", 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT'
+            msg = f"{symbol}开仓\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT"
             self.send_msg(msg)
             return account_data
         except Exception as e:
             # 异常处理：记录错误并发送通知
-            error_msg = f'{symbol} 开仓失败：{str(e)}'
+            error_msg = f"{symbol} 开仓失败：{str(e)}"
             self.send_msg(error_msg)
             traceback.print_exc()  # 打印详细错误信息
             return None
 
-    def close_bn_position(self, symbol, side, positionSide, price_close, close_ratio=1.0):
+    def close_bn_position(
+        self, symbol, side, positionSide, price_close, close_ratio=1.0
+    ):
         """
         在币安期货市场平仓
 
@@ -298,11 +342,14 @@ class AUTOBN:
         amount = self.get_amount_close(symbol)
         if not amount:  # 0表示无持仓
             return
-        close_ratio = 1 if amount*price_close < 10 else close_ratio
+        close_ratio = 1 if amount * close_ratio * price_close < 10 else close_ratio
         # 计算实际平仓数量
         close_amount = amount * close_ratio
         close_amount = float(
-            Decimal(str(close_amount)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
+            Decimal(str(close_amount)).quantize(
+                self.symbols_info.get(symbol)["quantityPrecision"], rounding=ROUND_DOWN
+            )
+        )
         # 如果平仓数量为0，直接返回
         if close_amount <= 0:
             return
@@ -318,28 +365,38 @@ class AUTOBN:
                     quantity=close_amount,  # 平仓数量
                     positionSide=positionSide,  # 持仓方向
                 )
-                entryPrice = self.alert_all['POSITIONS'][symbol][-1]
+                entryPrice = self.alert_all["POSITIONS"][symbol][-1]
                 # 发送成功通知
-                price_diff = price_close-entryPrice if positionSide == 'LONG' else entryPrice-price_close
+                price_diff = (
+                    price_close - entryPrice
+                    if positionSide == "LONG"
+                    else entryPrice - price_close
+                )
                 realized_pnl = price_diff * close_amount
-                pnl_percent = price_diff/entryPrice
-                msg = f'{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get("origQty", 0)}\n平仓比例:{close_ratio*100:.0f}%\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent*self.leverage*100:.2f}%'
+                pnl_percent = price_diff / entryPrice
+                msg = f"{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio * 100:.0f}%\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent * self.leverage * 100:.2f}%"
                 self.send_msg(msg)
                 return symbol  # 成功平仓，退出循环
-            except:
+            except Exception:
                 # 平仓失败，等待3秒后重试F
                 time.sleep(3)
                 traceback.print_exc()  # 打印错误信息
-                msg = f'bn平仓{symbol}失败，当前价格:{price_close}'
+                msg = f"bn平仓{symbol}失败，当前价格:{price_close}"
                 self.send_msg(msg)
                 # 重新获取持仓数量，可能部分平仓成功
                 current_amount = self.get_amount_close(symbol)
                 close_amount = current_amount * close_ratio
                 close_amount = float(
-                    Decimal(str(close_amount)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
+                    Decimal(str(close_amount)).quantize(
+                        self.symbols_info.get(symbol)["quantityPrecision"],
+                        rounding=ROUND_DOWN,
+                    )
+                )
         return None
 
-    async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None, kline_volume=None):
+    async def increase_oi(
+        self, semaphore, symbol, positionSide, kline_close=None, kline_volume=None
+    ):
         """
         检查增仓信号，判断是否适合开仓
 
@@ -355,11 +412,18 @@ class AUTOBN:
         async with semaphore:
             try:
                 # 获取持仓量历史数据（30天）
-                oi = await asyncio.to_thread(self.um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=30)
+                oi = await asyncio.to_thread(
+                    self.um_futures_client.open_interest_hist,
+                    symbol=symbol,
+                    period="1d",
+                    limit=30,
+                )
                 sumOpenInterestValue = [
-                    float(i['sumOpenInterestValue']) for i in oi]  # 持仓价值（美元）
-                sumOpenInterest = [float(i['sumOpenInterest'])
-                                   for i in oi]  # 持仓数量（合约数）
+                    float(i["sumOpenInterestValue"]) for i in oi
+                ]  # 持仓价值（美元）
+                sumOpenInterest = [
+                    float(i["sumOpenInterest"]) for i in oi
+                ]  # 持仓数量（合约数）
 
                 # 获取多空比历史数据（100天）
                 # lsar = await asyncio.to_thread(self.um_futures_client.long_short_account_ratio, symbol=symbol,
@@ -368,16 +432,15 @@ class AUTOBN:
 
                 # 打印分析数据，便于监控和调试
                 print(
-                    f'{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}',
-                    flush=True)
+                    f"{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}",
+                    flush=True,
+                )
                 if positionSide == "LONG":
                     # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
-                    if (
-                        sumOpenInterest[-1] <= max(sumOpenInterest[-3:-1]) or
-                        sumOpenInterestValue[-1] <= max(
-                            sumOpenInterestValue[-3:-1])
-                    ):
+                    if sumOpenInterest[-1] <= max(
+                        sumOpenInterest[-3:-1]
+                    ) or sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
                         return False
                     # 条件2：检查历史数据，寻找合适的增仓信号
                     # for index in range(-2, -len(oi), -1):
@@ -407,16 +470,24 @@ class AUTOBN:
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
                     return any(
                         (
-                            kline_close[index-1] == max(kline_close) and
-                            sumOpenInterestValue[index] == max(sumOpenInterestValue) and
-                            kline_close[-2] > max(kline_close[-4:-2]) and
-                            sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]) and
-                            ((kline_volume[-2] == max(kline_volume[-4:-2]) or kline_volume[-2] > 2*sum(kline_volume)/len(
-                                kline_volume)) and sumOpenInterest[-1] < sumOpenInterest[-2] or sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]))
+                            kline_close[index - 1] == max(kline_close)
+                            and sumOpenInterestValue[index] == max(sumOpenInterestValue)
+                            and kline_close[-2] > max(kline_close[-4:-2])
+                            and sumOpenInterestValue[-1]
+                            > max(sumOpenInterestValue[-3:-1])
+                            and (
+                                (
+                                    kline_volume[-2] == max(kline_volume[-4:-2])
+                                    or kline_volume[-2]
+                                    > 2 * sum(kline_volume) / len(kline_volume)
+                                )
+                                and sumOpenInterest[-1] < sumOpenInterest[-2]
+                                or sumOpenInterest[-1] < min(sumOpenInterest[-3:-1])
+                            )
                         )
-                        for index in range(-1, int(-len(kline_close)/3)-2, -1)
+                        for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
                     )
-            except:
+            except Exception:
                 traceback.print_exc()
                 return False
 
@@ -435,36 +506,46 @@ class AUTOBN:
         async with semaphore:
             try:
                 # 获取持仓量历史数据（30天）
-                oi = await asyncio.to_thread(self.um_futures_client.open_interest_hist, symbol=symbol, period="1d", limit=30)
+                oi = await asyncio.to_thread(
+                    self.um_futures_client.open_interest_hist,
+                    symbol=symbol,
+                    period="1d",
+                    limit=30,
+                )
                 sumOpenInterestValue = [
-                    float(i['sumOpenInterestValue']) for i in oi]  # 持仓价值（美元）
-                sumOpenInterest = [float(i['sumOpenInterest'])
-                                   for i in oi]  # 持仓数量（合约数）
+                    float(i["sumOpenInterestValue"]) for i in oi
+                ]  # 持仓价值（美元）
+                sumOpenInterest = [
+                    float(i["sumOpenInterest"]) for i in oi
+                ]  # 持仓数量（合约数）
 
                 # 打印减仓信号数据，便于监控
                 print(
-                    f'{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}',
-                    flush=True)
+                    f"{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}",
+                    flush=True,
+                )
                 if positionSide == "LONG":
                     # 做多减仓条件：需要满足以下任一条件
                     # 条件1：持仓价值增加但持仓量减少（价格上涨但资金流出，获利了结信号）
                     # 条件2：持仓量达到近期高点但价值达到近期低点（价格下跌但持仓增加，止损信号）
                     return (
-                        (sumOpenInterestValue[-1] > sumOpenInterestValue[-2] and
-                         sumOpenInterest[-1] < sumOpenInterest[-2]) or
-                        (sumOpenInterest[-1] > max(sumOpenInterest[-3:-1]) and
-                         sumOpenInterestValue[-1] < min(sumOpenInterestValue[-3:-1]))
+                        sumOpenInterestValue[-1] > sumOpenInterestValue[-2]
+                        and sumOpenInterest[-1] < sumOpenInterest[-2]
+                    ) or (
+                        sumOpenInterest[-1] > max(sumOpenInterest[-3:-1])
+                        and sumOpenInterestValue[-1] < min(sumOpenInterestValue[-3:-1])
                     )
                 else:
                     # 做空减仓条件：需要满足以下任一条件
                     # 条件1：持仓价值减少但持仓量增加（价格下跌但资金流入，获利了结信号）
                     return (
-                        (sumOpenInterestValue[-1] < sumOpenInterestValue[-2] and
-                         sumOpenInterest[-1] > sumOpenInterest[-2]) or
-                        (sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
-                         sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]))
+                        sumOpenInterestValue[-1] < sumOpenInterestValue[-2]
+                        and sumOpenInterest[-1] > sumOpenInterest[-2]
+                    ) or (
+                        sumOpenInterest[-1] < min(sumOpenInterest[-3:-1])
+                        and sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
                     )
-            except:
+            except Exception:
                 return False
 
     async def get_kline(self, semaphore, symbol, t: str):
@@ -481,13 +562,18 @@ class AUTOBN:
         """
         async with semaphore:
             # 提取时间周期前缀并转小写（如'1Dutc' -> '1d'）
-            interval = t.replace('utc', '').lower()
+            interval = t.replace("utc", "").lower()
             try:
                 # 异步获取K线数据（30根K线）
-                kline = await asyncio.to_thread(self.um_futures_client.klines, symbol=symbol, interval=interval, limit=30)
+                kline = await asyncio.to_thread(
+                    self.um_futures_client.klines,
+                    symbol=symbol,
+                    interval=interval,
+                    limit=30,
+                )
                 # 将所有数据转换为浮点数格式
                 return [list(map(float, sublist)) for sublist in kline]
-            except:
+            except Exception:
                 # 获取失败时返回空列表
                 return []
 
@@ -504,14 +590,21 @@ class AUTOBN:
         while True:
             try:
                 # 获取指数价格（现货价格）
-                index_price = await asyncio.to_thread(self.session.get,
-                                                      url='https://fapi.binance.com/fapi/v1/premiumIndex')
-                index_price = {ip['symbol']: float(
-                    ip['indexPrice']) for ip in index_price.json()}
+                index_price = await asyncio.to_thread(
+                    self.session.get,
+                    url="https://fapi.binance.com/fapi/v1/premiumIndex",
+                )
+                index_price = {
+                    ip["symbol"]: float(ip["indexPrice"]) for ip in index_price.json()
+                }
 
                 # 获取期货市场价格
-                market_price = (await asyncio.to_thread(self.session.get,
-                                                        url="https://fapi.binance.com/fapi/v2/ticker/price")).json()
+                market_price = (
+                    await asyncio.to_thread(
+                        self.session.get,
+                        url="https://fapi.binance.com/fapi/v2/ticker/price",
+                    )
+                ).json()
                 time_now = time.time()
 
                 # 遍历所有交易对，检查基差
@@ -520,22 +613,21 @@ class AUTOBN:
                     # 基差 > 1 表示期货价格高于现货价格（升水）
                     # 基差 < 1 表示期货价格低于现货价格（贴水）
                     if (
-                        (basis := index_price.get(p['symbol'], float(p['price'])) / float(p['price'])) > 1.02 and
-                        time_now - BASIS.get(p['symbol'], 0) > 60
-                    ):
+                        basis := index_price.get(p["symbol"], float(p["price"]))
+                        / float(p["price"])
+                    ) > 1.02 and time_now - BASIS.get(p["symbol"], 0) > 60:
                         # 基差超过2%且距离上次通知超过60秒，发送警告
-                        BASIS[p['symbol']] = time.time()
+                        BASIS[p["symbol"]] = time.time()
                         self.send_msg(
-                            f'{p["symbol"]} 基差超过2%：{basis * 100 - 100:.2f}%', True)
-                    elif (
-                        basis >= 1.015 and
-                        time_now - BASIS.get(p['symbol'], 0) > 180
-                    ):
+                            f"{p['symbol']} 基差超过2%：{basis * 100 - 100:.2f}%", True
+                        )
+                    elif basis >= 1.015 and time_now - BASIS.get(p["symbol"], 0) > 180:
                         # 基差超过1.5%且距离上次通知超过180秒，发送异常提醒
-                        BASIS[p['symbol']] = time.time()
+                        BASIS[p["symbol"]] = time.time()
                         self.send_msg(
-                            f'{p["symbol"]} 基差异常：{basis * 100 - 100:.2f}%', True)
-            except:
+                            f"{p['symbol']} 基差异常：{basis * 100 - 100:.2f}%", True
+                        )
+            except Exception:
                 # 异常处理：打印错误信息但不中断监控
                 traceback.print_exc()
             finally:
@@ -568,41 +660,52 @@ class AUTOBN:
             if len(kline) < 4:
                 return
             # 检查现有持仓是否需要平仓
-            if close_info := self.alert_all['POSITIONS'].get(symbol):
+            if close_info := self.alert_all["POSITIONS"].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                if kline_close[-1] <= close_info[1] or close_info[3] == 'LONG' and kline_close[-1] < sum(kline_close[-7:])/len(kline_close[-7:]):
-                    if close_info[3] == 'SHORT':
+                if (
+                    kline_close[-1] <= close_info[1]
+                    or close_info[3] == "LONG"
+                    and kline_close[-1] < sum(kline_close[-7:]) / len(kline_close[-7:])
+                ):
+                    if close_info[3] == "SHORT":
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
-                        close_info[1] = kline_close[-1]*0.96
-                        close_info[0] = kline_close[-1]*1.04
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                        )
+                        close_info[1] = kline_close[-1] * 0.96
+                        close_info[0] = kline_close[-1] * 1.04
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                        self.alert_all['POSITIONS'].pop(symbol)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                        )
+                        self.alert_all["POSITIONS"].pop(symbol)
                 elif kline_close[-1] >= close_info[0]:
-                    if close_info[3] == 'LONG':
+                    if close_info[3] == "LONG":
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
-                        close_info[0] = kline_close[-1]*1.04
-                        close_info[1] = kline_close[-1]*0.96
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                        )
+                        close_info[0] = kline_close[-1] * 1.04
+                        close_info[1] = kline_close[-1] * 0.96
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                        self.alert_all['POSITIONS'].pop(symbol)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                        )
+                        self.alert_all["POSITIONS"].pop(symbol)
                 elif self.is_early_morning:
                     if await self.decrease_oi(semaphore, symbol, close_info[3]):
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
-                        close_info[0] = kline_close[-1]*1.04
-                        close_info[1] = kline_close[-1]*0.96
-                    elif close_info[3] == 'SHORT' and kline_close[-2] < close_info[-1]:
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                        )
+                        close_info[0] = kline_close[-1] * 1.04
+                        close_info[1] = kline_close[-1] * 0.96
+                    elif close_info[3] == "SHORT" and kline_close[-2] < close_info[-1]:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
-                    elif close_info[3] == 'LONG' and kline_close[-2] > close_info[-1]:
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                        )
+                    elif close_info[3] == "LONG" and kline_close[-2] > close_info[-1]:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                        )
             if datetime.datetime.now().minute % 5 == 0:
                 # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
                 kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
@@ -612,33 +715,39 @@ class AUTOBN:
                 # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
                 # 条件3：持仓量增加信号（increase_oi函数返回True）
                 if (
-                    (self.is_early_morning or (
-                        (symbol not in self.alert_all['POSITIONS']) and
-                        (kline[-1][2] < kline[-1][1]*1.05))) and
-                    kline_close[-3] < kline_close[-2] < kline_close[-1] and
-                    all(
-                        kline_close[x] >= sum(
-                            kline_close[x-6:x+1])/len(kline_close[x-6:x+1])
+                    (
+                        self.is_early_morning
+                        or (
+                            (symbol not in self.alert_all["POSITIONS"])
+                            and (kline[-1][2] < kline[-1][1] * 1.05)
+                        )
+                    )
+                    and kline_close[-3] < kline_close[-2] < kline_close[-1]
+                    and all(
+                        kline_close[x]
+                        >= sum(kline_close[x - 6 : x + 1])
+                        / len(kline_close[x - 6 : x + 1])
                         for x in range(-2, -4, -1)
-                    ) and
-                    max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2] and
-                    await self.increase_oi(semaphore, symbol, 'LONG')
+                    )
+                    and max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2]
+                    and await self.increase_oi(semaphore, symbol, "LONG")
                 ):
                     # 设置止盈止损：止盈9%，止损9%
                     zy = kline[-1][1] * 1.03  # 止盈价
                     zs = kline[-1][1] * 0.97  # 止损价
-                    if close_info and close_info[3] == 'SHORT':
+                    if close_info and close_info[3] == "SHORT":
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                        )
                     # 发送做多信号通知
                     self.send_msg(
-                        f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+                        f"==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}"
+                    )
 
                     # 执行开仓操作
-                    if self.open_bn_position(symbol, 'BUY', 'LONG', 0.1):
+                    if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                         # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
-                        self.alert_all['POSITIONS'][symbol] = [
-                            zy, zs, 'SELL', 'LONG']
+                        self.alert_all["POSITIONS"][symbol] = [zy, zs, "SELL", "LONG"]
 
                 # 做空信号判断：需要同时满足以下条件
                 # 条件1：价格连续下跌（前3天 > 前2天 > 前1天）
@@ -646,32 +755,36 @@ class AUTOBN:
                 # 条件3：持仓量增加信号（increase_oi函数返回True）
                 elif (
                     (
-                        self.is_early_morning or (
-                            (symbol not in self.alert_all['POSITIONS']) and
-                            (kline[-1][3] > kline[-1][1]*0.95)
+                        self.is_early_morning
+                        or (
+                            (symbol not in self.alert_all["POSITIONS"])
+                            and (kline[-1][3] > kline[-1][1] * 0.95)
                         )
-                    ) and
-                    kline_close[-2] > kline_close[-1] and
-                    await self.increase_oi(semaphore, symbol, 'SHORT', kline_close, kline_volume)
+                    )
+                    and kline_close[-2] > kline_close[-1]
+                    and await self.increase_oi(
+                        semaphore, symbol, "SHORT", kline_close, kline_volume
+                    )
                 ):
                     # 设置止盈止损：止盈9%，止损9%
                     zy = kline[-1][1] * 0.97  # 止盈价
                     zs = kline[-1][1] * 1.03  # 止损价
-                    if close_info and close_info[3] == 'LONG':
+                    if close_info and close_info[3] == "LONG":
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                        )
 
                     # 发送做空信号通知
                     self.send_msg(
-                        f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+                        f"==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}"
+                    )
 
                     # 执行开仓操作
-                    if self.open_bn_position(symbol, 'SELL', 'SHORT', 0.1):
+                    if self.open_bn_position(symbol, "SELL", "SHORT", 0.1):
                         # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
-                        self.alert_all['POSITIONS'][symbol] = [
-                            zs, zy, 'BUY', 'SHORT']
+                        self.alert_all["POSITIONS"][symbol] = [zs, zy, "BUY", "SHORT"]
 
-        except:
+        except Exception:
             # 异常处理：打印错误信息但不中断程序
             traceback.print_exc()
             return
@@ -681,40 +794,57 @@ class AUTOBN:
         exchange_info = self.um_futures_client.exchange_info()
 
         # 计算数量精度：根据quantityPrecision生成对应的Decimal精度
-        sp = {i['symbol']: Decimal('1') if i['quantityPrecision'] == 0 else Decimal(
-            f'0.{"1" * i["quantityPrecision"]}') for i in exchange_info['symbols']}
+        sp = {
+            i["symbol"]: Decimal("1")
+            if i["quantityPrecision"] == 0
+            else Decimal(f"0.{'1' * i['quantityPrecision']}")
+            for i in exchange_info["symbols"]
+        }
 
         # 筛选USDT交易对：只处理USDT计价且状态为TRADING的交易对
-        self.symbols_info = {symbol['symbol']: {
-            'quotePrecision': symbol['quotePrecision'],  # 价格精度
-            # 数量精度
-            'quantityPrecision': sp.get(symbol['symbol'], Decimal('1'))
+        self.symbols_info = {
+            symbol["symbol"]: {
+                "quotePrecision": symbol["quotePrecision"],  # 价格精度
+                # 数量精度
+                "quantityPrecision": sp.get(symbol["symbol"], Decimal("1")),
+            }
+            for symbol in exchange_info["symbols"]
+            if "USDT" in symbol["quoteAsset"] and "TRADING" in symbol["status"]
         }
-            for symbol in exchange_info['symbols'] if
-            'USDT' in symbol['quoteAsset'] and 'TRADING' in symbol['status']}
 
     def get_position_risk(self):
         # 获取当前持仓信息，用于清理无效持仓
         position_risk = self.um_futures_client.get_position_risk()
-        position_risk_symbol = [i['symbol'] for i in position_risk]
+        position_risk_symbol = [i["symbol"] for i in position_risk]
         # 只保留当前有持仓的交易对记录
-        self.alert_all['POSITIONS'] = {
-            k: v for k, v in self.alert_all['POSITIONS'].items() if k in position_risk_symbol}
+        self.alert_all["POSITIONS"] = {
+            k: v
+            for k, v in self.alert_all["POSITIONS"].items()
+            if k in position_risk_symbol
+        }
         for p in position_risk:
             entryPrice = float(p["entryPrice"])
-            if p["symbol"] not in self.alert_all['POSITIONS']:
+            if p["symbol"] not in self.alert_all["POSITIONS"]:
                 if p["positionSide"] == "LONG":
-                    self.alert_all['POSITIONS'][p["symbol"]] = [
-                        entryPrice*1.03, entryPrice*0.97, "SELL", "LONG", entryPrice]
+                    self.alert_all["POSITIONS"][p["symbol"]] = [
+                        entryPrice * 1.03,
+                        entryPrice * 0.97,
+                        "SELL",
+                        "LONG",
+                        entryPrice,
+                    ]
                 else:
-                    self.alert_all['POSITIONS'][p["symbol"]] = [
-                        entryPrice*1.03, entryPrice*0.97, "BUY", "SHORT", entryPrice]
-            elif len(self.alert_all['POSITIONS'][p["symbol"]]) < 5:
-                self.alert_all['POSITIONS'][p["symbol"]
-                                            ].append(entryPrice)
+                    self.alert_all["POSITIONS"][p["symbol"]] = [
+                        entryPrice * 1.03,
+                        entryPrice * 0.97,
+                        "BUY",
+                        "SHORT",
+                        entryPrice,
+                    ]
+            elif len(self.alert_all["POSITIONS"][p["symbol"]]) < 5:
+                self.alert_all["POSITIONS"][p["symbol"]].append(entryPrice)
             else:
-                self.alert_all['POSITIONS'][p["symbol"]
-                                            ][-1] = entryPrice
+                self.alert_all["POSITIONS"][p["symbol"]][-1] = entryPrice
 
     async def rzq_market(self, market):
         """
@@ -732,7 +862,7 @@ class AUTOBN:
         now = datetime.datetime.now()
         self.is_early_morning = now.hour == 8 and now.minute < 10
         if self.is_early_morning:
-            self.send_msg(f'{market}任务开始 - {now}')
+            self.send_msg(f"{market}任务开始 - {now}")
         symbols = []
 
         # 重试机制：最多尝试10次获取交易对信息
@@ -742,34 +872,39 @@ class AUTOBN:
                 self.get_symbols_info()
                 symbols = list(self.symbols_info.keys())
                 break  # 成功获取，退出重试循环
-            except:
+            except Exception:
                 # 获取失败，等待2秒后重试
                 traceback.print_exc()
                 await asyncio.sleep(2)
         # 创建信号量，限制最大并发数为10，避免API限制
         semaphore = asyncio.Semaphore(10)
-        print(now, f'{market}任务开始 - 总交易对数量: {len(symbols)}', flush=True)
+        print(now, f"{market}任务开始 - 总交易对数量: {len(symbols)}", flush=True)
 
         success = set()  # 记录成功处理的交易对
         chunk_size = 10  # 分批处理，避免内存占用过高
 
         # 分批处理所有交易对
         for i in range(0, len(symbols), chunk_size):
-            symbol_chunk = symbols[i:i + chunk_size]  # 当前批次的交易对
+            symbol_chunk = symbols[i : i + chunk_size]  # 当前批次的交易对
             # 创建异步任务列表
-            tasks = [self.rzq_token(semaphore, symbol, success)
-                     for symbol in symbol_chunk]
+            tasks = [
+                self.rzq_token(semaphore, symbol, success) for symbol in symbol_chunk
+            ]
             # 等待当前批次所有任务完成
             await asyncio.gather(*tasks)
             gc.collect()  # 垃圾回收，释放内存
 
         # 打印任务完成信息
-        print(datetime.datetime.now(),
-              f'{market}任务结束 - 总交易对数量: {len(success)}', self.alert_all, flush=True)
+        print(
+            datetime.datetime.now(),
+            f"{market}任务结束 - 总交易对数量: {len(success)}",
+            self.alert_all,
+            flush=True,
+        )
 
         # 保存分析结果到文件
         current_dir = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(current_dir, 'alert_all.json'), 'w') as f:
+        with open(os.path.join(current_dir, "alert_all.json"), "w") as f:
             json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
 
 
@@ -803,14 +938,12 @@ class AUTOA:
                 return None, None, []
 
             # 获取指定日期前的最近n个交易日，按时间降序排列
-            recent_trading_days = valid_dates.sort_values(
-                ascending=False).iloc[:days]
+            recent_trading_days = valid_dates.sort_values(ascending=False).iloc[:days]
             start_date = recent_trading_days.min().strftime("%Y%m%d")  # 最早日期
             end_date = recent_trading_days.max().strftime("%Y%m%d")  # 最晚日期
 
             # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
-            zt_date = [i.strftime("%Y%m%d")
-                       for i in recent_trading_days.iloc[3:10]]
+            zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
 
             return start_date, end_date, zt_date
         except Exception as e:
@@ -840,22 +973,27 @@ class AUTOA:
                 continue
 
             # 提取股票代码和名称
-            stock_codes = zt_df[['代码', '名称']].values.tolist()
+            stock_codes = zt_df[["代码", "名称"]].values.tolist()
             print(f"{zt_date}涨停股：{stock_codes}", flush=True)
 
             # 遍历涨停股票，进行技术分析
             for code in stock_codes:
                 try:
                     # 获取股票历史数据（前复权）
-                    hist = ak.stock_zh_a_hist(symbol=code[0], period="daily", start_date=start_date, end_date=end_date,
-                                              adjust="qfq")
-                except:
+                    hist = ak.stock_zh_a_hist(
+                        symbol=code[0],
+                        period="daily",
+                        start_date=start_date,
+                        end_date=end_date,
+                        adjust="qfq",
+                    )
+                except Exception:
                     # 获取数据失败，跳过该股票
                     traceback.print_exc()
                     continue
 
                 # 添加最新涨跌幅到股票信息中
-                code.append(str(hist.iloc[-1]['涨跌幅']))
+                code.append(str(hist.iloc[-1]["涨跌幅"]))
                 print(code, flush=True)
 
                 # 股票筛选条件：多维度筛选优质股票
@@ -864,39 +1002,37 @@ class AUTOA:
                     continue
 
                 # 条件2：当日必须上涨（涨跌幅>0）
-                if hist.iloc[-1]['涨跌幅'] <= 0:
+                if hist.iloc[-1]["涨跌幅"] <= 0:
                     continue
 
                 # 条件3：价格位置检查
                 # 3a：当前价格必须高于近10天均价（确保在上升趋势中）
                 # 3b：检查近期是否有价格回调（避免追高）
-                if (
-                    hist.iloc[-10:]['收盘'].mean() > hist.iloc[-1]['收盘'] or
-                    any(
-                        hist.iloc[-9 + x:x +
-                                  1]['收盘'].mean() > hist.iloc[x]['收盘']
-                        for x in range(-2, -i - 5, -1)
-                    )
+                if hist.iloc[-10:]["收盘"].mean() > hist.iloc[-1]["收盘"] or any(
+                    hist.iloc[-9 + x : x + 1]["收盘"].mean() > hist.iloc[x]["收盘"]
+                    for x in range(-2, -i - 5, -1)
                 ):
                     continue
 
                 # 条件4：成交量检查（当日成交量必须是近期最大）
                 # 确保有足够的资金关注和参与
-                if hist.iloc[-3:-1]['成交量'].max() > hist.iloc[-1]['成交量']:
+                if hist.iloc[-3:-1]["成交量"].max() > hist.iloc[-1]["成交量"]:
                     continue
 
                 # 条件5：价格位置检查（当前价格必须在近期低点附近）
                 # 避免在高位追涨，寻找回调买入机会
-                if hist.iloc[:-i - 4]['收盘'].max() > hist.iloc[-i - 4]['收盘']:
+                if hist.iloc[: -i - 4]["收盘"].max() > hist.iloc[-i - 4]["收盘"]:
                     continue
 
                 # 条件6：避免连续上涨（防止追高）
                 # 检查近期是否有连续放量上涨的情况
-                if i > 0 and any(hist.iloc[x]['成交量'] > hist.iloc[x - 2:x]['成交量'].max()
-                                 for x in range(-2, -i - 2, -1)):
+                if i > 0 and any(
+                    hist.iloc[x]["成交量"] > hist.iloc[x - 2 : x]["成交量"].max()
+                    for x in range(-2, -i - 2, -1)
+                ):
                     continue
                 # 通过所有筛选条件，添加到结果集合
-                selected.add(''.join(code))
+                selected.add("".join(code))
 
         return selected
 
@@ -917,19 +1053,25 @@ class AUTOA:
             # 构建企业微信消息格式
             json_msg = {
                 "msgtype": "text",
-                "text": {'content': f'===A{len(filtered)}低吸===\n' + '\n-------\n'.join(filtered)}
+                "text": {
+                    "content": f"===A{len(filtered)}低吸===\n"
+                    + "\n-------\n".join(filtered)
+                },
             }
             # 发送到企业微信群
             requests.post(
-                url='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73', headers={'Content-Type': 'application/json'},
-                json=json_msg, verify=False)
+                url="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73",
+                headers={"Content-Type": "application/json"},
+                json=json_msg,
+                verify=False,
+            )
 
 
 async def main():
     autobn = AUTOBN.from_cfg(
-        bn_api_file='bn.json',
-        alert_all_file='alert_all.json',
-        qy_key='6f2ec864-c474-4c8f-b069-1e3c35eb7d73'
+        bn_api_file="bn.json",
+        alert_all_file="alert_all.json",
+        qy_key="6f2ec864-c474-4c8f-b069-1e3c35eb7d73",
     )
     """
     主函数：设置定时任务并启动调度器
@@ -943,31 +1085,31 @@ async def main():
     # 设置A股监控定时任务
     scheduler.add_job(
         AUTOA.monitor_stocks,  # 执行的函数
-        'cron',  # 调度类型：按日历规则
-        hour='12,14',  # 交易时段：12点和14点
-        minute='52-57',  # 每小时的52-57分
-        second='00',  # 整点秒数
-        day_of_week='mon-fri',  # 周一至周五（交易日）
-        timezone='Asia/Shanghai',  # 上海时区
+        "cron",  # 调度类型：按日历规则
+        hour="12,14",  # 交易时段：12点和14点
+        minute="52-57",  # 每小时的52-57分
+        second="00",  # 整点秒数
+        day_of_week="mon-fri",  # 周一至周五（交易日）
+        timezone="Asia/Shanghai",  # 上海时区
         misfire_grace_time=60,  # 错过执行的宽限时间（秒）
         max_instances=1,  # 同一时间只允许1个实例运行
         coalesce=True,  # 合并错过的执行（避免积压）
-        name='股票监控任务'  # 任务名称
+        name="股票监控任务",  # 任务名称
     )
 
     # 设置币安市场分析定时任务
     scheduler.add_job(
         autobn.rzq_market,  # 执行的函数
-        'cron',  # 调度类型：按日历规则
-        hour='*',  # 每小时执行
-        minute='05-59/1',  # 每5分钟
-        second='00',  # 整点秒数
-        timezone='Asia/Shanghai',  # 上海时区
-        args=('BN',),  # 传递参数
+        "cron",  # 调度类型：按日历规则
+        hour="*",  # 每小时执行
+        minute="05-59/1",  # 每5分钟
+        second="00",  # 整点秒数
+        timezone="Asia/Shanghai",  # 上海时区
+        args=("BN",),  # 传递参数
         misfire_grace_time=10,  # 错过执行的宽限时间（秒）
         max_instances=1,  # 同一时间只允许1个实例运行
         coalesce=True,  # 合并错过的执行（避免积压）
-        name='币安市场分析任务'  # 任务名称
+        name="币安市场分析任务",  # 任务名称
     )
 
     # 启动调度器
@@ -984,7 +1126,7 @@ if __name__ == "__main__":
 
     功能：初始化所有必要的配置和客户端，然后启动主程序
     """
-    print('autoBN启动', flush=True)
+    print("autoBN启动", flush=True)
 
     # 初始化任务调度器
     scheduler = AsyncIOScheduler()
