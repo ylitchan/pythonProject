@@ -102,10 +102,9 @@ class HandleMsg:
                         result = any(
                             (
                                 kline_close[index-1] == max(kline_close) and
-                                kline_volume[index-1] == max(kline_volume) and
+                                kline_volume[index-1] == max(kline_volume[:index-2]) and
                                 sumOpenInterestValue[index] == max(sumOpenInterestValue) and
                                 kline_close[-2] > max(kline_close[-5:-2]) and
-                                kline_volume[-2] > max(kline_volume[-5:-2]) and
                                 sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
                                 sumOpenInterestValue[-1] > max(
                                     sumOpenInterestValue[-3:-1])
