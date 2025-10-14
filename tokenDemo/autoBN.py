@@ -603,73 +603,74 @@ class AUTOBN:
                     elif close_info[3] == 'LONG' and kline_close[-2] > close_info[-1]:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
-            # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
-            kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
-            kline_volume = [k[5] for k in kline]
-            # 做多信号判断：需要同时满足以下条件
-            # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
-            # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
-            # 条件3：持仓量增加信号（increase_oi函数返回True）
-            if (
-                (self.is_early_morning or (
-                    (symbol not in self.alert_all['POSITIONS']) and
-                    (kline[-1][2] < kline[-1][1]*1.05))) and
-                kline_close[-3] < kline_close[-2] < kline_close[-1] and
-                all(
-                    kline_close[x] >= sum(
-                        kline_close[x-6:x+1])/len(kline_close[x-6:x+1])
-                    for x in range(-2, -4, -1)
-                ) and
-                max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2] and
-                await self.increase_oi(semaphore, symbol, 'LONG')
-            ):
-                # 设置止盈止损：止盈9%，止损9%
-                zy = kline[-1][1] * 1.03  # 止盈价
-                zs = kline[-1][1] * 0.97  # 止损价
-                if close_info and close_info[3] == 'SHORT':
-                    self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
-                # 发送做多信号通知
-                self.send_msg(
-                    f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
-
-                # 执行开仓操作
-                if self.open_bn_position(symbol, 'BUY', 'LONG', 0.1):
-                    # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
-                    self.alert_all['POSITIONS'][symbol] = [
-                        zy, zs, 'SELL', 'LONG']
-
-            # 做空信号判断：需要同时满足以下条件
-            # 条件1：价格连续下跌（前3天 > 前2天 > 前1天）
-            # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最小值）
-            # 条件3：持仓量增加信号（increase_oi函数返回True）
-            elif (
-                (
-                    self.is_early_morning or (
+            if datetime.datetime.now().minute % 5 == 0:
+                # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
+                kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
+                kline_volume = [k[5] for k in kline]
+                # 做多信号判断：需要同时满足以下条件
+                # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
+                # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
+                # 条件3：持仓量增加信号（increase_oi函数返回True）
+                if (
+                    (self.is_early_morning or (
                         (symbol not in self.alert_all['POSITIONS']) and
-                        (kline[-1][3] > kline[-1][1]*0.95)
-                    )
-                ) and
-                kline_close[-2] > kline_close[-1] and
-                kline_volume[-2] > max(kline_volume[:-2]) and
-                await self.increase_oi(semaphore, symbol, 'SHORT', kline_close)
-            ):
-                # 设置止盈止损：止盈9%，止损9%
-                zy = kline[-1][1] * 0.97  # 止盈价
-                zs = kline[-1][1] * 1.03  # 止损价
-                if close_info and close_info[3] == 'LONG':
-                    self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                        (kline[-1][2] < kline[-1][1]*1.05))) and
+                    kline_close[-3] < kline_close[-2] < kline_close[-1] and
+                    all(
+                        kline_close[x] >= sum(
+                            kline_close[x-6:x+1])/len(kline_close[x-6:x+1])
+                        for x in range(-2, -4, -1)
+                    ) and
+                    max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2] and
+                    await self.increase_oi(semaphore, symbol, 'LONG')
+                ):
+                    # 设置止盈止损：止盈9%，止损9%
+                    zy = kline[-1][1] * 1.03  # 止盈价
+                    zs = kline[-1][1] * 0.97  # 止损价
+                    if close_info and close_info[3] == 'SHORT':
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
+                    # 发送做多信号通知
+                    self.send_msg(
+                        f'==={symbol}做多===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
 
-                # 发送做空信号通知
-                self.send_msg(
-                    f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+                    # 执行开仓操作
+                    if self.open_bn_position(symbol, 'BUY', 'LONG', 0.1):
+                        # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
+                        self.alert_all['POSITIONS'][symbol] = [
+                            zy, zs, 'SELL', 'LONG']
 
-                # 执行开仓操作
-                if self.open_bn_position(symbol, 'SELL', 'SHORT', 0.1):
-                    # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
-                    self.alert_all['POSITIONS'][symbol] = [
-                        zs, zy, 'BUY', 'SHORT']
+                # 做空信号判断：需要同时满足以下条件
+                # 条件1：价格连续下跌（前3天 > 前2天 > 前1天）
+                # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最小值）
+                # 条件3：持仓量增加信号（increase_oi函数返回True）
+                elif (
+                    (
+                        self.is_early_morning or (
+                            (symbol not in self.alert_all['POSITIONS']) and
+                            (kline[-1][3] > kline[-1][1]*0.95)
+                        )
+                    ) and
+                    kline_close[-2] > kline_close[-1] and
+                    kline_volume[-2] > max(kline_volume[:-2]) and
+                    await self.increase_oi(semaphore, symbol, 'SHORT', kline_close)
+                ):
+                    # 设置止盈止损：止盈9%，止损9%
+                    zy = kline[-1][1] * 0.97  # 止盈价
+                    zs = kline[-1][1] * 1.03  # 止损价
+                    if close_info and close_info[3] == 'LONG':
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1)
+
+                    # 发送做空信号通知
+                    self.send_msg(
+                        f'==={symbol}做空===\n价格:{kline_close[-1]}\n涨幅:{kline_zf[-1]:.2%}\n止盈:{zy}\n止损:{zs}')
+
+                    # 执行开仓操作
+                    if self.open_bn_position(symbol, 'SELL', 'SHORT', 0.1):
+                        # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
+                        self.alert_all['POSITIONS'][symbol] = [
+                            zs, zy, 'BUY', 'SHORT']
 
         except:
             # 异常处理：打印错误信息但不中断程序
