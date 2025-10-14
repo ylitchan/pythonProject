@@ -121,14 +121,8 @@ class HandleMsg:
                                 and kline_close[-2] > max(kline_close[-4:-2])
                                 and sumOpenInterestValue[-1]
                                 > max(sumOpenInterestValue[-3:-1])
-                                and (
-                                    (
-                                        kline_volume[-2] == max(kline_volume[-4:-2])
-                                        or max(kline_volume[-3:-1]) == max(kline_volume)
-                                    )
-                                    and sumOpenInterest[-1] < sumOpenInterest[-2]
-                                    or sumOpenInterest[-1] < min(sumOpenInterest[-3:-1])
-                                )
+                                and max(kline_volume[-3:-1]) == max(kline_volume)
+                                and sumOpenInterest[-1] < sumOpenInterest[-2]
                             )
                             for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
                         )
