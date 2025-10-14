@@ -633,7 +633,7 @@ class AUTOBN:
                 # 每2秒检查一次
                 await asyncio.sleep(2)
 
-    async def rzq_token(self, semaphore, symbol, success):
+    async def rzq_token(self, semaphore, symbol, success, dtn):
         """
         核心交易逻辑：分析K线数据并执行交易决策
 
@@ -678,6 +678,12 @@ class AUTOBN:
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
+                        self.alert_all["OBSERVATIONS"][symbol] = [
+                            close_info[0],
+                            time.time(),
+                            "SELL",
+                            "LONG",
+                        ]
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == "LONG":
                         self.close_bn_position(
@@ -690,14 +696,16 @@ class AUTOBN:
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
-                elif self.is_early_morning:
-                    if await self.decrease_oi(semaphore, symbol, close_info[3]):
-                        self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
-                        )
-                        close_info[0] = kline_close[-1] * 1.04
-                        close_info[1] = kline_close[-1] * 0.96
-                    elif close_info[3] == "SHORT" and kline_close[-2] < close_info[-1]:
+                elif self.is_early_morning and await self.decrease_oi(
+                    semaphore, symbol, close_info[3]
+                ):
+                    self.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                    )
+                    close_info[0] = kline_close[-1] * 1.04
+                    close_info[1] = kline_close[-1] * 0.96
+                elif dtn.minute in [0, 15, 30, 45]:
+                    if close_info[3] == "SHORT" and kline_close[-2] < close_info[-1]:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4
                         )
@@ -705,7 +713,24 @@ class AUTOBN:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4
                         )
-            if datetime.datetime.now().minute % 5 == 0:
+            elif open_info := self.alert_all["OBSERVATIONS"].get(symbol):
+                if time.time() - open_info[1] > 24 * 60 * 60:
+                    self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
+                elif open_info[3] == "LONG" and kline_close[-1] > open_info[0]:
+                    zy = kline[-1][1] * 1.03
+                    zs = kline[-1][1] * 0.95
+                    self.send_msg(
+                        f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
+                    )
+                    if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
+                        self.alert_all["POSITIONS"][symbol] = [
+                            zy,
+                            zs,
+                            "SELL",
+                            "LONG",
+                        ]
+                        self.alert_all["OBSERVATIONS"].pop(symbol)
+            if dtn.minute % 5 == 0:
                 # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
                 kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
                 kline_volume = [k[5] for k in kline]
@@ -887,7 +912,8 @@ class AUTOBN:
             symbol_chunk = symbols[i : i + chunk_size]  # 当前批次的交易对
             # 创建异步任务列表
             tasks = [
-                self.rzq_token(semaphore, symbol, success) for symbol in symbol_chunk
+                self.rzq_token(semaphore, symbol, success, now)
+                for symbol in symbol_chunk
             ]
             # 等待当前批次所有任务完成
             await asyncio.gather(*tasks)

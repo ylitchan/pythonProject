@@ -137,7 +137,7 @@ class HandleMsg:
                 traceback.print_exc()
                 return False
 
-    async def handle_token(self, semaphore, symbol, success):
+    async def handle_token(self, semaphore, symbol, success, dtn):
         """
         核心交易逻辑：分析K线数据并执行交易决策
 
@@ -196,7 +196,7 @@ class HandleMsg:
                         )
                         close_info[0] = kline_close[-1] * 1.04
                         close_info[1] = kline_close[-1] * 0.96
-                elif datetime.now().minute in [0, 15, 30, 45]:
+                elif dtn.minute in [0, 15, 30, 45]:
                     if close_info[3] == "SHORT" and kline_close[-2] < close_info[-1]:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4
@@ -222,13 +222,13 @@ class HandleMsg:
                             "LONG",
                         ]
                         self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
-            if datetime.now().minute % 5 == 0:
+            if dtn.minute % 5 == 0:
                 kline_volume = [k[5] for k in kline]
                 signal = await self.increase_oi(
                     semaphore, symbol, "LONG", kline_close, kline_volume
                 )
                 if (
-                    signal == True
+                    signal
                     and self.autobn.alert_all["POSITIONS"].get(
                         symbol, [0, 0, "BUY", "SHORT"]
                     )[3]
@@ -263,7 +263,7 @@ class HandleMsg:
                             "LONG",
                         ]
                 elif (
-                    signal == None
+                    signal is None
                     and self.autobn.alert_all["POSITIONS"].get(
                         symbol, [0, 0, "SELL", "LONG"]
                     )[3]
@@ -326,7 +326,8 @@ class HandleMsg:
             symbol_chunk = symbols[i : i + chunk_size]  # 当前批次的交易对
             # 创建异步任务列表
             tasks = [
-                self.handle_token(semaphore, symbol, success) for symbol in symbol_chunk
+                self.handle_token(semaphore, symbol, success, now)
+                for symbol in symbol_chunk
             ]
             # 等待当前批次所有任务完成
             await asyncio.gather(*tasks)
