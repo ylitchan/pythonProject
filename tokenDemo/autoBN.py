@@ -590,16 +590,17 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1)
                         self.alert_all['POSITIONS'].pop(symbol)
-                elif self.is_early_morning and await self.decrease_oi(semaphore, symbol, close_info[3]):
-                    self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
-                    close_info[0] = kline_close[-1]*1.04
-                    close_info[1] = kline_close[-1]*0.96
-                elif close_info[3] == 'SHORT' and kline_close[-2] < close_info[-1]:
-                    self.autobn.close_bn_position(
+                elif self.is_early_morning:
+                    if await self.decrease_oi(semaphore, symbol, close_info[3]):
+                        self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
-                elif close_info[3] == 'LONG' and kline_close[-2] > close_info[-1]:
-                    self.autobn.close_bn_position(
+                        close_info[0] = kline_close[-1]*1.04
+                        close_info[1] = kline_close[-1]*0.96
+                    elif close_info[3] == 'SHORT' and kline_close[-2] < close_info[-1]:
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
+                    elif close_info[3] == 'LONG' and kline_close[-2] > close_info[-1]:
+                        self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
             kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))

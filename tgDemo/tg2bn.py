@@ -162,12 +162,13 @@ class HandleMsg:
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
-                elif close_info[3] == 'SHORT' and kline_close[-2] < close_info[-1]:
-                    self.autobn.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
-                elif close_info[3] == 'LONG' and kline_close[-2] > close_info[-1]:
-                    self.autobn.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
+                elif datetime.now().minute in [0, 15, 30, 45]:
+                    if close_info[3] == 'SHORT' and kline_close[-2] < close_info[-1]:
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
+                    elif close_info[3] == 'LONG' and kline_close[-2] > close_info[-1]:
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
             elif open_info := self.autobn.alert_all['OBSERVATIONS'].get(symbol):
                 if time.time()-open_info[1] > 15*30*60:
                     self.autobn.alert_all['OBSERVATIONS'].pop(symbol)
