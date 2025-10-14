@@ -339,7 +339,7 @@ class AUTOBN:
                     Decimal(str(close_amount)).quantize(self.symbols_info.get(symbol)['quantityPrecision'], rounding=ROUND_DOWN))
         return None
 
-    async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None,kline_volume=None):
+    async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None, kline_volume=None):
         """
         检查增仓信号，判断是否适合开仓
 
@@ -653,7 +653,7 @@ class AUTOBN:
                         )
                     ) and
                     kline_close[-2] > kline_close[-1] and
-                    await self.increase_oi(semaphore, symbol, 'SHORT', kline_close,kline_volume)
+                    await self.increase_oi(semaphore, symbol, 'SHORT', kline_close, kline_volume)
                 ):
                     # 设置止盈止损：止盈9%，止损9%
                     zy = kline[-1][1] * 0.97  # 止盈价
