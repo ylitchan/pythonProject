@@ -112,6 +112,7 @@ class HandleMsg:
                         )
                     return None if result else False
             except:
+                traceback.print_exc()
                 return False
 
     async def handle_token(self, semaphore, symbol, success):

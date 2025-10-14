@@ -417,6 +417,7 @@ class AUTOBN:
                         for index in range(-1, int(-len(kline_close)/3)-2, -1)
                     )
             except:
+                traceback.print_exc()
                 return False
 
     async def decrease_oi(self, semaphore, symbol, positionSide):
