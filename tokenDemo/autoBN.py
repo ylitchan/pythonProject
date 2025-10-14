@@ -478,8 +478,7 @@ class AUTOBN:
                             and (
                                 (
                                     kline_volume[-2] == max(kline_volume[-4:-2])
-                                    or kline_volume[-2]
-                                    > 2 * sum(kline_volume) / len(kline_volume)
+                                    or max(kline_volume[-3:-1]) == max(kline_volume)
                                 )
                                 and sumOpenInterest[-1] < sumOpenInterest[-2]
                                 or sumOpenInterest[-1] < min(sumOpenInterest[-3:-1])
