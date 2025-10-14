@@ -595,8 +595,15 @@ class AUTOBN:
                         symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                     close_info[0] = kline_close[-1]*1.04
                     close_info[1] = kline_close[-1]*0.96
+                elif close_info[3] == 'SHORT' and kline_close[-2] < close_info[-1]:
+                    self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
+                elif close_info[3] == 'LONG' and kline_close[-2] > close_info[-1]:
+                    self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
             # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
             kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
+            kline_volume = [k[5] for k in kline]
             # 做多信号判断：需要同时满足以下条件
             # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
             # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
@@ -607,10 +614,11 @@ class AUTOBN:
                     (kline[-1][2] < kline[-1][1]*1.05))) and
                 kline_close[-3] < kline_close[-2] < kline_close[-1] and
                 all(
-                    kline_close[x] >= sum(kline_close[x-6:x+1])/len(kline_close[x-6:x+1])
+                    kline_close[x] >= sum(
+                        kline_close[x-6:x+1])/len(kline_close[x-6:x+1])
                     for x in range(-2, -4, -1)
                 ) and
-                max(kline[-3][5], kline[-4][5]) < kline[-2][5] and
+                max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2] and
                 await self.increase_oi(semaphore, symbol, 'LONG')
             ):
                 # 设置止盈止损：止盈9%，止损9%
@@ -641,6 +649,7 @@ class AUTOBN:
                     )
                 ) and
                 kline_close[-2] > kline_close[-1] and
+                kline_volume[-2] > max(kline_volume[:-2]) and
                 await self.increase_oi(semaphore, symbol, 'SHORT', kline_close)
             ):
                 # 设置止盈止损：止盈9%，止损9%
@@ -949,7 +958,7 @@ async def main():
         autobn.rzq_market,  # 执行的函数
         'cron',  # 调度类型：按日历规则
         hour='*',  # 每小时执行
-        minute='05-59/5',  # 每5分钟
+        minute='05-59/1',  # 每5分钟
         second='00',  # 整点秒数
         timezone='Asia/Shanghai',  # 上海时区
         args=('BN',),  # 传递参数

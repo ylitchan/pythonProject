@@ -44,7 +44,7 @@ class HandleMsg:
             self.handle_market,
             'cron',
             hour='*',
-            minute='*/5',
+            minute='*',
             second='00',
             next_run_time=datetime.now(),  # 启动后立即执行一次
             misfire_grace_time=10,
@@ -162,10 +162,16 @@ class HandleMsg:
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
                         close_info[0] = kline_close[-1]*1.04
                         close_info[1] = kline_close[-1]*0.96
+                elif close_info[3] == 'SHORT' and kline_close[-2] < close_info[-1]:
+                    self.autobn.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
+                elif close_info[3] == 'LONG' and kline_close[-2] > close_info[-1]:
+                    self.autobn.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.4)
             elif open_info := self.autobn.alert_all['OBSERVATIONS'].get(symbol):
                 if time.time()-open_info[1] > 15*30*60:
                     self.autobn.alert_all['OBSERVATIONS'].pop(symbol)
-                elif open_info[3] == 'LONG' and kline_close[-1] > open_info[0]:
+                elif open_info[3] == 'LONG' and kline_close[-2] > open_info[0]:
                     zy = kline[-1][1] * 1.03
                     zs = kline[-1][1] * 0.95
                     self.autobn.send_msg(
@@ -196,6 +202,7 @@ class HandleMsg:
                     self.autobn.alert_all['POSITIONS'][symbol] = [
                         zy, zs, 'SELL', 'LONG']
             elif (signal == None and
+                  kline_volume[-2] == max(kline_volume) and
                   self.autobn.alert_all['POSITIONS'].get(symbol, [0, 0, 'SELL', 'LONG'])[3] != 'SHORT'):
                 zy = kline[-1][1] * 0.97  # 止盈价
                 zs = kline[-1][1] * 1.05  # 止损价
