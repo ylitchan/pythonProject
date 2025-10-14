@@ -64,7 +64,7 @@ class HandleMsg:
             name='账户信息推送'
         )
 
-    async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None):
+    async def increase_oi(self, semaphore, symbol, positionSide, kline_close=None, kline_volume=None):
         """
         检查增仓信号，判断是否适合开仓
 
@@ -102,13 +102,14 @@ class HandleMsg:
                         result = any(
                             (
                                 kline_close[index-1] == max(kline_close) and
+                                kline_volume[index-1] == max(kline_volume) and
                                 sumOpenInterestValue[index] == max(sumOpenInterestValue) and
                                 kline_close[-2] > max(kline_close[-5:-2]) and
                                 sumOpenInterest[-1] < min(sumOpenInterest[-3:-1]) and
                                 sumOpenInterestValue[-1] > max(
                                     sumOpenInterestValue[-3:-1])
                             )
-                            for index in range(-1, -2, -1)
+                            for index in range(-1, int(-len(kline_close)/3)-2, -1)
                         )
                     return None if result else False
             except:
@@ -136,7 +137,6 @@ class HandleMsg:
             kline = await self.autobn.get_kline(semaphore, symbol, "15mutc")
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             success.add(symbol)  # 记录成功处理的交易对
-            kline_volume = [k[5] for k in kline]
             # 检查现有持仓是否需要平仓
             if close_info := self.autobn.alert_all['POSITIONS'].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
@@ -183,7 +183,8 @@ class HandleMsg:
                             zy, zs, 'SELL', 'LONG']
                         self.autobn.alert_all['OBSERVATIONS'].pop(symbol)
             if datetime.now().minute % 5 == 0:
-                signal = await self.increase_oi(semaphore, symbol, 'LONG', kline_close)
+                kline_volume = [k[5] for k in kline]
+                signal = await self.increase_oi(semaphore, symbol, 'LONG', kline_close, kline_volume)
                 if (
                     signal == True and
                     self.autobn.alert_all['POSITIONS'].get(symbol, [0, 0, 'BUY', 'SHORT'])[3] != 'LONG' and
@@ -205,7 +206,6 @@ class HandleMsg:
                         self.autobn.alert_all['POSITIONS'][symbol] = [
                             zy, zs, 'SELL', 'LONG']
                 elif (signal == None and
-                      kline_volume[-2] == max(kline_volume) and
                       self.autobn.alert_all['POSITIONS'].get(symbol, [0, 0, 'SELL', 'LONG'])[3] != 'SHORT'):
                     zy = kline[-1][1] * 0.97  # 止盈价
                     zs = kline[-1][1] * 1.05  # 止损价
