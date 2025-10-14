@@ -52,7 +52,7 @@ class HandleMsg:
             hour="*",
             minute="*",
             second="00",
-            next_run_time=datetime.now(),  # 启动后立即执行一次
+            # next_run_time=datetime.now(),  # 启动后立即执行一次
             misfire_grace_time=10,
             max_instances=1,
             coalesce=True,
@@ -197,11 +197,11 @@ class HandleMsg:
                         close_info[0] = kline_close[-1] * 1.04
                         close_info[1] = kline_close[-1] * 0.96
                 elif dtn.minute in [0, 15, 30, 45]:
-                    if close_info[3] == "SHORT" and kline_close[-2] < close_info[-1]:
+                    if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4
                         )
-                    elif close_info[3] == "LONG" and kline_close[-2] > close_info[-1]:
+                    elif close_info[3] == "LONG" and kline_close[-1] > close_info[-1]:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.4
                         )
