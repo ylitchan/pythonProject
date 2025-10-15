@@ -724,7 +724,7 @@ class AUTOBN:
                     zy = kline[-1][1] * 1.03
                     zs = kline[-1][1] * 0.95
                     self.send_msg(
-                        f"==={symbol}做多ob===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
+                        f"==={symbol}+++BZ+++===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                     )
                     if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                         self.alert_all["POSITIONS"][symbol] = [
