@@ -758,7 +758,9 @@ class AUTOBN:
                         for x in range(-2, -4, -1)
                     )
                     and max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2]
-                    and await self.increase_oi(semaphore, symbol, "LONG", dtn)
+                    and await self.increase_oi(
+                        semaphore, symbol, "LONG", kline_close, kline_volume, dtn
+                    )
                 ):
                     # 设置止盈止损：止盈9%，止损9%
                     zy = kline[-1][1] * 1.03  # 止盈价
@@ -910,7 +912,7 @@ class AUTOBN:
 
         success = set()  # 记录成功处理的交易对
         chunk_size = 10  # 分批处理，避免内存占用过高
-
+        # symbols = ["OGUSDT"]
         # 分批处理所有交易对
         for i in range(0, len(symbols), chunk_size):
             symbol_chunk = symbols[i : i + chunk_size]  # 当前批次的交易对
@@ -1109,7 +1111,7 @@ async def main():
     任务1：A股监控（交易时段执行）
     任务2：币安市场分析（每天8点执行）
     """
-    # await autobn.rzq_market('BN')
+    # await autobn.rzq_market("BN")
     # return
     # 设置A股监控定时任务
     scheduler.add_job(
