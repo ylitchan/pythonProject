@@ -683,7 +683,7 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                         self.alert_all["OBSERVATIONS"][symbol] = [
-                            close_info[0],
+                            kline[-1][2],
                             time.time(),
                             "SELL",
                             "LONG",
