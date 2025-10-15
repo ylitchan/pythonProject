@@ -71,7 +71,13 @@ class HandleMsg:
         )
 
     async def increase_oi(
-        self, semaphore, symbol, positionSide, kline_close=None, kline_volume=None
+        self,
+        semaphore,
+        symbol,
+        positionSide,
+        kline_close=None,
+        kline_volume=None,
+        dtn: datetime = None,
     ):
         """
         检查增仓信号，判断是否适合开仓
@@ -94,6 +100,20 @@ class HandleMsg:
                     period="15m",
                     limit=30,
                 )
+                # 获取当前时间并设置为最近的前一个整点时间（0,15,30,45分）
+                minute = dtn.minute
+                # 计算最近的前一个整点时间
+                if minute < 15:
+                    target_minute = 0
+                elif minute < 30:
+                    target_minute = 15
+                elif minute < 45:
+                    target_minute = 30
+                else:
+                    target_minute = 45
+                dtn_target = dtn.replace(minute=target_minute, second=0, microsecond=0)
+                if oi[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                    return False
                 sumOpenInterestValue = [
                     float(i["sumOpenInterestValue"]) for i in oi
                 ]  # 持仓价值（美元）
@@ -219,7 +239,7 @@ class HandleMsg:
             if dtn.minute % 5 == 0:
                 kline_volume = [k[5] for k in kline]
                 signal = await self.increase_oi(
-                    semaphore, symbol, "LONG", kline_close, kline_volume
+                    semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                 )
                 if (
                     signal

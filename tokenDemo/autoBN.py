@@ -395,7 +395,13 @@ class AUTOBN:
         return None
 
     async def increase_oi(
-        self, semaphore, symbol, positionSide, kline_close=None, kline_volume=None
+        self,
+        semaphore,
+        symbol,
+        positionSide,
+        kline_close=None,
+        kline_volume=None,
+        dtn: datetime = None,
     ):
         """
         检查增仓信号，判断是否适合开仓
@@ -418,6 +424,9 @@ class AUTOBN:
                     period="1d",
                     limit=30,
                 )
+                dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
+                if oi[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                    return False
                 sumOpenInterestValue = [
                     float(i["sumOpenInterestValue"]) for i in oi
                 ]  # 持仓价值（美元）
@@ -749,7 +758,7 @@ class AUTOBN:
                         for x in range(-2, -4, -1)
                     )
                     and max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2]
-                    and await self.increase_oi(semaphore, symbol, "LONG")
+                    and await self.increase_oi(semaphore, symbol, "LONG", dtn)
                 ):
                     # 设置止盈止损：止盈9%，止损9%
                     zy = kline[-1][1] * 1.03  # 止盈价
@@ -782,7 +791,7 @@ class AUTOBN:
                     )
                     and kline_close[-2] > kline_close[-1]
                     and await self.increase_oi(
-                        semaphore, symbol, "SHORT", kline_close, kline_volume
+                        semaphore, symbol, "SHORT", kline_close, kline_volume, dtn
                     )
                 ):
                     # 设置止盈止损：止盈9%，止损9%
