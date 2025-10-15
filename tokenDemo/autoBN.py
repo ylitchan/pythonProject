@@ -673,7 +673,7 @@ class AUTOBN:
                 ):
                     if close_info[3] == "SHORT":
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
                         close_info[1] = kline_close[-1] * 0.96
                         close_info[0] = kline_close[-1] * 1.04
@@ -691,7 +691,7 @@ class AUTOBN:
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == "LONG":
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
                         close_info[0] = kline_close[-1] * 1.04
                         close_info[1] = kline_close[-1] * 0.96
@@ -704,18 +704,18 @@ class AUTOBN:
                     semaphore, symbol, close_info[3]
                 ):
                     self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                     )
                     close_info[0] = kline_close[-1] * 1.04
                     close_info[1] = kline_close[-1] * 0.96
                 elif dtn.minute in [0, 15, 30, 45]:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
                     elif close_info[3] == "LONG" and kline_close[-1] > close_info[-1]:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
             elif open_info := self.alert_all["OBSERVATIONS"].get(symbol):
                 if time.time() - open_info[1] > 24 * 60 * 60:

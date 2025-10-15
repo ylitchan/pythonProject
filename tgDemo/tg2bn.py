@@ -194,7 +194,7 @@ class HandleMsg:
                         ]
                     else:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
                         close_info[1] = kline_close[-1] * 0.96
                         close_info[0] = kline_close[-1] * 1.04
@@ -206,18 +206,18 @@ class HandleMsg:
                         self.autobn.alert_all["POSITIONS"].pop(symbol)
                     else:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
                         close_info[0] = kline_close[-1] * 1.04
                         close_info[1] = kline_close[-1] * 0.96
                 elif  dtn.minute % 5 == 0:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
                     elif close_info[3] == "LONG" and kline_close[-1] > close_info[-1]:
                         self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.4
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
             elif open_info := self.autobn.alert_all["OBSERVATIONS"].get(symbol):
                 if time.time() - open_info[1] > 24 * 60 * 60:
