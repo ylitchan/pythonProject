@@ -567,6 +567,7 @@ class AUTOBN:
                 # 将所有数据转换为浮点数格式
                 return [list(map(float, sublist)) for sublist in kline]
             except Exception:
+                print("获取K线数据失败", flush=True)
                 # 获取失败时返回空列表
                 return []
 
