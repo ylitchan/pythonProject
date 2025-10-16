@@ -708,7 +708,7 @@ class AUTOBN:
                     )
                     close_info[0] = kline_close[-1] * 1.04
                     close_info[1] = kline_close[-1] * 0.96
-                elif dtn.minute % 59 == 0:
+                elif dtn.minute % 15 == 0:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
