@@ -269,7 +269,9 @@ class HandleMsg:
                         kline_close[x]
                         >= sum(kline_close[x - 6 : x + 1])
                         / len(kline_close[x - 6 : x + 1])
-                        for x in range(-2, -4, -1)
+                        and kline_volume[x] > kline_volume[x - 2]
+                        and kline[x][4] >= kline[x][1]
+                        for x in range(-2, -8, -2)
                     )
                     and kline_volume[-2] > max(kline_volume[:-2])
                     and sum(kline_volume[: -int(len(kline) / 2)])
