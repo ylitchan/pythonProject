@@ -210,15 +210,28 @@ class HandleMsg:
                         )
                         close_info[0] = kline_close[-1] * 1.04
                         close_info[1] = kline_close[-1] * 0.96
-                elif dtn.minute % 3 == 0:
-                    if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
-                        self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
-                        )
-                    elif close_info[3] == "LONG" and kline_close[-1] > close_info[-1]:
-                        self.autobn.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
-                        )
+                elif (
+                    dtn.minute % 5 == 0
+                    and close_info[3] == "SHORT"
+                    and kline_close[-1] < close_info[-1]
+                ):
+                    self.autobn.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5
+                    )
+                elif (
+                    dtn.minute % 3 == 0
+                    and close_info[3] == "LONG"
+                    and kline_close[-1] > close_info[-1]
+                ):
+                    self.autobn.close_bn_position(
+                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5
+                    )
+                    self.autobn.alert_all["OBSERVATIONS"][symbol] = [
+                        max(kline_close),
+                        time.time(),
+                        "SELL",
+                        "LONG",
+                    ]
             elif open_info := self.autobn.alert_all["OBSERVATIONS"].get(symbol):
                 if time.time() - open_info[1] > 24 * 60 * 60:
                     self.autobn.alert_all["OBSERVATIONS"].pop(symbol)

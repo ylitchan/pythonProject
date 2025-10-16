@@ -717,6 +717,12 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
+                        self.alert_all["OBSERVATIONS"][symbol] = [
+                            kline[-1][2],
+                            time.time(),
+                            "SELL",
+                            "LONG",
+                        ]
             elif open_info := self.alert_all["OBSERVATIONS"].get(symbol):
                 if time.time() - open_info[1] > 24 * 60 * 60:
                     self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
