@@ -728,7 +728,7 @@ class AUTOBN:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 elif open_info[3] == "LONG" and kline_close[-1] > open_info[0]:
                     zy = kline_close[-1] * 1.03
-                    zs = kline_close[-1] * 0.95
+                    zs = kline_close[-1] * 0.97
                     self.send_msg(
                         f"==={symbol}**BZ**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                     )
