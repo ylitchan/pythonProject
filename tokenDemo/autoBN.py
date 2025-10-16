@@ -708,7 +708,7 @@ class AUTOBN:
                     )
                     close_info[0] = kline_close[-1] * 1.04
                     close_info[1] = kline_close[-1] * 0.96
-                elif dtn.minute % 15 == 0:
+                elif dtn.minute % 59 == 0:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
@@ -727,8 +727,8 @@ class AUTOBN:
                 if time.time() - open_info[1] > 24 * 60 * 60:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 elif open_info[3] == "LONG" and kline_close[-1] > open_info[0]:
-                    zy = kline[-1][1] * 1.03
-                    zs = kline[-1][1] * 0.95
+                    zy = kline_close[-1] * 1.03
+                    zs = kline_close[-1] * 0.95
                     self.send_msg(
                         f"==={symbol}**BZ**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                     )
@@ -740,7 +740,7 @@ class AUTOBN:
                             "LONG",
                         ]
                         self.alert_all["OBSERVATIONS"].pop(symbol)
-            if dtn.minute % 15 == 0:
+            if dtn.minute % 3 == 0:
                 # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
                 kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
                 kline_volume = [k[5] for k in kline]
