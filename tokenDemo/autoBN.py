@@ -708,7 +708,7 @@ class AUTOBN:
                     )
                     close_info[0] = kline_close[-1] * 1.04
                     close_info[1] = kline_close[-1] * 0.96
-                elif dtn.minute in [0, 15, 30, 45]:
+                elif dtn.minute % 15 == 0:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
@@ -734,7 +734,7 @@ class AUTOBN:
                             "LONG",
                         ]
                         self.alert_all["OBSERVATIONS"].pop(symbol)
-            if dtn.minute % 5 == 0:
+            if dtn.minute % 15 == 0:
                 # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
                 kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
                 kline_volume = [k[5] for k in kline]
@@ -746,7 +746,14 @@ class AUTOBN:
                     (
                         self.is_early_morning
                         or (
-                            (symbol not in self.alert_all["POSITIONS"])
+                            self.alert_all["POSITIONS"].get(
+                                symbol, [0, 0, "BUY", "SHORT"]
+                            )[3]
+                            != "LONG"
+                            and self.alert_all["OBSERVATIONS"].get(
+                                symbol, [0, 0, "BUY", "SHORT"]
+                            )[3]
+                            != "LONG"
                             and (kline[-1][2] < kline[-1][1] * 1.05)
                         )
                     )
@@ -787,7 +794,14 @@ class AUTOBN:
                     (
                         self.is_early_morning
                         or (
-                            (symbol not in self.alert_all["POSITIONS"])
+                            self.alert_all["POSITIONS"].get(
+                                symbol, [0, 0, "SELL", "LONG"]
+                            )[3]
+                            != "SHORT"
+                            and self.alert_all["OBSERVATIONS"].get(
+                                symbol, [0, 0, "SELL", "LONG"]
+                            )[3]
+                            != "SHORT"
                             and (kline[-1][3] > kline[-1][1] * 0.95)
                         )
                     )

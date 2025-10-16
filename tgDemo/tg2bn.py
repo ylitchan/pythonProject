@@ -210,7 +210,7 @@ class HandleMsg:
                         )
                         close_info[0] = kline_close[-1] * 1.04
                         close_info[1] = kline_close[-1] * 0.96
-                elif  dtn.minute % 5 == 0:
+                elif dtn.minute % 3 == 0:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
@@ -224,7 +224,7 @@ class HandleMsg:
                     self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
                 elif open_info[3] == "LONG" and kline_close[-1] > open_info[0]:
                     zy = kline[-1][1] * 1.03
-                    zs = kline[-1][1] * 0.95
+                    zs = kline[-1][1] * 0.97
                     self.autobn.send_msg(
                         f"==={symbol}**BZ**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                     )
@@ -236,7 +236,7 @@ class HandleMsg:
                             "LONG",
                         ]
                         self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
-            if dtn.minute % 5 == 0:
+            if dtn.minute % 3 == 0:
                 kline_volume = [k[5] for k in kline]
                 signal = await self.increase_oi(
                     semaphore, symbol, "LONG", kline_close, kline_volume, dtn
@@ -244,6 +244,10 @@ class HandleMsg:
                 if (
                     signal
                     and self.autobn.alert_all["POSITIONS"].get(
+                        symbol, [0, 0, "BUY", "SHORT"]
+                    )[3]
+                    != "LONG"
+                    and self.autobn.alert_all["OBSERVATIONS"].get(
                         symbol, [0, 0, "BUY", "SHORT"]
                     )[3]
                     != "LONG"
@@ -261,7 +265,7 @@ class HandleMsg:
                     < kline_volume[-2]
                 ):
                     zy = kline[-1][1] * 1.03
-                    zs = kline[-1][1] * 0.95
+                    zs = kline[-1][1] * 0.97
                     if close_info and close_info[3] == "SHORT":
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
@@ -279,6 +283,10 @@ class HandleMsg:
                 elif (
                     signal is None
                     and self.autobn.alert_all["POSITIONS"].get(
+                        symbol, [0, 0, "SELL", "LONG"]
+                    )[3]
+                    != "SHORT"
+                    and self.autobn.alert_all["OBSERVATIONS"].get(
                         symbol, [0, 0, "SELL", "LONG"]
                     )[3]
                     != "SHORT"
