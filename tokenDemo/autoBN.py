@@ -910,7 +910,7 @@ class AUTOBN:
             market: 市场名称，如'BN'（币安）
         """
         now = datetime.datetime.now()
-        self.is_early_morning = now.hour == 8 and now.minute < 10
+        self.is_early_morning = now.hour == 8 and now.minute == 10
         if self.is_early_morning:
             self.send_msg(f"{market}任务开始 - {now}")
         symbols = []
