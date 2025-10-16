@@ -1153,7 +1153,7 @@ async def main():
         autobn.rzq_market,  # 执行的函数
         "cron",  # 调度类型：按日历规则
         hour="*",  # 每小时执行
-        minute="05-59/1",  # 每5分钟
+        minute="*",  # 每5分钟
         second="00",  # 整点秒数
         timezone="Asia/Shanghai",  # 上海时区
         args=("BN",),  # 传递参数
