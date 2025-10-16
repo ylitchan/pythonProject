@@ -776,8 +776,8 @@ class AUTOBN:
                     )
                 ):
                     # 设置止盈止损：止盈9%，止损9%
-                    zy = kline[-1][1] * 1.03  # 止盈价
-                    zs = kline[-1][1] * 0.97  # 止损价
+                    zy = kline_close[-1] * 1.03  # 止盈价
+                    zs = kline_close[-1] * 0.97  # 止损价
                     if close_info and close_info[3] == "SHORT":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
@@ -817,8 +817,8 @@ class AUTOBN:
                     )
                 ):
                     # 设置止盈止损：止盈9%，止损9%
-                    zy = kline[-1][1] * 0.97  # 止盈价
-                    zs = kline[-1][1] * 1.03  # 止损价
+                    zy = kline_close[-1] * 0.97  # 止盈价
+                    zs = kline_close[-1] * 1.03  # 止损价
                     if close_info and close_info[3] == "LONG":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
