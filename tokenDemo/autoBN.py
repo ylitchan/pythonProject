@@ -493,7 +493,15 @@ class AUTOBN:
                 traceback.print_exc()
                 return False
 
-    async def decrease_oi(self, semaphore, symbol, positionSide):
+    async def decrease_oi(
+        self,
+        semaphore,
+        symbol,
+        positionSide,
+        kline_close=None,
+        kline_volume=None,
+        dtn: datetime = None,
+    ):
         """
         检查减仓信号，判断是否应该平仓
 
@@ -511,9 +519,23 @@ class AUTOBN:
                 oi = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
-                    period="1d",
+                    period="15m",
                     limit=30,
                 )
+                # 获取当前时间并设置为最近的前一个整点时间（0,15,30,45分）
+                minute = dtn.minute
+                # 计算最近的前一个整点时间
+                if minute < 15:
+                    target_minute = 0
+                elif minute < 30:
+                    target_minute = 15
+                elif minute < 45:
+                    target_minute = 30
+                else:
+                    target_minute = 45
+                dtn_target = dtn.replace(minute=target_minute, second=0, microsecond=0)
+                if oi[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                    return False
                 sumOpenInterestValue = [
                     float(i["sumOpenInterestValue"]) for i in oi
                 ]  # 持仓价值（美元）
@@ -527,27 +549,22 @@ class AUTOBN:
                     flush=True,
                 )
                 if positionSide == "LONG":
-                    # 做多减仓条件：需要满足以下任一条件
-                    # 条件1：持仓价值增加但持仓量减少（价格上涨但资金流出，获利了结信号）
-                    # 条件2：持仓量达到近期高点但价值达到近期低点（价格下跌但持仓增加，止损信号）
-                    return (
-                        sumOpenInterestValue[-1] > sumOpenInterestValue[-2]
-                        and sumOpenInterest[-1] < sumOpenInterest[-2]
-                    ) or (
-                        sumOpenInterest[-1] > max(sumOpenInterest[-3:-1])
-                        and sumOpenInterestValue[-1] < min(sumOpenInterestValue[-3:-1])
+                    result = any(
+                        (
+                            kline_close[index - 1] == max(kline_close)
+                            and sumOpenInterestValue[index] == max(sumOpenInterestValue)
+                            and kline_close[-2] > max(kline_close[-4:-2])
+                            and sumOpenInterestValue[-1]
+                            > max(sumOpenInterestValue[-3:-1])
+                            and max(kline_volume[-3:-1]) == max(kline_volume)
+                            and sumOpenInterest[-1] < sumOpenInterest[-2]
+                        )
+                        for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
                     )
-                else:
-                    # 做空减仓条件：需要满足以下任一条件
-                    # 条件1：持仓价值减少但持仓量增加（价格下跌但资金流入，获利了结信号）
-                    return (
-                        sumOpenInterestValue[-1] < sumOpenInterestValue[-2]
-                        and sumOpenInterest[-1] > sumOpenInterest[-2]
-                    ) or (
-                        sumOpenInterest[-1] < min(sumOpenInterest[-3:-1])
-                        and sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
-                    )
+                    return result
+                return False
             except Exception:
+                traceback.print_exc()
                 return False
 
     async def get_kline(self, semaphore, symbol, t: str):
@@ -666,7 +683,29 @@ class AUTOBN:
             if close_info := self.alert_all["POSITIONS"].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                if (
+                if close_info[3] == "LONG" and dtn.minute % 3 == 0:
+                    kline_15 = await self.get_kline(semaphore, symbol, "15m")
+                    kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
+                    kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
+                    if await self.decrease_oi(
+                        semaphore,
+                        symbol,
+                        close_info[3],
+                        kline_close_15,
+                        kline_volume_15,
+                        dtn,
+                    ):
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                        )
+                        self.alert_all["POSITIONS"].pop(symbol)
+                        self.alert_all["OBSERVATIONS"][symbol] = [
+                            kline[-1][2],
+                            time.time(),
+                            "SELL",
+                            "LONG",
+                        ]
+                elif (
                     kline_close[-1] <= close_info[1]
                     or close_info[3] == "LONG"
                     and kline_close[-1] < sum(kline_close[-7:]) / len(kline_close[-7:])
@@ -700,14 +739,6 @@ class AUTOBN:
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
-                elif self.is_early_morning and await self.decrease_oi(
-                    semaphore, symbol, close_info[3]
-                ):
-                    self.close_bn_position(
-                        symbol, close_info[2], close_info[3], kline_close[-1], 0.5
-                    )
-                    close_info[0] = kline_close[-1] * 1.04
-                    close_info[1] = kline_close[-1] * 0.96
                 elif dtn.minute % 15 == 0:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.close_bn_position(
