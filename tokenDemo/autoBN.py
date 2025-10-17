@@ -549,6 +549,12 @@ class AUTOBN:
                     flush=True,
                 )
                 if positionSide == "LONG":
+                    if sumOpenInterest[-1] > max(
+                        sumOpenInterest[-3:-1]
+                    ) and sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]):
+                        return True
+                    return False
+                else:
                     result = any(
                         (
                             kline_close[index - 1] == max(kline_close)
@@ -562,7 +568,6 @@ class AUTOBN:
                         for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
                     )
                     return result
-                return False
             except Exception:
                 traceback.print_exc()
                 return False
@@ -690,13 +695,13 @@ class AUTOBN:
                     if await self.decrease_oi(
                         semaphore,
                         symbol,
-                        close_info[3],
+                        "SHORT",
                         kline_close_15,
                         kline_volume_15,
                         dtn,
                     ):
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                            symbol, close_info[2], close_info[3], kline_close_15[-1], 1
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                         self.alert_all["OBSERVATIONS"][symbol] = [
@@ -770,20 +775,42 @@ class AUTOBN:
             elif open_info := self.alert_all["OBSERVATIONS"].get(symbol):
                 if time.time() - open_info[1] > 24 * 60 * 60:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
-                elif open_info[3] == "LONG" and kline_close[-1] > open_info[0]:
-                    zy = kline_close[-1] * 1.03
-                    zs = kline_close[-1] * 0.97
-                    self.send_msg(
-                        f"==={symbol}**BZ**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
-                    )
-                    if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
-                        self.alert_all["POSITIONS"][symbol] = [
-                            zy,
-                            zs,
-                            "SELL",
-                            "LONG",
-                        ]
-                        self.alert_all["OBSERVATIONS"].pop(symbol)
+                elif open_info[3] == "LONG":
+                    kline_15 = await self.get_kline(semaphore, symbol, "15m")
+                    kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
+                    kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
+                    if (
+                        kline_close_15[-2] > open_info[0]
+                        and all(
+                            kline_close_15[x]
+                            >= sum(kline_close_15[x - 6 : x + 1])
+                            / len(kline_close_15[x - 6 : x + 1])
+                            for x in range(-2, -4, -1)
+                        )
+                        and max(kline_volume_15[-3], kline_volume_15[-4])
+                        < kline_volume_15[-2]
+                        and await self.decrease_oi(
+                            semaphore,
+                            symbol,
+                            close_info[3],
+                            kline_close_15,
+                            kline_volume_15,
+                            dtn,
+                        )
+                    ):
+                        zy = kline_close[-1] * 1.03
+                        zs = kline_close[-1] * 0.97
+                        self.send_msg(
+                            f"==={symbol}**BZ**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
+                        )
+                        if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
+                            self.alert_all["POSITIONS"][symbol] = [
+                                zy,
+                                zs,
+                                "SELL",
+                                "LONG",
+                            ]
+                            self.alert_all["OBSERVATIONS"].pop(symbol)
             if dtn.minute % 3 == 0:
                 # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
                 kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))

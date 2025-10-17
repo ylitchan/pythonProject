@@ -171,6 +171,7 @@ class HandleMsg:
             # 获取日K线数据（30天）
             kline = await self.autobn.get_kline(semaphore, symbol, "15mutc")
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
+            kline_volume = [k[5] for k in kline]
             success.add(symbol)  # 记录成功处理的交易对
             # 检查现有持仓是否需要平仓
             if close_info := self.autobn.alert_all["POSITIONS"].get(symbol):
@@ -228,7 +229,25 @@ class HandleMsg:
             elif open_info := self.autobn.alert_all["OBSERVATIONS"].get(symbol):
                 if time.time() - open_info[1] > 15 * 30 * 60:
                     self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
-                elif open_info[3] == "LONG" and kline_close[-1] > open_info[0]:
+                elif (
+                    open_info[3] == "LONG"
+                    and kline_close[-2] > open_info[0]
+                    and all(
+                        kline_close[x]
+                        >= sum(kline_close[x - 6 : x + 1])
+                        / len(kline_close[x - 6 : x + 1])
+                        for x in range(-2, -4, -1)
+                    )
+                    and max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2]
+                    and await self.autobn.decrease_oi(
+                        semaphore,
+                        symbol,
+                        close_info[3],
+                        kline_close,
+                        kline_volume,
+                        dtn,
+                    )
+                ):
                     zy = kline_close[-1] * 1.03
                     zs = kline_close[-1] * 0.97
                     self.autobn.send_msg(
@@ -243,7 +262,6 @@ class HandleMsg:
                         ]
                         self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
             if dtn.minute % 3 == 0:
-                kline_volume = [k[5] for k in kline]
                 signal = await self.increase_oi(
                     semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                 )
@@ -560,9 +578,17 @@ async def raw(client, message):
     await handle_msg.handle_msg2(message)
 
 
+async def main():
+    handle_msg.scheduler.start()
+    # 创建一个永不触发的事件，使程序一直运行
+    stop_event = asyncio.Event()
+    await stop_event.wait()  # 等待事件触发（实际不会发生）
+
+
 # 程序入口点
 if __name__ == "__main__":
     # 初始化消息处理器
     handle_msg = HandleMsg()
     # 启动Telegram客户端
-    app.run()
+    # app.run()
+    asyncio.run(main())
