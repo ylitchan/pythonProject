@@ -285,13 +285,13 @@ class HandleMsg:
                     * 9
                     < kline_volume[-2]
                     and all(
-                        kline_volume[x] > kline_volume[x - 2] for x in range(-2, -8, -2)
+                        kline_volume[x] > kline_volume[x - 2] for x in range(-2, -6, -2)
                     )
                     and all(
                         kline_close[x]
                         >= sum(kline_close[x - 6 : x + 1])
                         / len(kline_close[x - 6 : x + 1])
-                        for x in range(-2, -9, -1)
+                        for x in range(-2, -7, -1)
                     )
                 ):
                     zy = kline_close[-1] * (1 + kline_zf)
