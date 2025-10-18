@@ -245,7 +245,7 @@ class HandleMsg:
                     and await self.autobn.decrease_oi(
                         semaphore,
                         symbol,
-                        close_info[3],
+                        open_info[3],
                         kline_close,
                         kline_volume,
                         dtn,

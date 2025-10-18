@@ -798,7 +798,7 @@ class AUTOBN:
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
-                            close_info[3],
+                            open_info[3],
                             kline_close_15,
                             kline_volume_15,
                             dtn,
