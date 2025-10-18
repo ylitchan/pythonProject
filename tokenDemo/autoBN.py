@@ -552,7 +552,7 @@ class AUTOBN:
                 if positionSide == "LONG":
                     if sumOpenInterest[-1] <= max(
                         sumOpenInterest[-3:-1]
-                    ) and sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
+                    ) or sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
                         return False
                     for index in range(-2, -len(oi), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
