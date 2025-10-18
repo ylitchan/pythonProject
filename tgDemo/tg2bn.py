@@ -265,6 +265,7 @@ class HandleMsg:
                 signal = await self.increase_oi(
                     semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                 )
+                kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
                 if (
                     signal
                     and self.autobn.alert_all["POSITIONS"].get(
@@ -293,7 +294,7 @@ class HandleMsg:
                     )
                 ):
                     zy = kline_close[-1] * 1.03
-                    zs = kline_close[-1] * 0.97
+                    zs = kline_close[-1] * (1 - max(kline_zf))
                     if close_info and close_info[3] == "SHORT":
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
@@ -319,7 +320,6 @@ class HandleMsg:
                     )[3]
                     != "SHORT"
                 ):
-                    kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
                     zy = kline_close[-1] * 0.97  # 止盈价
                     zs = kline_close[-1] * (1 + max(kline_zf))  # 止损价
                     if close_info and close_info[3] == "LONG":
