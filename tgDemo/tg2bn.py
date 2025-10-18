@@ -291,7 +291,6 @@ class HandleMsg:
                         kline_close[x]
                         >= sum(kline_close[x - 6 : x + 1])
                         / len(kline_close[x - 6 : x + 1])
-                        and kline[x][4] >= kline[x][1]
                         for x in range(-2, -9, -1)
                     )
                 ):
