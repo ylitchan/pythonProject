@@ -172,7 +172,9 @@ class HandleMsg:
             kline = await self.autobn.get_kline(semaphore, symbol, "15mutc")
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             kline_volume = [k[5] for k in kline]
-            kline_zf = max(list(map(lambda k: abs(k[4] / k[1] - 1), kline)))
+            kline_zf = sum(
+                list(map(lambda k: abs(k[4] / k[1] - 1), kline[-8:-1]))
+            ) / len(kline[-8:-1])
             success.add(symbol)  # 记录成功处理的交易对
             # 检查现有持仓是否需要平仓
             if close_info := self.autobn.alert_all["POSITIONS"].get(symbol):

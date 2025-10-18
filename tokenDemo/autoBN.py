@@ -804,9 +804,9 @@ class AUTOBN:
                             dtn,
                         )
                     ):
-                        kline_zf_15 = max(
-                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15))
-                        )
+                        kline_zf_15 = sum(
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
+                        ) / len(kline_15[-8:-1])
                         zy = kline_close_15[-1] * (1 + kline_zf_15)
                         zs = kline_close_15[-1] * (1 - kline_zf_15)
                         self.send_msg(
@@ -824,7 +824,9 @@ class AUTOBN:
                 # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
                 kline_volume = [k[5] for k in kline]
                 kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                kline_zf_15 = max(list(map(lambda k: abs(k[4] / k[1] - 1), kline_15)))
+                kline_zf_15 = sum(
+                    list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
+                ) / len(kline_15[-8:-1])
                 # 做多信号判断：需要同时满足以下条件
                 # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
                 # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
