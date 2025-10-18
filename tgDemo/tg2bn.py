@@ -172,6 +172,7 @@ class HandleMsg:
             kline = await self.autobn.get_kline(semaphore, symbol, "15mutc")
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             kline_volume = [k[5] for k in kline]
+            kline_zf = max(list(map(lambda k: abs(k[4] / k[1] - 1), kline)))
             success.add(symbol)  # 记录成功处理的交易对
             # 检查现有持仓是否需要平仓
             if close_info := self.autobn.alert_all["POSITIONS"].get(symbol):
@@ -197,8 +198,8 @@ class HandleMsg:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        close_info[1] = kline_close[-1] * 0.96
-                        close_info[0] = kline_close[-1] * 1.04
+                        close_info[1] = kline_close[-1] * (1 - kline_zf)
+                        close_info[0] = kline_close[-1] * (1 + kline_zf)
                 elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == "SHORT":
                         self.autobn.close_bn_position(
@@ -209,8 +210,8 @@ class HandleMsg:
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        close_info[0] = kline_close[-1] * 1.04
-                        close_info[1] = kline_close[-1] * 0.96
+                        close_info[0] = kline_close[-1] * (1 + kline_zf)
+                        close_info[1] = kline_close[-1] * (1 - kline_zf)
                 elif dtn.minute % 5 == 0:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.autobn.close_bn_position(
@@ -248,8 +249,8 @@ class HandleMsg:
                         dtn,
                     )
                 ):
-                    zy = kline_close[-1] * 1.03
-                    zs = kline_close[-1] * 0.97
+                    zy = kline_close[-1] * (1 + kline_zf)
+                    zs = kline_close[-1] * (1 - kline_zf)
                     self.autobn.send_msg(
                         f"==={symbol}**BZ**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                     )
@@ -265,7 +266,6 @@ class HandleMsg:
                 signal = await self.increase_oi(
                     semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                 )
-                kline_zf = list(map(lambda k: k[4] / k[1] - 1, kline))
                 if (
                     signal
                     and self.autobn.alert_all["POSITIONS"].get(
@@ -293,8 +293,8 @@ class HandleMsg:
                         for x in range(-2, -9, -1)
                     )
                 ):
-                    zy = kline_close[-1] * 1.03
-                    zs = kline_close[-1] * (1 - max(kline_zf))
+                    zy = kline_close[-1] * (1 + kline_zf)
+                    zs = kline_close[-1] * (1 - kline_zf)
                     if close_info and close_info[3] == "SHORT":
                         self.autobn.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
@@ -320,8 +320,8 @@ class HandleMsg:
                     )[3]
                     != "SHORT"
                 ):
-                    zy = kline_close[-1] * 0.97  # 止盈价
-                    zs = kline_close[-1] * (1 + max(kline_zf))  # 止损价
+                    zy = kline_close[-1] * (1 - kline_zf)  # 止盈价
+                    zs = kline_close[-1] * (1 + kline_zf)  # 止损价
                     if close_info and close_info[3] == "LONG":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
