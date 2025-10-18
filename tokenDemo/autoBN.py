@@ -501,6 +501,7 @@ class AUTOBN:
         kline_close=None,
         kline_volume=None,
         dtn: datetime = None,
+        price_target: float = None,
     ):
         """
         检查减仓信号，判断是否应该平仓
@@ -549,11 +550,21 @@ class AUTOBN:
                     flush=True,
                 )
                 if positionSide == "LONG":
-                    if sumOpenInterest[-1] > max(
+                    if sumOpenInterest[-1] <= max(
                         sumOpenInterest[-3:-1]
-                    ) and sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1]):
-                        return True
-                    return False
+                    ) and sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
+                        return False
+                    for index in range(-2, -len(oi), -1):
+                        # 如果持仓量和价值都增加，说明是正常增仓，继续等待
+                        if (
+                            kline_close[index - 1] > price_target
+                            and sumOpenInterest[index]
+                            > max(sumOpenInterest[index - 2 : index])
+                            and sumOpenInterestValue[index]
+                            > max(sumOpenInterestValue[index - 2 : index])
+                        ):
+                            return False
+                    return True
                 else:
                     result = any(
                         (
@@ -802,6 +813,7 @@ class AUTOBN:
                             kline_close_15,
                             kline_volume_15,
                             dtn,
+                            open_info[0],
                         )
                     ):
                         kline_zf_15 = sum(

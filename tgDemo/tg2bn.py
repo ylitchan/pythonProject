@@ -249,6 +249,7 @@ class HandleMsg:
                         kline_close,
                         kline_volume,
                         dtn,
+                        open_info[0],
                     )
                 ):
                     zy = kline_close[-1] * (1 + kline_zf)
