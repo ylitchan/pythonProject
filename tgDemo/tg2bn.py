@@ -322,7 +322,7 @@ class HandleMsg:
                         f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                     )
                     self.autobn.alert_all["OBSERVATIONS"][symbol] = [
-                        max(kline_close),
+                        kline[-1][2],
                         time.time(),
                         "SELL",
                         "LONG",
