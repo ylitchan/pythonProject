@@ -305,11 +305,11 @@ class HandleMsg:
                         f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                     )
                     self.autobn.alert_all["OBSERVATIONS"][symbol] = [
-                            max(kline_close),
-                            time.time(),
-                            "SELL",
-                            "LONG",
-                        ]
+                        max(kline_close),
+                        time.time(),
+                        "SELL",
+                        "LONG",
+                    ]
                     # if self.autobn.open_bn_position(symbol, "BUY", "LONG", 0.03):
                     #     self.autobn.alert_all["POSITIONS"][symbol] = [
                     #         zy,
