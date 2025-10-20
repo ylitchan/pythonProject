@@ -335,12 +335,16 @@ class HandleMsg:
                     #         "LONG",
                     #     ]
                 elif (
-                    signal is None
-                    and self.autobn.alert_all["POSITIONS"].get(
-                        symbol, [0, 0, "SELL", "LONG"]
-                    )[3]
-                    != "SHORT"
+                    (
+                        signal is None
+                        or kline_close[-1]
+                        < sum(kline_close[-7:]) / len(kline_close[-7:])
+                    )
                     and self.autobn.alert_all["OBSERVATIONS"].get(
+                        symbol, [0, 0, "BUY", "SHORT"]
+                    )[3]
+                    == "LONG"
+                    and self.autobn.alert_all["POSITIONS"].get(
                         symbol, [0, 0, "SELL", "LONG"]
                     )[3]
                     != "SHORT"
