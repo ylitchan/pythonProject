@@ -268,7 +268,7 @@ class HandleMsg:
                                 "LONG",
                             ]
                             self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
-                    elif open_info[3] == "SHORT" and kline_close[-2] < open_info[0]:
+                    elif open_info[3] == "SHORT" and kline_close[-1] < open_info[0]:
                         zy = kline_close[-1] * (1 - kline_zf)  # 止盈价
                         zs = kline_close[-1] * (1 + kline_zf)  # 止损价
                         self.autobn.send_msg(
