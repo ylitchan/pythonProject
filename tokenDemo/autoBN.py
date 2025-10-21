@@ -787,6 +787,12 @@ class AUTOBN:
                         )
                         close_info[0] = kline_close[-1] * (1 + zf_index)
                         close_info[1] = kline_close[-1] * (1 - zf_index)
+                        self.alert_all["OBSERVATIONS"][symbol] = [
+                            kline[-1][2],
+                            time.time(),
+                            "SELL",
+                            "LONG",
+                        ]
                     else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1

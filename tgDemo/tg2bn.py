@@ -214,6 +214,12 @@ class HandleMsg:
                         )
                         close_info[0] = kline_close[-1] * (1 + kline_zf)
                         close_info[1] = kline_close[-1] * (1 - kline_zf)
+                        self.autobn.alert_all["OBSERVATIONS"][symbol] = [
+                            max(kline_close),
+                            time.time(),
+                            "SELL",
+                            "LONG",
+                        ]
                 elif dtn.minute % 5 == 0:
                     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
                         self.autobn.close_bn_position(
