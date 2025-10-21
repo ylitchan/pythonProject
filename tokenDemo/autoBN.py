@@ -806,7 +806,7 @@ class AUTOBN:
                         kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
                         kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
                         if (
-                            kline_close_15[-2] > open_info[0]
+                            kline_close_15[-1] > open_info[0]
                             and all(
                                 kline_close_15[x]
                                 >= sum(kline_close_15[x - 6 : x + 1])

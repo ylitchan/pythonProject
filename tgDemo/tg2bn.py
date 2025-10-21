@@ -237,7 +237,7 @@ class HandleMsg:
                 else:
                     if (
                         open_info[3] == "LONG"
-                        and kline_close[-2] > open_info[0]
+                        and kline_close[-1] > open_info[0]
                         and all(
                             kline_close[x]
                             >= sum(kline_close[x - 6 : x + 1])
