@@ -244,12 +244,6 @@ class HandleMsg:
                     if (
                         open_info[3] == "LONG"
                         and kline_close[-1] > open_info[0]
-                        and all(
-                            kline_close[x]
-                            >= sum(kline_close[x - 6 : x + 1])
-                            / len(kline_close[x - 6 : x + 1])
-                            for x in range(-2, -4, -1)
-                        )
                         and max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2]
                         and await self.autobn.decrease_oi(
                             semaphore,
