@@ -849,7 +849,6 @@ class AUTOBN:
                                     "LONG",
                                 ]
                                 self.alert_all["OBSERVATIONS"].pop(symbol)
-                            return
                     elif kline_close[-1] < open_info[0]:
                         # 设置止盈止损：止盈9%，止损9%
                         zy = kline_close[-1] * (1 - kline_zf)  # 止盈价
@@ -865,7 +864,7 @@ class AUTOBN:
                                 "SHORT",
                             ]
                             self.alert_all["OBSERVATIONS"].pop(symbol)
-                        return
+                    return
             if dtn.minute % 3 == 0:
                 # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
                 kline_volume = [k[5] for k in kline]

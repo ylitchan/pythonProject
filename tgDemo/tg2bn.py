@@ -274,7 +274,6 @@ class HandleMsg:
                                 "LONG",
                             ]
                             self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
-                        return
                     elif open_info[3] == "SHORT" and kline_close[-1] < open_info[0]:
                         zy = kline_close[-1] * (1 - kline_zf)  # 止盈价
                         zs = kline_close[-1] * (1 + kline_zf)  # 止损价
@@ -289,7 +288,7 @@ class HandleMsg:
                                 "SHORT",
                             ]
                             self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
-                        return
+                    return
             if dtn.minute % 3 == 0:
                 signal = await self.increase_oi(
                     semaphore, symbol, "LONG", kline_close, kline_volume, dtn
