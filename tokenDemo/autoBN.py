@@ -724,34 +724,34 @@ class AUTOBN:
                             "SELL",
                             "LONG",
                         ]
-                    elif dtn.minute % 15 == 0:
-                        if (
-                            close_info[3] == "SHORT"
-                            and kline_close[-1] < close_info[-1]
-                        ):
-                            self.close_bn_position(
-                                symbol,
-                                close_info[2],
-                                close_info[3],
-                                kline_close[-1],
-                                0.5,
-                            )
-                        elif (
-                            close_info[3] == "LONG" and kline_close[-1] > close_info[-1]
-                        ):
-                            self.close_bn_position(
-                                symbol,
-                                close_info[2],
-                                close_info[3],
-                                kline_close[-1],
-                                0.5,
-                            )
-                            self.alert_all["OBSERVATIONS"][symbol] = [
-                                kline[-1][2],
-                                time.time(),
-                                "SELL",
-                                "LONG",
-                            ]
+                    # elif dtn.minute % 15 == 0:
+                    #     if (
+                    #         close_info[3] == "SHORT"
+                    #         and kline_close[-1] < close_info[-1]
+                    #     ):
+                    #         self.close_bn_position(
+                    #             symbol,
+                    #             close_info[2],
+                    #             close_info[3],
+                    #             kline_close[-1],
+                    #             0.5,
+                    #         )
+                    #     elif (
+                    #         close_info[3] == "LONG" and kline_close[-1] > close_info[-1]
+                    #     ):
+                    #         self.close_bn_position(
+                    #             symbol,
+                    #             close_info[2],
+                    #             close_info[3],
+                    #             kline_close[-1],
+                    #             0.5,
+                    #         )
+                    #         self.alert_all["OBSERVATIONS"][symbol] = [
+                    #             kline[-1][2],
+                    #             time.time(),
+                    #             "SELL",
+                    #             "LONG",
+                    #         ]
                 elif (
                     kline_close[-1] <= close_info[1]
                     or close_info[3] == "LONG"
@@ -831,7 +831,7 @@ class AUTOBN:
                                 )
                             ) / len(kline_15[-8:-1])
                             zy = kline_close_15[-1] * (1 + kline_zf_15)
-                            zs = kline_close_15[-1] * (1 - kline_zf_15)
+                            zs = sum(kline_close_15[-7:]) / len(kline_close_15[-7:])
                             self.send_msg(
                                 f"==={symbol}**BZ**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
                             )
