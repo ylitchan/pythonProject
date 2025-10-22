@@ -785,8 +785,15 @@ class AUTOBN:
                         zf_index = (close_info[0] / close_info[1] - 1) / (
                             close_info[0] / close_info[1] + 1
                         )
-                        close_info[0] = kline_close[-1] * (1 + zf_index)
-                        close_info[1] = kline_close[-1] * (1 - zf_index)
+                        kline_15 = await self.get_kline(semaphore, symbol, "15m")
+                        kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
+                        kline_zf_15 = sum(
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
+                        ) / len(kline_15[-8:-1])
+                        close_info[0] = kline_close_15[-1] * (1 + kline_zf_15)
+                        close_info[1] = sum(kline_close_15[-7:]) / len(
+                            kline_close_15[-7:]
+                        )
                         self.alert_all["OBSERVATIONS"][symbol] = [
                             kline[-1][2],
                             time.time(),
@@ -807,23 +814,23 @@ class AUTOBN:
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
-                    if open_info[3] == "LONG":
+                    if (
+                        open_info[3] == "LONG"
+                        and open_info[0] < kline_close[-1] < close_info[0]
+                    ):
                         kline_15 = await self.get_kline(semaphore, symbol, "15m")
                         kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
                         kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
-                        if (
-                            kline_close_15[-1] > open_info[0]
-                            and max(kline_volume_15[-3], kline_volume_15[-4])
-                            < kline_volume_15[-2]
-                            and await self.decrease_oi(
-                                semaphore,
-                                symbol,
-                                open_info[3],
-                                kline_close_15,
-                                kline_volume_15,
-                                dtn,
-                                open_info[0],
-                            )
+                        if max(
+                            kline_volume_15[-3], kline_volume_15[-4]
+                        ) < kline_volume_15[-2] and await self.decrease_oi(
+                            semaphore,
+                            symbol,
+                            open_info[3],
+                            kline_close_15,
+                            kline_volume_15,
+                            dtn,
+                            open_info[0],
                         ):
                             kline_zf_15 = sum(
                                 list(
@@ -844,7 +851,11 @@ class AUTOBN:
                                 ]
                                 self.alert_all["OBSERVATIONS"].pop(symbol)
                                 return
-                    elif kline_close[-1] < open_info[0]:
+                    elif (
+                        open_info[3] == "SHORT"
+                        and kline_close[-1] < open_info[0]
+                        and kline_close[-1] > close_info[1]
+                    ):
                         # 设置止盈止损：止盈9%，止损9%
                         zy = kline_close[-1] * (1 - kline_zf)  # 止盈价
                         zs = kline_close[-1] * (1 + kline_zf)  # 止损价
