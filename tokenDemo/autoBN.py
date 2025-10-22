@@ -724,34 +724,34 @@ class AUTOBN:
                             "SELL",
                             "LONG",
                         ]
-                    # elif dtn.minute % 15 == 0:
-                    #     if (
-                    #         close_info[3] == "SHORT"
-                    #         and kline_close[-1] < close_info[-1]
-                    #     ):
-                    #         self.close_bn_position(
-                    #             symbol,
-                    #             close_info[2],
-                    #             close_info[3],
-                    #             kline_close[-1],
-                    #             0.5,
-                    #         )
-                    #     elif (
-                    #         close_info[3] == "LONG" and kline_close[-1] > close_info[-1]
-                    #     ):
-                    #         self.close_bn_position(
-                    #             symbol,
-                    #             close_info[2],
-                    #             close_info[3],
-                    #             kline_close[-1],
-                    #             0.5,
-                    #         )
-                    #         self.alert_all["OBSERVATIONS"][symbol] = [
-                    #             kline[-1][2],
-                    #             time.time(),
-                    #             "SELL",
-                    #             "LONG",
-                    #         ]
+                    elif dtn.minute % 15 == 0:
+                        if (
+                            close_info[3] == "SHORT"
+                            and kline_close[-1] < close_info[-1]
+                        ):
+                            self.close_bn_position(
+                                symbol,
+                                close_info[2],
+                                close_info[3],
+                                kline_close[-1],
+                                0.5,
+                            )
+                        elif (
+                            close_info[3] == "LONG" and kline_close[-1] > close_info[-1]
+                        ):
+                            self.close_bn_position(
+                                symbol,
+                                close_info[2],
+                                close_info[3],
+                                kline_close[-1],
+                                0.5,
+                            )
+                            self.alert_all["OBSERVATIONS"][symbol] = [
+                                kline[-1][2],
+                                time.time(),
+                                "SELL",
+                                "LONG",
+                            ]
                 elif (
                     kline_close[-1] <= close_info[1]
                     or close_info[3] == "LONG"
@@ -814,16 +814,15 @@ class AUTOBN:
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
+                    kline_15 = await self.get_kline(semaphore, symbol, "15m")
+                    kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
+                    kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
                     if (
                         open_info[3] == "LONG"
-                        and open_info[0] < kline_close[-1] < close_info[0]
-                    ):
-                        kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                        kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
-                        kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
-                        if max(
-                            kline_volume_15[-3], kline_volume_15[-4]
-                        ) < kline_volume_15[-2] and await self.decrease_oi(
+                        and open_info[0] < kline_close[-1]
+                        and max(kline_volume_15[-3], kline_volume_15[-4])
+                        < kline_volume_15[-2]
+                        and await self.decrease_oi(
                             semaphore,
                             symbol,
                             open_info[3],
@@ -831,34 +830,36 @@ class AUTOBN:
                             kline_volume_15,
                             dtn,
                             open_info[0],
-                        ):
-                            kline_zf_15 = sum(
-                                list(
-                                    map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1])
-                                )
-                            ) / len(kline_15[-8:-1])
-                            zy = kline_close_15[-1] * (1 + kline_zf_15)
-                            zs = sum(kline_close_15[-7:]) / len(kline_close_15[-7:])
-                            self.send_msg(
-                                f"==={symbol}**BZ**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
-                            )
-                            if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
-                                self.alert_all["POSITIONS"][symbol] = [
-                                    zy,
-                                    zs,
-                                    "SELL",
-                                    "LONG",
-                                ]
-                                self.alert_all["OBSERVATIONS"].pop(symbol)
-                                return
-                    elif (
-                        open_info[3] == "SHORT"
-                        and kline_close[-1] < open_info[0]
-                        and kline_close[-1] > close_info[1]
+                        )
                     ):
+                        kline_zf_15 = sum(
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
+                        ) / len(kline_15[-8:-1])
+                        zy = kline_close_15[-1] * (1 + kline_zf_15)
+                        zs = sum(kline_close_15[-7:]) / len(kline_close_15[-7:])
+                        if kline_close[-1] >= zy:
+                            return
+                        self.send_msg(
+                            f"==={symbol}**BZ**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
+                        )
+                        if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
+                            self.alert_all["POSITIONS"][symbol] = [
+                                zy,
+                                zs,
+                                "SELL",
+                                "LONG",
+                            ]
+                            self.alert_all["OBSERVATIONS"].pop(symbol)
+                            return
+                    elif open_info[3] == "SHORT" and kline_close[-1] < open_info[0]:
+                        kline_zf_15 = sum(
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
+                        ) / len(kline_15[-8:-1])
                         # 设置止盈止损：止盈9%，止损9%
-                        zy = kline_close[-1] * (1 - kline_zf)  # 止盈价
-                        zs = kline_close[-1] * (1 + kline_zf)  # 止损价
+                        zy = kline_close_15[-1] * (1 - kline_zf_15)  # 止盈价
+                        zs = kline_close_15[-1] * (1 + kline_zf)  # 止损价
+                        if kline_close[-1] <= zy:
+                            return
                         self.send_msg(
                             f"==={symbol}**BD**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                         )

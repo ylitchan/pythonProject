@@ -220,21 +220,21 @@ class HandleMsg:
                             "SELL",
                             "LONG",
                         ]
-                # elif dtn.minute % 5 == 0:
-                #     if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
-                #         self.autobn.close_bn_position(
-                #             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
-                #         )
-                #     elif close_info[3] == "LONG" and kline_close[-1] > close_info[-1]:
-                #         self.autobn.close_bn_position(
-                #             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
-                #         )
-                #         self.autobn.alert_all["OBSERVATIONS"][symbol] = [
-                #             max(kline_close),
-                #             time.time(),
-                #             "SELL",
-                #             "LONG",
-                #         ]
+                elif dtn.minute % 15 == 0:
+                    if close_info[3] == "SHORT" and kline_close[-1] < close_info[-1]:
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
+                        )
+                    elif close_info[3] == "LONG" and kline_close[-1] > close_info[-1]:
+                        self.autobn.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
+                        )
+                        self.autobn.alert_all["OBSERVATIONS"][symbol] = [
+                            max(kline_close),
+                            time.time(),
+                            "SELL",
+                            "LONG",
+                        ]
             elif open_info := self.autobn.alert_all["OBSERVATIONS"].get(symbol):
                 if open_info[3] == "LONG" and time.time() - open_info[1] > 15 * 30 * 60:
                     self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
@@ -243,7 +243,7 @@ class HandleMsg:
                 else:
                     if (
                         open_info[3] == "LONG"
-                        and close_info[0] > kline_close[-1] > open_info[0]
+                        and kline_close[-1] > open_info[0]
                         and max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2]
                         and await self.autobn.decrease_oi(
                             semaphore,
@@ -257,6 +257,8 @@ class HandleMsg:
                     ):
                         zy = kline_close[-1] * (1 + kline_zf)
                         zs = sum(kline_close[-7:]) / len(kline_close[-7:])
+                        if kline_close[-1] >= zy:
+                            return
                         self.autobn.send_msg(
                             f"==={symbol}**BZ**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                         )
@@ -269,12 +271,11 @@ class HandleMsg:
                             ]
                             self.autobn.alert_all["OBSERVATIONS"].pop(symbol)
                             return
-                    elif (
-                        open_info[3] == "SHORT"
-                        and close_info[1] < kline_close[-1] < open_info[0]
-                    ):
+                    elif open_info[3] == "SHORT" and kline_close[-1] < open_info[0]:
                         zy = kline_close[-1] * (1 - kline_zf)  # 止盈价
                         zs = kline_close[-1] * (1 + kline_zf)  # 止损价
+                        if kline_close[-1] <= zy:
+                            return
                         self.autobn.send_msg(
                             f"==={symbol}**BD**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                         )
