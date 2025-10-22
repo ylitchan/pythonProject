@@ -820,6 +820,7 @@ class AUTOBN:
                     if (
                         open_info[3] == "LONG"
                         and open_info[0] < kline_close[-1]
+                        and kline_close[-3] < kline_close[-2]
                         and max(kline_volume_15[-3], kline_volume_15[-4])
                         < kline_volume_15[-2]
                         and await self.decrease_oi(
