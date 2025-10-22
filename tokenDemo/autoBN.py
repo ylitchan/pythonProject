@@ -897,6 +897,12 @@ class AUTOBN:
                     )
                     and kline_close[-3] < kline_close[-2]
                     and max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2]
+                    and all(
+                        kline_close[x]
+                        >= sum(kline_close[x - 6 : x + 1])
+                        / len(kline_close[x - 6 : x + 1])
+                        for x in range(-2, -4, -1)
+                    )
                     and await self.increase_oi(
                         semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                     )
