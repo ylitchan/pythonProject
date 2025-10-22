@@ -66,17 +66,14 @@ class AUTOBN:
         obj.user_name = kwargs.get(
             "user_name", os.getenv("USER_NAME", "49124710049@chatroom")
         )
-
-        # 文件路径（可覆盖）
-        current_dir = os.path.dirname(os.path.abspath(__file__))
         bn_api_file = kwargs.get("bn_api_file", "bn.json")
-        alert_all_file = kwargs.get(
+        obj.alert_all_file = kwargs.get(
             "alert_all_file", kwargs.get("allert_all_file", "alert_all.json")
         )
 
         # 加载币安API配置并允许 kwargs 覆盖
         # 说明：若传入 api_key/api_secret，将覆盖 bn_api_file 中的值
-        with open(os.path.join(current_dir, bn_api_file), "r") as f:
+        with open(bn_api_file, "r") as f:
             bn_api = json.load(f)
         api_key = kwargs.get(
             "api_key",
@@ -97,7 +94,7 @@ class AUTOBN:
         obj.um_futures_client = UMFutures(key=api_key, secret=api_secret)
 
         # 加载持仓记录
-        with open(os.path.join(current_dir, alert_all_file), "r") as f:
+        with open(obj.alert_all_file, "r") as f:
             obj.alert_all = json.load(f)
 
         # 初始化资金槽位（用于资金管理）（可覆盖）
@@ -838,7 +835,7 @@ class AUTOBN:
                         ) / len(kline_15[-8:-1])
                         zy = kline_close_15[-1] * (1 + kline_zf_15)
                         zs = sum(kline_close_15[-7:]) / len(kline_close_15[-7:])
-                        if kline_close[-1] >= zy:
+                        if kline_close_15[-1] >= zy:
                             return
                         self.send_msg(
                             f"==={symbol}**BZ**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
@@ -1083,8 +1080,7 @@ class AUTOBN:
         )
 
         # 保存分析结果到文件
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(current_dir, "alert_all.json"), "w") as f:
+        with open(self.alert_all_file, "w") as f:
             json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
 
 
@@ -1248,9 +1244,10 @@ class AUTOA:
 
 
 async def main():
+    current_dir = os.path.dirname(os.path.abspath(__file__))
     autobn = AUTOBN.from_cfg(
-        bn_api_file="bn.json",
-        alert_all_file="alert_all.json",
+        bn_api_file=os.path.join(current_dir, "bn.json"),
+        alert_all_file=os.path.join(current_dir, "alert_all.json"),
         qy_key="6f2ec864-c474-4c8f-b069-1e3c35eb7d73",
     )
     """

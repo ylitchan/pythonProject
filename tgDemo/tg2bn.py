@@ -46,18 +46,18 @@ class HandleMsg:
             leverage=5,
         )
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
-        self.scheduler.add_job(
-            self.handle_market,
-            "cron",
-            hour="*",
-            minute="*",
-            second="00",
-            # next_run_time=datetime.now(),  # 启动后立即执行一次
-            misfire_grace_time=10,
-            max_instances=1,
-            coalesce=True,
-            name="跟单止损任务",
-        )
+        # self.scheduler.add_job(
+        #     self.handle_market,
+        #     "cron",
+        #     hour="*",
+        #     minute="*",
+        #     second="00",
+        #     # next_run_time=datetime.now(),  # 启动后立即执行一次
+        #     misfire_grace_time=10,
+        #     max_instances=1,
+        #     coalesce=True,
+        #     name="跟单止损任务",
+        # )
         self.scheduler.add_job(
             self.send_balance,
             "cron",
@@ -68,6 +68,20 @@ class HandleMsg:
             max_instances=1,
             coalesce=True,
             name="账户信息推送",
+        )
+        # 设置币安市场分析定时任务
+        self.scheduler.add_job(
+            self.autobn.rzq_market,  # 执行的函数
+            "cron",  # 调度类型：按日历规则
+            hour="*",  # 每小时执行
+            minute="*",  # 每5分钟
+            second="00",  # 整点秒数
+            timezone="Asia/Shanghai",  # 上海时区
+            args=("BN",),  # 传递参数
+            misfire_grace_time=10,  # 错过执行的宽限时间（秒）
+            max_instances=1,  # 同一时间只允许1个实例运行
+            coalesce=True,  # 合并错过的执行（避免积压）
+            name="跟单止损任务",  # 任务名称
         )
 
     async def increase_oi(
