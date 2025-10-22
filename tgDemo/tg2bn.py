@@ -43,7 +43,7 @@ class HandleMsg:
             allert_all_file=allert_all_file,
             margin_mode="CROSSED",
             qy_key="095984b1-5bc0-43ac-8037-d65a9608d120",
-            leverage=5,
+            leverage=3,
         )
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
         # self.scheduler.add_job(
