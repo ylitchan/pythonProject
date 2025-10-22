@@ -778,11 +778,13 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        zf_index = (close_info[0] / close_info[1] - 1) / (
-                            close_info[0] / close_info[1] + 1
-                        )
-                        close_info[1] = kline_close[-1] * (1 - zf_index)
-                        close_info[0] = kline_close[-1] * (1 + zf_index)
+                        kline_15 = await self.get_kline(semaphore, symbol, "15m")
+                        kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
+                        kline_zf_15 = sum(
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
+                        ) / len(kline_15[-8:-1])
+                        close_info[1] = kline_close_15[-1] * (1 - kline_zf_15)
+                        close_info[0] = kline_close_15[-1] * (1 + kline_zf_15)
                     else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
@@ -798,9 +800,6 @@ class AUTOBN:
                     if close_info[3] == "LONG":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
-                        )
-                        zf_index = (close_info[0] / close_info[1] - 1) / (
-                            close_info[0] / close_info[1] + 1
                         )
                         kline_15 = await self.get_kline(semaphore, symbol, "15m")
                         kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
