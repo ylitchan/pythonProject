@@ -819,8 +819,8 @@ class AUTOBN:
                     kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
                     if (
                         open_info[3] == "LONG"
-                        and open_info[0] < kline_close[-1]
-                        and kline_close[-3] < kline_close[-2]
+                        and open_info[0] < kline_close_15[-1]
+                        and kline_close_15[-3] < kline_close_15[-2]
                         and max(kline_volume_15[-3], kline_volume_15[-4])
                         < kline_volume_15[-2]
                         and await self.decrease_oi(
