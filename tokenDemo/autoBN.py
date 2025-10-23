@@ -727,7 +727,7 @@ class AUTOBN:
                         # 设置止盈止损：止盈9%，止损9%
                         zy = kline_close_15[-1] * (1 - kline_zf_15)  # 止盈价
                         zs = kline_close_15[-1] * (1 + kline_zf_15)  # 止损价
-                        if kline_close_15[-1] <= zy:
+                        if kline_15[-1][3] <= zy:
                             return
                         self.send_msg(
                             f"==={symbol}**BD**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
@@ -854,7 +854,7 @@ class AUTOBN:
                         ) / len(kline_15[-8:-1])
                         zy = kline_close_15[-1] * (1 + kline_zf_15)
                         zs = sum(kline_close_15[-7:]) / len(kline_close_15[-7:])
-                        if kline_close_15[-1] >= zy:
+                        if kline_15[-1][2] >= zy:
                             return
                         self.send_msg(
                             f"==={symbol}**BZ**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
@@ -875,7 +875,7 @@ class AUTOBN:
                         # 设置止盈止损：止盈9%，止损9%
                         zy = kline_close_15[-1] * (1 - kline_zf_15)  # 止盈价
                         zs = kline_close_15[-1] * (1 + kline_zf)  # 止损价
-                        if kline_close_15[-1] <= zy:
+                        if kline_15[-1][3] <= zy:
                             return
                         self.send_msg(
                             f"==={symbol}**BD**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
