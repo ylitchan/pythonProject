@@ -780,7 +780,7 @@ class AUTOBN:
                 elif (
                     kline_close[-1] <= close_info[1]
                     or close_info[3] == "LONG"
-                    and kline_close[-1] < sum(kline_close[-7:]) / len(kline_close[-7:])
+                    and kline_close[-2] < sum(kline_close[-8:-1]) / len(kline_close[-8:-1])
                 ):
                     if close_info[3] == "SHORT":
                         self.close_bn_position(
