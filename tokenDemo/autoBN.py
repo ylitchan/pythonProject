@@ -703,11 +703,6 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        # kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                        # kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
-                        # kline_zf_15 = sum(
-                        #     list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-11:-1]))
-                        # ) / len(kline_15[-11:-1])
                         close_info[1] = kline_close[-1] * (1 - kline_zf)
                         close_info[0] = kline_close[-1] * (1 + kline_zf)
                     else:
@@ -726,11 +721,6 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        # kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                        # kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
-                        # kline_zf_15 = sum(
-                        #     list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-11:-1]))
-                        # ) / len(kline_15[-11:-1])
                         close_info[0] = kline_close[-1] * (1 + kline_zf)
                         close_info[1] = kline_close[-1] * (1 - kline_zf)
                         self.alert_all["OBSERVATIONS"][symbol] = [
