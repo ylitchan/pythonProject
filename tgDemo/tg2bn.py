@@ -88,8 +88,8 @@ class AUTOBN2(AUTOBN):
                     if (
                         sumOpenInterest[-1] > max(sumOpenInterest[-3:-1])
                         and sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
-                        and sum(kline_volume[: -int(len(kline_volume) / 2)])
-                        / len(kline_volume[: -int(len(kline_volume) / 2)])
+                        and sum(kline_volume[: -int(len(kline_volume) * 2 / 3)])
+                        / len(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         * 9
                         < kline_volume[-2]
                         and all(
