@@ -95,8 +95,8 @@ class AUTOBN2(AUTOBN):
                         and all(
                             kline_volume[x] > kline_volume[x - 2]
                             and kline_close[x]
-                            >= sum(kline_close[x - 6 : x + 1])
-                            / len(kline_close[x - 6 : x + 1])
+                            >= sum(kline_close[x - 9 : x + 1])
+                            / len(kline_close[x - 9 : x + 1])
                             for x in range(-2, -6, -2)
                         )
                     ):

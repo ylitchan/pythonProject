@@ -553,8 +553,8 @@ class AUTOBN:
                         and all(
                             kline_volume[x] > kline_volume[x - 2]
                             and kline_close[x]
-                            >= sum(kline_close[x - 6 : x + 1])
-                            / len(kline_close[x - 6 : x + 1])
+                            >= sum(kline_close[x - 9 : x + 1])
+                            / len(kline_close[x - 9 : x + 1])
                             for x in range(-2, -6, -2)
                         )
                     ):
@@ -701,8 +701,8 @@ class AUTOBN:
                 return
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             kline_zf = sum(
-                list(map(lambda k: abs(k[4] / k[1] - 1), kline[-8:-1]))
-            ) / len(kline[-8:-1])
+                list(map(lambda k: abs(k[4] / k[1] - 1), kline[-11:-1]))
+            ) / len(kline[-11:-1])
             # 检查现有持仓是否需要平仓
             if close_info := self.alert_all["POSITIONS"].get(symbol):
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
@@ -730,8 +730,8 @@ class AUTOBN:
                             "LONG",
                         ]
                         kline_zf_15 = sum(
-                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
-                        ) / len(kline_15[-8:-1])
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-11:-1]))
+                        ) / len(kline_15[-11:-1])
                         # 设置止盈止损：止盈9%，止损9%
                         zy = kline_close_15[-1] * (1 - kline_zf_15)  # 止盈价
                         zs = kline_close_15[-1] * (1 + kline_zf_15)  # 止损价
@@ -780,7 +780,7 @@ class AUTOBN:
                 elif (
                     kline_close[-1] <= close_info[1]
                     or close_info[3] == "LONG"
-                    and kline_close[-2] < sum(kline_close[-8:-1]) / len(kline_close[-8:-1])
+                    and kline_close[-2] < sum(kline_close[-11:-1]) / len(kline_close[-11:-1])
                 ):
                     if close_info[3] == "SHORT":
                         self.close_bn_position(
@@ -789,8 +789,8 @@ class AUTOBN:
                         kline_15 = await self.get_kline(semaphore, symbol, "15m")
                         kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
                         kline_zf_15 = sum(
-                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
-                        ) / len(kline_15[-8:-1])
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-11:-1]))
+                        ) / len(kline_15[-11:-1])
                         close_info[1] = kline_close_15[-1] * (1 - kline_zf_15)
                         close_info[0] = kline_close_15[-1] * (1 + kline_zf_15)
                     else:
@@ -812,11 +812,11 @@ class AUTOBN:
                         kline_15 = await self.get_kline(semaphore, symbol, "15m")
                         kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
                         kline_zf_15 = sum(
-                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
-                        ) / len(kline_15[-8:-1])
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-11:-1]))
+                        ) / len(kline_15[-11:-1])
                         close_info[0] = kline_close_15[-1] * (1 + kline_zf_15)
-                        close_info[1] = sum(kline_close_15[-7:]) / len(
-                            kline_close_15[-7:]
+                        close_info[1] = sum(kline_close_15[-10:]) / len(
+                            kline_close_15[-10:]
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = [
                             kline[-1][2],
@@ -858,10 +858,10 @@ class AUTOBN:
                         )
                     ):
                         kline_zf_15 = sum(
-                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
-                        ) / len(kline_15[-8:-1])
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-11:-1]))
+                        ) / len(kline_15[-11:-1])
                         zy = kline_close_15[-1] * (1 + kline_zf_15)
-                        zs = sum(kline_close_15[-7:]) / len(kline_close_15[-7:])
+                        zs = sum(kline_close_15[-10:]) / len(kline_close_15[-10:])
                         if kline_15[-1][2] >= zy:
                             return
                         self.send_msg(
@@ -878,8 +878,8 @@ class AUTOBN:
                             return
                     elif open_info[3] == "SHORT" and kline_close_15[-1] < open_info[0]:
                         kline_zf_15 = sum(
-                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-8:-1]))
-                        ) / len(kline_15[-8:-1])
+                            list(map(lambda k: abs(k[4] / k[1] - 1), kline_15[-11:-1]))
+                        ) / len(kline_15[-11:-1])
                         # 设置止盈止损：止盈9%，止损9%
                         zy = kline_close_15[-1] * (1 - kline_zf_15)  # 止盈价
                         zs = kline_close_15[-1] * (1 + kline_zf)  # 止损价
