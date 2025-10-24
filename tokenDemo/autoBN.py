@@ -547,9 +547,17 @@ class AUTOBN:
                     flush=True,
                 )
                 if positionSide == "LONG":
-                    if sumOpenInterest[-1] <= max(
-                        sumOpenInterest[-3:-1]
-                    ) or sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
+                    if not (
+                        sumOpenInterest[-1] > max(sumOpenInterest[-3:-1])
+                        and sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                        and all(
+                            kline_volume[x] > kline_volume[x - 2]
+                            and kline_close[x]
+                            >= sum(kline_close[x - 6 : x + 1])
+                            / len(kline_close[x - 6 : x + 1])
+                            for x in range(-2, -6, -2)
+                        )
+                    ):
                         return False
                     for index in range(-2, -len(oi), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
