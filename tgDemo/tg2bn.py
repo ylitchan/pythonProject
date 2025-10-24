@@ -27,6 +27,100 @@ app = Client("my_account", api_id, api_hash)
 last_msg = [""]
 
 
+class AUTOBN2(AUTOBN):
+    async def decrease_oi(
+        self,
+        semaphore,
+        symbol,
+        positionSide,
+        kline_close=None,
+        kline_volume=None,
+        dtn: datetime = None,
+        price_target: float = None,
+    ):
+        """
+        检查减仓信号，判断是否应该平仓
+
+        功能：分析持仓量变化，判断获利了结或止损时机
+        参数：
+            semaphore: 异步信号量，控制并发数量
+            symbol: 交易对符号，如'BTCUSDT'
+            positionSide: 持仓方向，'LONG'或'SHORT'
+        返回：
+            True表示应该平仓，False表示继续持有
+        """
+        async with semaphore:
+            try:
+                # 获取持仓量历史数据（30天）
+                oi = await asyncio.to_thread(
+                    self.um_futures_client.open_interest_hist,
+                    symbol=symbol,
+                    period="15m",
+                    limit=30,
+                )
+                # 获取当前时间并设置为最近的前一个整点时间（0,15,30,45分）
+                minute = dtn.minute
+                # 计算最近的前一个整点时间
+                if minute < 15:
+                    target_minute = 0
+                elif minute < 30:
+                    target_minute = 15
+                elif minute < 45:
+                    target_minute = 30
+                else:
+                    target_minute = 45
+                dtn_target = dtn.replace(minute=target_minute, second=0, microsecond=0)
+                if oi[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                    return False
+                sumOpenInterestValue = [
+                    float(i["sumOpenInterestValue"]) for i in oi
+                ]  # 持仓价值（美元）
+                sumOpenInterest = [
+                    float(i["sumOpenInterest"]) for i in oi
+                ]  # 持仓数量（合约数）
+
+                # 打印减仓信号数据，便于监控
+                print(
+                    f"{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}",
+                    flush=True,
+                )
+                if positionSide == "LONG":
+                    if (
+                        sumOpenInterest[-1] > max(sumOpenInterest[-3:-1])
+                        and sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                        and sum(kline_volume[: -int(len(kline_volume) / 2)])
+                        / len(kline_volume[: -int(len(kline_volume) / 2)])
+                        * 9
+                        < kline_volume[-2]
+                        and all(
+                            kline_volume[x] > kline_volume[x - 2]
+                            and kline_close[x]
+                            >= sum(kline_close[x - 6 : x + 1])
+                            / len(kline_close[x - 6 : x + 1])
+                            for x in range(-2, -6, -2)
+                        )
+                    ):
+                        return True
+                    return False
+                else:
+                    result = any(
+                        (
+                            kline_close[index - 1] == max(kline_close)
+                            and sumOpenInterestValue[index] == max(sumOpenInterestValue)
+                            and kline_close[-2] > max(kline_close[-4:-2])
+                            and sumOpenInterestValue[-1]
+                            > max(sumOpenInterestValue[-3:-1])
+                            and max(kline_volume[-3:-1]) == max(kline_volume)
+                            and sumOpenInterest[-1] < sumOpenInterest[-2]
+                        )
+                        for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
+                    )
+                    return result
+            except Exception:
+                traceback.print_exc()
+                return False
+
+
 class HandleMsg:
     """
     消息处理类，用于处理来自特定Telegram频道的消息并执行相应的币安交易操作
@@ -38,12 +132,12 @@ class HandleMsg:
         bn_api_file = os.path.join(current_dir, "bn.json")
         allert_all_file = os.path.join(current_dir, "alert_all.json")
         # 初始化币安自动交易实例
-        self.autobn = AUTOBN.from_cfg(
+        self.autobn = AUTOBN2.from_cfg(
             bn_api_file=bn_api_file,
             allert_all_file=allert_all_file,
             margin_mode="CROSSED",
             qy_key="095984b1-5bc0-43ac-8037-d65a9608d120",
-            leverage=3,
+            leverage=1,
         )
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
         # self.scheduler.add_job(
@@ -319,8 +413,8 @@ class HandleMsg:
                     != "LONG"
                     and kline_close[-2] > max(kline_close[:-2])
                     and kline_volume[-2] > max(kline_volume[:-2])
-                    and sum(kline_volume[: -int(len(kline) / 2)])
-                    / len(kline_volume[: -int(len(kline) / 2)])
+                    and sum(kline_volume[: -int(len(kline_volume) / 2)])
+                    / len(kline_volume[: -int(len(kline_volume) / 2)])
                     * 9
                     < kline_volume[-2]
                     and all(
