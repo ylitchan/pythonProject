@@ -574,19 +574,19 @@ class AUTOBN:
                 ]  # 持仓数量（合约数）
                 if positionSide == "LONG":
                     if (
-                        sumOpenInterest_5[-1] >= max(sumOpenInterest[-2:])
-                        and sumOpenInterestValue_5[-1] >= max(sumOpenInterestValue[-2:])
+                        sumOpenInterest_5[-1] > max(sumOpenInterest[-2:])
+                        and sumOpenInterestValue_5[-1] > max(sumOpenInterestValue[-2:])
                         and sum(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         / len(kline_volume[: -int(len(kline_volume) * 2 / 3)])
-                        * 6  # 设计9倍，但是oi和量能不能同时为最新，一个15分钟最新的oi是第十分钟的，所以9*2/3
+                        * 9
                         < kline_volume[-1]
                     ):
                         return True
                     return False
                 else:
-                    if sumOpenInterest_5[-1] < max(
+                    if sumOpenInterest_5[-1] <= max(
                         sumOpenInterest[-2:]
-                    ) or sumOpenInterestValue_5[-1] < max(sumOpenInterestValue[-2:]):
+                    ) or sumOpenInterestValue_5[-1] <= max(sumOpenInterestValue[-2:]):
                         return False
                     for index in range(-2, -len(oi), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
