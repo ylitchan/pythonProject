@@ -560,22 +560,22 @@ class AUTOBN:
                     f"{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}",
                     flush=True,
                 )
-                oi_5 = await asyncio.to_thread(
-                    self.um_futures_client.open_interest_hist,
-                    symbol=symbol,
-                    period="5m",
-                    limit=1,
-                )
-                sumOpenInterestValue_5 = [
-                    float(i["sumOpenInterestValue"]) for i in oi_5
-                ]  # 持仓价值（美元）
-                sumOpenInterest_5 = [
-                    float(i["sumOpenInterest"]) for i in oi_5
-                ]  # 持仓数量（合约数）
                 if positionSide == "LONG":
+                    oi_5 = await asyncio.to_thread(
+                        self.um_futures_client.open_interest_hist,
+                        symbol=symbol,
+                        period="1d",
+                        limit=2,
+                    )
+                    sumOpenInterestValue_5 = [
+                        float(i["sumOpenInterestValue"]) for i in oi_5
+                    ]  # 持仓价值（美元）
+                    sumOpenInterest_5 = [
+                        float(i["sumOpenInterest"]) for i in oi_5
+                    ]  # 持仓数量（合约数）
                     if (
-                        sumOpenInterest_5[-1] > max(sumOpenInterest[-2:])
-                        and sumOpenInterestValue_5[-1] > max(sumOpenInterestValue[-2:])
+                        sumOpenInterest[-1] > max(sumOpenInterest_5[-2:])
+                        and sumOpenInterestValue[-1] > max(sumOpenInterestValue_5[-2:])
                         and sum(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         / len(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         * 9
@@ -584,6 +584,18 @@ class AUTOBN:
                         return True
                     return False
                 else:
+                    oi_5 = await asyncio.to_thread(
+                        self.um_futures_client.open_interest_hist,
+                        symbol=symbol,
+                        period="5m",
+                        limit=1,
+                    )
+                    sumOpenInterestValue_5 = [
+                        float(i["sumOpenInterestValue"]) for i in oi_5
+                    ]  # 持仓价值（美元）
+                    sumOpenInterest_5 = [
+                        float(i["sumOpenInterest"]) for i in oi_5
+                    ]  # 持仓数量（合约数）
                     if sumOpenInterest_5[-1] <= max(
                         sumOpenInterest[-2:]
                     ) or sumOpenInterestValue_5[-1] <= max(sumOpenInterestValue[-2:]):
