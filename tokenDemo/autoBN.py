@@ -441,12 +441,24 @@ class AUTOBN:
                     f"{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}",
                     flush=True,
                 )
+                oi_5 = await asyncio.to_thread(
+                    self.um_futures_client.open_interest_hist,
+                    symbol=symbol,
+                    period="5m",
+                    limit=1,
+                )
+                sumOpenInterestValue_5 = [
+                    float(i["sumOpenInterestValue"]) for i in oi_5
+                ]  # 持仓价值（美元）
+                sumOpenInterest_5 = [
+                    float(i["sumOpenInterest"]) for i in oi_5
+                ]  # 持仓数量（合约数）
                 if positionSide == "LONG":
                     # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
-                    if sumOpenInterest[-1] <= max(
-                        sumOpenInterest[-3:-1]
-                    ) or sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
+                    if sumOpenInterest_5[-1] <= max(
+                        sumOpenInterest[-2:]
+                    ) or sumOpenInterestValue_5[-1] <= max(sumOpenInterestValue[-2:]):
                         return False
                     # 条件2：检查历史数据，寻找合适的增仓信号
                     # for index in range(-2, -len(oi), -1):
@@ -546,21 +558,33 @@ class AUTOBN:
                     f"{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}",
                     flush=True,
                 )
+                oi_5 = await asyncio.to_thread(
+                    self.um_futures_client.open_interest_hist,
+                    symbol=symbol,
+                    period="5m",
+                    limit=1,
+                )
+                sumOpenInterestValue_5 = [
+                    float(i["sumOpenInterestValue"]) for i in oi_5
+                ]  # 持仓价值（美元）
+                sumOpenInterest_5 = [
+                    float(i["sumOpenInterest"]) for i in oi_5
+                ]  # 持仓数量（合约数）
                 if positionSide == "LONG":
                     if (
-                        sumOpenInterest[-1] > max(sumOpenInterest[-3:-1])
-                        and sumOpenInterestValue[-1] > max(sumOpenInterestValue[-3:-1])
+                        sumOpenInterest_5[-1] >= max(sumOpenInterest[-2:])
+                        and sumOpenInterestValue_5[-1] >= max(sumOpenInterestValue[-2:])
                         and sum(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         / len(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         * 9
-                        < kline_volume[-2]
+                        < kline_volume[-1]
                     ):
                         return True
                     return False
                 else:
-                    if sumOpenInterest[-1] <= max(
-                        sumOpenInterest[-3:-1]
-                    ) or sumOpenInterestValue[-1] <= max(sumOpenInterestValue[-3:-1]):
+                    if sumOpenInterest_5[-1] < max(
+                        sumOpenInterest[-2:]
+                    ) or sumOpenInterestValue_5[-1] < max(sumOpenInterestValue[-2:]):
                         return False
                     for index in range(-2, -len(oi), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
@@ -740,11 +764,11 @@ class AUTOBN:
                     kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
                     if (
                         open_info[3] == "LONG"
-                        and open_info[0] < kline_close_15[-2]
-                        and max(kline_close_15[-3], kline_close_15[-4])
-                        < kline_close_15[-2]
-                        and max(kline_volume_15[-3], kline_volume_15[-4])
-                        < kline_volume_15[-2]
+                        and open_info[0] < kline_close_15[-1]
+                        and max(kline_close_15[-3], kline_close_15[-2])
+                        < kline_close_15[-1]
+                        and max(kline_volume_15[-3], kline_volume_15[-2])
+                        < kline_volume_15[-1]
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
@@ -813,8 +837,8 @@ class AUTOBN:
                             != "LONG"
                         )
                     )
-                    and kline_close[-3] < kline_close[-2] < kline_close[-1]
-                    and max(kline_volume[-3], kline_volume[-4]) < kline_volume[-2]
+                    and kline_close[-2] < kline_close[-1]
+                    and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                     and await self.increase_oi(
                         semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                     )
