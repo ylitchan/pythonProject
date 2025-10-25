@@ -578,7 +578,7 @@ class AUTOBN:
                         and sumOpenInterestValue_5[-1] >= max(sumOpenInterestValue[-2:])
                         and sum(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         / len(kline_volume[: -int(len(kline_volume) * 2 / 3)])
-                        * 9
+                        * 6  # 设计9倍，但是oi和量能不能同时为最新，一个15分钟最新的oi是第十分钟的，所以9*2/3
                         < kline_volume[-1]
                     ):
                         return True
