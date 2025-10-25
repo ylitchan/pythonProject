@@ -1,5 +1,6 @@
 # 导入必要的库
 import asyncio  # 异步编程库，用于并发处理
+import copy
 import datetime  # 日期时间处理
 import gc  # 垃圾回收，用于内存管理
 import json  # JSON数据处理
@@ -96,6 +97,7 @@ class AUTOBN:
         # 加载持仓记录
         with open(obj.alert_all_file, "r") as f:
             obj.alert_all = json.load(f)
+        obj.alert_all_old = copy.deepcopy(obj.alert_all)
 
         # 初始化资金槽位（用于资金管理）（可覆盖）
         # 含义：用于控制单次下单的资金使用上限（与 open_ratio 一起作用）
@@ -1012,10 +1014,11 @@ class AUTOBN:
             self.alert_all,
             flush=True,
         )
-
-        # 保存分析结果到文件
-        with open(self.alert_all_file, "w") as f:
-            json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
+        if self.alert_all != self.alert_all_old:
+            self.alert_all_old = copy.deepcopy(self.alert_all)
+            # 保存分析结果到文件
+            with open(self.alert_all_file, "w") as f:
+                json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
 
 
 class AUTOA:
