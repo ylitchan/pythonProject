@@ -567,9 +567,9 @@ class AUTOBN:
                         return True
                     return False
                 else:
-                    for index in range(-2, -len(oi_15m), -1):
+                    for index in range(-1, -len(kline_close), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                        if kline_close[index - 1] > price_target:
+                        if kline_close[index - 1] > max(kline_close[: index - 1]):
                             return False
                     return True
             except Exception:
@@ -774,7 +774,7 @@ class AUTOBN:
                     elif (
                         open_info[3] == "SHORT"
                         and kline_close_15[-1] > open_info[0]
-                        and kline_volume_15[-2] < kline_volume_15[-1]
+                        and max(kline_volume_15[-3:-1]) < kline_volume_15[-1]
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
