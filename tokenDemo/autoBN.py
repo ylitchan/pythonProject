@@ -596,9 +596,10 @@ class AUTOBN:
                     sumOpenInterest_5 = [
                         float(i["sumOpenInterest"]) for i in oi_5
                     ]  # 持仓数量（合约数）
-                    if sumOpenInterest_5[-1] <= max(
-                        sumOpenInterest[-2:]
-                    ) or sumOpenInterestValue_5[-1] <= max(sumOpenInterestValue[-2:]):
+                    if (
+                        sumOpenInterest_5[-1] <= sumOpenInterest[-1]
+                        or sumOpenInterestValue_5[-1] <= sumOpenInterestValue[-1]
+                    ):
                         return False
                     for index in range(-2, -len(oi), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
@@ -746,7 +747,7 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                         self.alert_all["OBSERVATIONS"][symbol] = [
-                            kline[-1][2],
+                            kline_close[-1],
                             time.time(),
                             "SELL",
                             "SHORT",
@@ -759,7 +760,7 @@ class AUTOBN:
                         close_info[0] = kline_close[-1] * (1 + kline_zf)
                         close_info[1] = kline_close[-1] * (1 - kline_zf)
                         self.alert_all["OBSERVATIONS"][symbol] = [
-                            kline[-1][2],
+                            kline_close[-1],
                             time.time(),
                             "SELL",
                             "SHORT",
@@ -779,10 +780,8 @@ class AUTOBN:
                     if (
                         open_info[3] == "LONG"
                         and open_info[0] < kline_close_15[-1]
-                        and max(kline_close_15[-3], kline_close_15[-2])
-                        < kline_close_15[-1]
-                        and max(kline_volume_15[-3], kline_volume_15[-2])
-                        < kline_volume_15[-1]
+                        and max(kline_close_15[:-1]) < kline_close_15[-1]
+                        and max(kline_volume_15[:-1]) < kline_volume_15[-1]
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
@@ -809,6 +808,7 @@ class AUTOBN:
                     elif (
                         open_info[3] == "SHORT"
                         and kline_close_15[-1] > open_info[0]
+                        and kline_volume_15[-2] < kline_volume_15[-1]
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
@@ -868,7 +868,7 @@ class AUTOBN:
                         f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
                     )
                     self.alert_all["OBSERVATIONS"][symbol] = [
-                        kline[-1][2],
+                        kline_close[-1],
                         time.time(),
                         "SELL",
                         "LONG",
