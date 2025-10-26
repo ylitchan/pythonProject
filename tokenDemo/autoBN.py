@@ -705,8 +705,8 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        close_info[1] = kline_close[-1] * (1 - kline_zf)
-                        close_info[0] = kline_close[-1] * (1 + kline_zf)
+                        close_info[1] = kline_close[-1] * (1 - kline_zf * 0.5)
+                        close_info[0] = kline_close[-1] * (1 + kline_zf * 0.5)
                     else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
@@ -723,8 +723,8 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        close_info[0] = kline_close[-1] * (1 + kline_zf)
-                        close_info[1] = kline_close[-1] * (1 - kline_zf)
+                        close_info[0] = kline_close[-1] * (1 + kline_zf * 0.5)
+                        close_info[1] = kline_close[-1] * (1 - kline_zf * 0.5)
                         self.alert_all["OBSERVATIONS"][symbol] = [
                             kline_close[-1],
                             time.time(),
@@ -786,8 +786,8 @@ class AUTOBN:
                         )
                     ):
                         # 设置止盈止损：止盈9%，止损9%
-                        zy = kline_close[-1] * (1 + kline_zf)
-                        zs = kline_close[-1] * (1 - kline_zf)
+                        zy = kline_close[-1] * (1 + kline_zf * 0.5)
+                        zs = kline_close[-1] * (1 - kline_zf * 0.5)
                         self.send_msg(
                             f"==={symbol}**BZ**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
                         )
