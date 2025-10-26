@@ -990,15 +990,16 @@ class AUTOBN:
         symbols = []
 
         # 重试机制：最多尝试10次获取交易对信息
-        for i in range(10):
-            try:
-                self.get_symbols_info()
-                symbols = list(self.symbols_info.keys())
-                break  # 成功获取，退出重试循环
-            except Exception:
-                # 获取失败，等待2秒后重试
-                traceback.print_exc()
-                await asyncio.sleep(2)
+        if now.minute % 15 == 0:
+            for i in range(10):
+                try:
+                    self.get_symbols_info()
+                    symbols = list(self.symbols_info.keys())
+                    break  # 成功获取，退出重试循环
+                except Exception:
+                    # 获取失败，等待2秒后重试
+                    traceback.print_exc()
+                    await asyncio.sleep(2)
         # 创建信号量，限制最大并发数为10，避免API限制
         semaphore = asyncio.Semaphore(10)
         print(now, f"{market}任务开始 - 总交易对数量: {len(symbols)}", flush=True)
