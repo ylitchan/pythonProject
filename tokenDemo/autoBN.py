@@ -993,6 +993,7 @@ class AUTOBN:
         if now.minute % 15 == 0:
             for i in range(10):
                 try:
+                    self.get_position_risk()
                     self.get_symbols_info()
                     symbols = list(self.symbols_info.keys())
                     break  # 成功获取，退出重试循环
