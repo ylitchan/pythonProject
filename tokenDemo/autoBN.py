@@ -515,20 +515,20 @@ class AUTOBN:
                     period="15m",
                     limit=30,
                 )
-                # 获取当前时间并设置为最近的前一个整点时间（0,15,30,45分）
-                minute = dtn.minute
-                # 计算最近的前一个整点时间
-                if minute < 15:
-                    target_minute = 0
-                elif minute < 30:
-                    target_minute = 15
-                elif minute < 45:
-                    target_minute = 30
-                else:
-                    target_minute = 45
-                dtn_target = dtn.replace(minute=target_minute, second=0, microsecond=0)
-                if oi_15m[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
-                    return False
+                # # 获取当前时间并设置为最近的前一个整点时间（0,15,30,45分）
+                # minute = dtn.minute
+                # # 计算最近的前一个整点时间
+                # if minute < 15:
+                #     target_minute = 0
+                # elif minute < 30:
+                #     target_minute = 15
+                # elif minute < 45:
+                #     target_minute = 30
+                # else:
+                #     target_minute = 45
+                # dtn_target = dtn.replace(minute=target_minute, second=0, microsecond=0)
+                # if oi_15m[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                #     return False
                 sumOpenInterestValue_15m = [
                     float(i["sumOpenInterestValue"]) for i in oi_15m
                 ]  # 持仓价值（美元）
