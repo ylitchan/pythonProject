@@ -992,7 +992,6 @@ class AUTOBN:
         # 重试机制：最多尝试10次获取交易对信息
         for i in range(10):
             try:
-                self.get_position_risk()
                 self.get_symbols_info()
                 symbols = list(self.symbols_info.keys())
                 break  # 成功获取，退出重试循环
@@ -1027,6 +1026,7 @@ class AUTOBN:
             flush=True,
         )
         if self.alert_all != self.alert_all_old:
+            self.get_position_risk()
             self.alert_all_old = copy.deepcopy(self.alert_all)
             # 保存分析结果到文件
             with open(self.alert_all_file, "w") as f:
