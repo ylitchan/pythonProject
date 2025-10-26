@@ -417,20 +417,20 @@ class AUTOBN:
         async with semaphore:
             try:
                 # 获取持仓量历史数据（30天）
-                oi = await asyncio.to_thread(
+                oi_1d = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
                     period="1d",
                     limit=30,
                 )
                 dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
-                if oi[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                if oi_1d[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
                     return False
-                sumOpenInterestValue = [
-                    float(i["sumOpenInterestValue"]) for i in oi
+                sumOpenInterestValue_1d = [
+                    float(i["sumOpenInterestValue"]) for i in oi_1d
                 ]  # 持仓价值（美元）
-                sumOpenInterest = [
-                    float(i["sumOpenInterest"]) for i in oi
+                sumOpenInterest_1d = [
+                    float(i["sumOpenInterest"]) for i in oi_1d
                 ]  # 持仓数量（合约数）
 
                 # 获取多空比历史数据（100天）
@@ -440,50 +440,30 @@ class AUTOBN:
 
                 # 打印分析数据，便于监控和调试
                 print(
-                    f"{symbol} 增仓信号{max(sumOpenInterest[-3:-1])}——>{sumOpenInterest[-1]} ${max(sumOpenInterestValue[-3:-1])}——>${sumOpenInterestValue[-1]}",
+                    f"{symbol} 增仓信号{max(sumOpenInterest_1d[-3:-1])}——>{sumOpenInterest_1d[-1]} ${max(sumOpenInterestValue_1d[-3:-1])}——>${sumOpenInterestValue_1d[-1]}",
                     flush=True,
                 )
-                oi_5 = await asyncio.to_thread(
+                oi_5m = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
                     period="5m",
                     limit=1,
                 )
-                sumOpenInterestValue_5 = [
-                    float(i["sumOpenInterestValue"]) for i in oi_5
+                sumOpenInterestValue_5m = [
+                    float(i["sumOpenInterestValue"]) for i in oi_5m
                 ]  # 持仓价值（美元）
-                sumOpenInterest_5 = [
-                    float(i["sumOpenInterest"]) for i in oi_5
+                sumOpenInterest_5m = [
+                    float(i["sumOpenInterest"]) for i in oi_5m
                 ]  # 持仓数量（合约数）
                 if positionSide == "LONG":
                     # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
-                    if sumOpenInterest_5[-1] <= max(
-                        sumOpenInterest[-2:]
-                    ) or sumOpenInterestValue_5[-1] <= max(sumOpenInterestValue[-2:]):
+                    if sumOpenInterest_5m[-1] <= max(
+                        sumOpenInterest_1d[-2:]
+                    ) or sumOpenInterestValue_5m[-1] <= max(
+                        sumOpenInterestValue_1d[-2:]
+                    ):
                         return False
-                    # 条件2：检查历史数据，寻找合适的增仓信号
-                    # for index in range(-2, -len(oi), -1):
-                    #     # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                    #     if (
-                    #         sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and
-                    #         sumOpenInterestValue[index] > max(
-                    #             sumOpenInterestValue[index - 2:index])
-                    #     ):
-                    #         return False
-                    #     # 如果持仓量增加但价值减少，说明价格下跌但资金流入，适合做多
-                    #     elif (
-                    #         sumOpenInterest[index] > max(sumOpenInterest[index - 2:index]) and
-                    #         sumOpenInterestValue[index] < min(
-                    #             sumOpenInterestValue[index - 2:index])
-                    #     ):
-                    #         return True
-                    #     # 如果持仓价值增加但持仓量减少，说明价格上涨但资金流出，适合做多
-                    #     elif (
-                    #         sumOpenInterestValue[index] > sumOpenInterestValue[index - 1] and
-                    #         sumOpenInterest[index] < sumOpenInterest[index - 1]
-                    #     ):
-                    #         return True
                     return True
                 else:
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
@@ -491,12 +471,13 @@ class AUTOBN:
                     return any(
                         (
                             kline_close[index - 1] == max(kline_close)
-                            and sumOpenInterestValue[index] == max(sumOpenInterestValue)
+                            and sumOpenInterestValue_1d[index]
+                            == max(sumOpenInterestValue_1d)
                             and kline_close[-2] > max(kline_close[-4:-2])
-                            and sumOpenInterestValue[-1]
-                            > max(sumOpenInterestValue[-3:-1])
+                            and sumOpenInterestValue_1d[-1]
+                            > max(sumOpenInterestValue_1d[-3:-1])
                             and max(kline_volume[-3:-1]) == max(kline_volume)
-                            and sumOpenInterest[-1] < sumOpenInterest[-2]
+                            and sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
                         )
                         for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
                     )
@@ -528,7 +509,7 @@ class AUTOBN:
         async with semaphore:
             try:
                 # 获取持仓量历史数据（30天）
-                oi = await asyncio.to_thread(
+                oi_15m = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
                     period="15m",
@@ -546,37 +527,39 @@ class AUTOBN:
                 else:
                     target_minute = 45
                 dtn_target = dtn.replace(minute=target_minute, second=0, microsecond=0)
-                if oi[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                if oi_15m[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
                     return False
-                sumOpenInterestValue = [
-                    float(i["sumOpenInterestValue"]) for i in oi
+                sumOpenInterestValue_15m = [
+                    float(i["sumOpenInterestValue"]) for i in oi_15m
                 ]  # 持仓价值（美元）
-                sumOpenInterest = [
-                    float(i["sumOpenInterest"]) for i in oi
+                sumOpenInterest_15m = [
+                    float(i["sumOpenInterest"]) for i in oi_15m
                 ]  # 持仓数量（合约数）
 
                 # 打印减仓信号数据，便于监控
                 print(
-                    f"{symbol} 减仓信号{sumOpenInterest[-2]}——>{sumOpenInterest[-1]} ${sumOpenInterestValue[-2]}——>${sumOpenInterestValue[-1]}",
+                    f"{symbol} 减仓信号{sumOpenInterest_15m[-2]}——>{sumOpenInterest_15m[-1]} ${sumOpenInterestValue_15m[-2]}——>${sumOpenInterestValue_15m[-1]}",
                     flush=True,
                 )
+                oi_1d = await asyncio.to_thread(
+                    self.um_futures_client.open_interest_hist,
+                    symbol=symbol,
+                    period="1d",
+                    limit=2,
+                )
+                sumOpenInterestValue_1d = [
+                    float(i["sumOpenInterestValue"]) for i in oi_1d
+                ]  # 持仓价值（美元）
+                sumOpenInterest_1d = [
+                    float(i["sumOpenInterest"]) for i in oi_1d
+                ]  # 持仓数量（合约数）
+                if sumOpenInterest_15m[-1] <= max(
+                    sumOpenInterest_1d[-2:]
+                ) or sumOpenInterestValue_15m[-1] <= max(sumOpenInterestValue_1d[-2:]):
+                    return False
                 if positionSide == "LONG":
-                    oi_5 = await asyncio.to_thread(
-                        self.um_futures_client.open_interest_hist,
-                        symbol=symbol,
-                        period="1d",
-                        limit=2,
-                    )
-                    sumOpenInterestValue_5 = [
-                        float(i["sumOpenInterestValue"]) for i in oi_5
-                    ]  # 持仓价值（美元）
-                    sumOpenInterest_5 = [
-                        float(i["sumOpenInterest"]) for i in oi_5
-                    ]  # 持仓数量（合约数）
                     if (
-                        sumOpenInterest[-1] > max(sumOpenInterest_5[-2:])
-                        and sumOpenInterestValue[-1] > max(sumOpenInterestValue_5[-2:])
-                        and sum(kline_volume[: -int(len(kline_volume) * 2 / 3)])
+                        sum(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         / len(kline_volume[: -int(len(kline_volume) * 2 / 3)])
                         * 9
                         < kline_volume[-1]
@@ -584,24 +567,7 @@ class AUTOBN:
                         return True
                     return False
                 else:
-                    oi_5 = await asyncio.to_thread(
-                        self.um_futures_client.open_interest_hist,
-                        symbol=symbol,
-                        period="5m",
-                        limit=1,
-                    )
-                    sumOpenInterestValue_5 = [
-                        float(i["sumOpenInterestValue"]) for i in oi_5
-                    ]  # 持仓价值（美元）
-                    sumOpenInterest_5 = [
-                        float(i["sumOpenInterest"]) for i in oi_5
-                    ]  # 持仓数量（合约数）
-                    if (
-                        sumOpenInterest_5[-1] <= sumOpenInterest[-1]
-                        or sumOpenInterestValue_5[-1] <= sumOpenInterestValue[-1]
-                    ):
-                        return False
-                    for index in range(-2, -len(oi), -1):
+                    for index in range(-2, -len(oi_15m), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
                         if kline_close[index - 1] > price_target:
                             return False
