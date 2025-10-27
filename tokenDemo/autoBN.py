@@ -953,7 +953,7 @@ class AUTOBN:
             self.send_msg(f"{market}任务开始 - {now}")
 
         # 重试机制：最多尝试10次获取交易对信息
-        if now.minute % 15 == 0:
+        if now.minute % 15 == 0 or not self.symbols:
             for i in range(10):
                 try:
                     self.get_position_risk()
