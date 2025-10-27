@@ -444,27 +444,9 @@ class AUTOBN:
                     f"{symbol} 增仓信号{max(sumOpenInterest_1d[-3:-1])}——>{sumOpenInterest_1d[-1]} ${max(sumOpenInterestValue_1d[-3:-1])}——>${sumOpenInterestValue_1d[-1]}",
                     flush=True,
                 )
-                oi_5m = await asyncio.to_thread(
-                    self.um_futures_client.open_interest_hist,
-                    symbol=symbol,
-                    period="5m",
-                    limit=1,
-                )
-                sumOpenInterestValue_5m = [
-                    float(i["sumOpenInterestValue"]) for i in oi_5m
-                ]  # 持仓价值（美元）
-                sumOpenInterest_5m = [
-                    float(i["sumOpenInterest"]) for i in oi_5m
-                ]  # 持仓数量（合约数）
                 if positionSide == "LONG":
                     # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
-                    if sumOpenInterest_5m[-1] <= max(
-                        sumOpenInterest_1d[-2:]
-                    ) or sumOpenInterestValue_5m[-1] <= max(
-                        sumOpenInterestValue_1d[-2:]
-                    ):
-                        return False
                     return True
                 else:
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
@@ -492,9 +474,6 @@ class AUTOBN:
         symbol,
         positionSide,
         kline_close=None,
-        kline_volume=None,
-        dtn: datetime = None,
-        price_target: float = None,
     ):
         """
         检查减仓信号，判断是否应该平仓
@@ -510,36 +489,22 @@ class AUTOBN:
         async with semaphore:
             try:
                 # 获取持仓量历史数据（30天）
-                oi_15m = await asyncio.to_thread(
+                oi_5m = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
-                    period="15m",
-                    limit=30,
+                    period="5m",
+                    limit=1,
                 )
-                # # 获取当前时间并设置为最近的前一个整点时间（0,15,30,45分）
-                # minute = dtn.minute
-                # # 计算最近的前一个整点时间
-                # if minute < 15:
-                #     target_minute = 0
-                # elif minute < 30:
-                #     target_minute = 15
-                # elif minute < 45:
-                #     target_minute = 30
-                # else:
-                #     target_minute = 45
-                # dtn_target = dtn.replace(minute=target_minute, second=0, microsecond=0)
-                # if oi_15m[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
-                #     return False
-                sumOpenInterestValue_15m = [
-                    float(i["sumOpenInterestValue"]) for i in oi_15m
+                sumOpenInterestValue_5m = [
+                    float(i["sumOpenInterestValue"]) for i in oi_5m
                 ]  # 持仓价值（美元）
-                sumOpenInterest_15m = [
-                    float(i["sumOpenInterest"]) for i in oi_15m
+                sumOpenInterest_5m = [
+                    float(i["sumOpenInterest"]) for i in oi_5m
                 ]  # 持仓数量（合约数）
 
                 # 打印减仓信号数据，便于监控
                 print(
-                    f"{symbol} 减仓信号{sumOpenInterest_15m[-2]}——>{sumOpenInterest_15m[-1]} ${sumOpenInterestValue_15m[-2]}——>${sumOpenInterestValue_15m[-1]}",
+                    f"{symbol} 减仓信号{sumOpenInterest_5m[-2]}——>{sumOpenInterest_5m[-1]} ${sumOpenInterestValue_5m[-2]}——>${sumOpenInterestValue_5m[-1]}",
                     flush=True,
                 )
                 oi_1d = await asyncio.to_thread(
@@ -554,9 +519,9 @@ class AUTOBN:
                 sumOpenInterest_1d = [
                     float(i["sumOpenInterest"]) for i in oi_1d
                 ]  # 持仓数量（合约数）
-                if sumOpenInterest_15m[-1] <= max(
+                if sumOpenInterest_5m[-1] <= max(
                     sumOpenInterest_1d[-2:]
-                ) or sumOpenInterestValue_15m[-1] <= max(sumOpenInterestValue_1d[-2:]):
+                ) or sumOpenInterestValue_5m[-1] <= max(sumOpenInterestValue_1d[-2:]):
                     return False
                 if positionSide == "LONG":
                     return True
@@ -756,8 +721,6 @@ class AUTOBN:
                             symbol,
                             open_info[3],
                             kline_close_15,
-                            kline_volume_15,
-                            dtn,
                         )
                     ):
                         zy = kline_close[-1] * (1 + kline_zf)
@@ -783,9 +746,6 @@ class AUTOBN:
                             symbol,
                             open_info[3],
                             kline_close_15,
-                            kline_volume_15,
-                            dtn,
-                            open_info[0],
                         )
                     ):
                         # 设置止盈止损：止盈9%，止损9%
