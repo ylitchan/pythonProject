@@ -832,11 +832,10 @@ class AUTOBN:
                         )
                     zy = kline_close[-1] * (1 + kline_zf)
                     zs = kline_close[-1] * (1 - kline_zf)
-                    if symbol not in self.alert_all["OBSERVATIONS"]:
-                        # 发送做多信号通知
-                        self.send_msg(
-                            f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
-                        )
+                    # 发送做多信号通知
+                    self.send_msg(
+                        f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
+                    )
                     self.alert_all["OBSERVATIONS"][symbol] = [
                         kline_close[-1],
                         time.time(),
