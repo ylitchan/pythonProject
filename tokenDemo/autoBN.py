@@ -674,6 +674,11 @@ class AUTOBN:
             symbols_info: 交易对配置信息
         """
         try:
+            close_info = self.alert_all["POSITIONS"].get(symbol)
+            open_info = self.alert_all["OBSERVATIONS"].get(symbol)
+            dtn_minute = dtn.minute % 3 == 0
+            if not close_info and not open_info and not dtn_minute:
+                return
             # 获取日K线数据（30天）
             kline = await self.get_kline(semaphore, symbol, "1Dutc")
             success.add(symbol)  # 记录成功处理的交易对
@@ -686,7 +691,7 @@ class AUTOBN:
                 list(map(lambda k: abs(k[4] / k[1] - 1), kline[-10:]))
             ) / len(kline[-10:])
             # 检查现有持仓是否需要平仓
-            if close_info := self.alert_all["POSITIONS"].get(symbol):
+            if close_info:
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
                 if (
@@ -730,7 +735,7 @@ class AUTOBN:
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
-            elif dtn.minute % 3 == 0:
+            elif dtn_minute:
                 # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
                 kline_volume = [k[5] for k in kline]
                 # 做多信号判断：需要同时满足以下条件
@@ -804,7 +809,7 @@ class AUTOBN:
                     if self.open_bn_position(symbol, "SELL", "SHORT", 0.1):
                         # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
                         self.alert_all["POSITIONS"][symbol] = [zs, zy, "BUY", "SHORT"]
-            if open_info := self.alert_all["OBSERVATIONS"].get(symbol):
+            if open_info:
                 if time.time() - open_info[1] > 24 * 60 * 60:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
