@@ -417,38 +417,38 @@ class AUTOBN:
         """
         async with semaphore:
             try:
-                # 获取持仓量历史数据（30天）
-                oi_1d = await asyncio.to_thread(
-                    self.um_futures_client.open_interest_hist,
-                    symbol=symbol,
-                    period="1d",
-                    limit=30,
-                )
-                dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
-                if oi_1d[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
-                    return False
-                sumOpenInterestValue_1d = [
-                    float(i["sumOpenInterestValue"]) for i in oi_1d
-                ]  # 持仓价值（美元）
-                sumOpenInterest_1d = [
-                    float(i["sumOpenInterest"]) for i in oi_1d
-                ]  # 持仓数量（合约数）
-
-                # 获取多空比历史数据（100天）
-                # lsar = await asyncio.to_thread(self.um_futures_client.long_short_account_ratio, symbol=symbol,
-                #                                period="1d", limit=30)
-                # lsar = [float(i['longShortRatio']) for i in lsar]  # 多空比列表
-
-                # 打印分析数据，便于监控和调试
-                print(
-                    f"{symbol} 增仓信号{max(sumOpenInterest_1d[-3:-1])}——>{sumOpenInterest_1d[-1]} ${max(sumOpenInterestValue_1d[-3:-1])}——>${sumOpenInterestValue_1d[-1]}",
-                    flush=True,
-                )
                 if positionSide == "LONG":
                     # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
                     return True
                 else:
+                    # 获取持仓量历史数据（30天）
+                    oi_1d = await asyncio.to_thread(
+                        self.um_futures_client.open_interest_hist,
+                        symbol=symbol,
+                        period="1d",
+                        limit=30,
+                    )
+                    dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
+                    if oi_1d[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                        return False
+                    sumOpenInterestValue_1d = [
+                        float(i["sumOpenInterestValue"]) for i in oi_1d
+                    ]  # 持仓价值（美元）
+                    sumOpenInterest_1d = [
+                        float(i["sumOpenInterest"]) for i in oi_1d
+                    ]  # 持仓数量（合约数）
+
+                    # 获取多空比历史数据（100天）
+                    # lsar = await asyncio.to_thread(self.um_futures_client.long_short_account_ratio, symbol=symbol,
+                    #                                period="1d", limit=30)
+                    # lsar = [float(i['longShortRatio']) for i in lsar]  # 多空比列表
+
+                    # 打印分析数据，便于监控和调试
+                    print(
+                        f"{symbol} 增仓信号{max(sumOpenInterest_1d[-3:-1])}——>{sumOpenInterest_1d[-1]} ${max(sumOpenInterestValue_1d[-3:-1])}——>${sumOpenInterestValue_1d[-1]}",
+                        flush=True,
+                    )
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
                     return any(
