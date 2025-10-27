@@ -558,14 +558,7 @@ class AUTOBN:
                 ) or sumOpenInterestValue_15m[-1] <= max(sumOpenInterestValue_1d[-2:]):
                     return False
                 if positionSide == "LONG":
-                    if (
-                        sum(kline_volume[: -int(len(kline_volume) * 2 / 3)])
-                        / len(kline_volume[: -int(len(kline_volume) * 2 / 3)])
-                        * 9
-                        < kline_volume[-1]
-                    ):
-                        return True
-                    return False
+                    return True
                 else:
                     for index in range(-1, -len(kline_close), -1):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
@@ -748,6 +741,10 @@ class AUTOBN:
                         and open_info[0] < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-1]) < kline_volume_15[-1]
+                        and sum(kline_volume_15[: -int(len(kline_volume_15) * 2 / 3)])
+                        / len(kline_volume_15[: -int(len(kline_volume_15) * 2 / 3)])
+                        * 9
+                        < kline_volume_15[-1]
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
