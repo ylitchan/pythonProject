@@ -19,6 +19,7 @@ class AUTOBN:
     @classmethod
     def from_cfg(cls, **kwargs):
         obj = cls.__new__(cls)
+        obj.symbols = []
         # 基本配置：优先使用 kwargs，其次使用默认/环境
         # 支持键：qy_key, leverage, health4open, margin_mode/position_mode,
         #        session/session_verify/session_headers,
@@ -950,7 +951,6 @@ class AUTOBN:
         self.is_early_morning = now.hour == 8 and now.minute == 10
         if self.is_early_morning:
             self.send_msg(f"{market}任务开始 - {now}")
-        symbols = []
 
         # 重试机制：最多尝试10次获取交易对信息
         if now.minute % 15 == 0:
@@ -958,7 +958,7 @@ class AUTOBN:
                 try:
                     self.get_position_risk()
                     self.get_symbols_info()
-                    symbols = list(self.symbols_info.keys())
+                    self.symbols = list(self.symbols_info.keys())
                     break  # 成功获取，退出重试循环
                 except Exception:
                     # 获取失败，等待2秒后重试
@@ -966,14 +966,14 @@ class AUTOBN:
                     await asyncio.sleep(2)
         # 创建信号量，限制最大并发数为10，避免API限制
         semaphore = asyncio.Semaphore(10)
-        print(now, f"{market}任务开始 - 总交易对数量: {len(symbols)}", flush=True)
+        print(now, f"{market}任务开始 - 总交易对数量: {len(self.symbols)}", flush=True)
 
         success = set()  # 记录成功处理的交易对
         chunk_size = 10  # 分批处理，避免内存占用过高
         # symbols = ["OGUSDT"]
         # 分批处理所有交易对
-        for i in range(0, len(symbols), chunk_size):
-            symbol_chunk = symbols[i : i + chunk_size]  # 当前批次的交易对
+        for i in range(0, len(self.symbols), chunk_size):
+            symbol_chunk = self.symbols[i : i + chunk_size]  # 当前批次的交易对
             # 创建异步任务列表
             tasks = [
                 self.rzq_token(semaphore, symbol, success, now)
