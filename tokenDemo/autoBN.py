@@ -445,10 +445,10 @@ class AUTOBN:
                     # lsar = [float(i['longShortRatio']) for i in lsar]  # 多空比列表
 
                     # 打印分析数据，便于监控和调试
-                    print(
-                        f"{symbol} 增仓信号{max(sumOpenInterest_1d[-3:-1])}——>{sumOpenInterest_1d[-1]} ${max(sumOpenInterestValue_1d[-3:-1])}——>${sumOpenInterestValue_1d[-1]}",
-                        flush=True,
-                    )
+                    # print(
+                    #     f"{symbol} 增仓信号{max(sumOpenInterest_1d[-3:-1])}——>{sumOpenInterest_1d[-1]} ${max(sumOpenInterestValue_1d[-3:-1])}——>${sumOpenInterestValue_1d[-1]}",
+                    #     flush=True,
+                    # )
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
                     return any(
@@ -503,10 +503,10 @@ class AUTOBN:
                 ]  # 持仓数量（合约数）
 
                 # 打印减仓信号数据，便于监控
-                print(
-                    f"{symbol} 减仓信号{sumOpenInterest_5m[-2]}——>{sumOpenInterest_5m[-1]} ${sumOpenInterestValue_5m[-2]}——>${sumOpenInterestValue_5m[-1]}",
-                    flush=True,
-                )
+                # print(
+                #     f"{symbol} 减仓信号{sumOpenInterest_5m[-2]}——>{sumOpenInterest_5m[-1]} ${sumOpenInterestValue_5m[-2]}——>${sumOpenInterestValue_5m[-1]}",
+                #     flush=True,
+                # )
                 oi_1d = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
