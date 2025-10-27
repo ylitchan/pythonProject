@@ -676,7 +676,7 @@ class AUTOBN:
         try:
             close_info = self.alert_all["POSITIONS"].get(symbol)
             open_info = self.alert_all["OBSERVATIONS"].get(symbol)
-            dtn_minute = dtn.minute % 3 == 0
+            dtn_minute = dtn.minute % 4 == 0
             if not close_info and not open_info and not dtn_minute:
                 return
             # 获取日K线数据（30天）
