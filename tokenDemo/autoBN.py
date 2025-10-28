@@ -726,7 +726,7 @@ class AUTOBN:
                         zy = kline_close[-1] * (1 + kline_zf)
                         zs = kline_close[-1] * (1 - kline_zf)
                         self.send_msg(
-                            f"==={symbol}**BZ**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
+                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
                         )
                         if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                             self.alert_all["POSITIONS"][symbol] = [
@@ -752,7 +752,7 @@ class AUTOBN:
                         zy = kline_close[-1] * (1 + kline_zf * 0.5)
                         zs = kline_close[-1] * (1 - kline_zf * 0.5)
                         self.send_msg(
-                            f"==={symbol}**BZ**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
+                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
                         )
                         if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                             self.alert_all["POSITIONS"][symbol] = [
@@ -1153,19 +1153,19 @@ async def main():
     )
 
     # 设置币安市场分析定时任务
-    scheduler.add_job(
-        autobn.rzq_market,  # 执行的函数
-        "cron",  # 调度类型：按日历规则
-        hour="*",  # 每小时执行
-        minute="*",  # 每5分钟
-        second="00",  # 整点秒数
-        timezone="Asia/Shanghai",  # 上海时区
-        args=("BN",),  # 传递参数
-        misfire_grace_time=10,  # 错过执行的宽限时间（秒）
-        max_instances=1,  # 同一时间只允许1个实例运行
-        coalesce=True,  # 合并错过的执行（避免积压）
-        name="币安市场分析任务",  # 任务名称
-    )
+    # scheduler.add_job(
+    #     autobn.rzq_market,  # 执行的函数
+    #     "cron",  # 调度类型：按日历规则
+    #     hour="*",  # 每小时执行
+    #     minute="*",  # 每5分钟
+    #     second="00",  # 整点秒数
+    #     timezone="Asia/Shanghai",  # 上海时区
+    #     args=("BN",),  # 传递参数
+    #     misfire_grace_time=10,  # 错过执行的宽限时间（秒）
+    #     max_instances=1,  # 同一时间只允许1个实例运行
+    #     coalesce=True,  # 合并错过的执行（避免积压）
+    #     name="币安市场分析任务",  # 任务名称
+    # )
 
     # 启动调度器
     scheduler.start()
