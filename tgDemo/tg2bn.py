@@ -463,7 +463,7 @@ class HandleMsg:
         position_risk = []
         for p in account_data["positions"]:
             position_risk.append(
-                f"==={p['symbol']}===\n开仓价格:{float(p['notional']) / float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓收益:{p['unrealizedProfit']} USDT"
+                f"==={p['symbol']}===\n开仓价格:{float(p['notional']) / float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unrealizedProfit']} USDT\n持仓收益:{p['unrealizedProfit'] / abs(p['notional']) * 100:.2f}%"
             )
         position_risk = "\n\n".join(position_risk)
         self.autobn.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{position_risk}")
