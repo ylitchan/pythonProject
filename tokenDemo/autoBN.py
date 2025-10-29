@@ -474,6 +474,7 @@ class AUTOBN:
         symbol,
         positionSide,
         kline_close=None,
+        time_target=None,
     ):
         """
         检查减仓信号，判断是否应该平仓
@@ -526,7 +527,9 @@ class AUTOBN:
                 if positionSide == "LONG":
                     return True
                 else:
-                    for index in range(-1, -len(kline_close), -1):
+                    for index in range(
+                        -1, int((time_target - time.time()) / 15 / 60), -1
+                    ):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
                         if kline_close[index - 1] > max(kline_close[: index - 1]):
                             return False
@@ -747,6 +750,7 @@ class AUTOBN:
                             symbol,
                             open_info[3],
                             kline_close_15,
+                            open_info[1],
                         )
                     ):
                         # 设置止盈止损：止盈9%，止损9%
