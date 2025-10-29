@@ -374,7 +374,7 @@ class AUTOBN:
                 )
                 realized_pnl = price_diff * close_amount
                 pnl_percent = price_diff / entryPrice
-                msg = f"{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio * 100:.0f}%\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent * self.leverage * 100:.2f}%"
+                msg = f"{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent * self.leverage:.2%}"
                 self.send_msg(msg)
                 return symbol  # 成功平仓，退出循环
             except Exception:
@@ -607,13 +607,13 @@ class AUTOBN:
                         # 基差超过2%且距离上次通知超过60秒，发送警告
                         BASIS[p["symbol"]] = time.time()
                         self.send_msg(
-                            f"{p['symbol']} 基差超过2%：{basis * 100 - 100:.2f}%", True
+                            f"{p['symbol']} 基差超过2%：{basis * 100 - 100:.2%}", True
                         )
                     elif basis >= 1.015 and time_now - BASIS.get(p["symbol"], 0) > 180:
                         # 基差超过1.5%且距离上次通知超过180秒，发送异常提醒
                         BASIS[p["symbol"]] = time.time()
                         self.send_msg(
-                            f"{p['symbol']} 基差异常：{basis * 100 - 100:.2f}%", True
+                            f"{p['symbol']} 基差异常：{basis * 100 - 100:.2%}", True
                         )
             except Exception:
                 # 异常处理：打印错误信息但不中断监控
