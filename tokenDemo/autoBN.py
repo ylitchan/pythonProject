@@ -791,7 +791,7 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
-                    zy = kline_close[-1] * (1 + kline_zf)
+                    zy = kline_close[-1] * (1 + kline_zf * 0.5)
                     zs = kline_close[-1] * (1 - kline_zf)
                     # 发送做多信号通知
                     self.send_msg(
