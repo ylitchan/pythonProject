@@ -724,10 +724,10 @@ class AUTOBN:
                             kline_close_15,
                         )
                     ):
-                        zy = kline_close[-1] * (1 + kline_zf)
+                        zy = kline_close[-1] * (1 + kline_zf * 0.5)
                         zs = kline_close[-1] * (1 - kline_zf)
                         self.send_msg(
-                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
+                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf * 0.5:.2%}"
                         )
                         if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                             self.alert_all["POSITIONS"][symbol] = [
@@ -753,7 +753,7 @@ class AUTOBN:
                         zy = kline_close[-1] * (1 + kline_zf * 0.5)
                         zs = kline_close[-1] * (1 - kline_zf * 0.5)
                         self.send_msg(
-                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}"
+                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf * 0.5:.2%}"
                         )
                         if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                             self.alert_all["POSITIONS"][symbol] = [
@@ -795,7 +795,7 @@ class AUTOBN:
                     zs = kline_close[-1] * (1 - kline_zf)
                     # 发送做多信号通知
                     self.send_msg(
-                        f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
+                        f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf * 0.5:.2%}"
                     )
                     self.alert_all["OBSERVATIONS"][symbol] = [
                         kline_close[-1],
@@ -831,7 +831,7 @@ class AUTOBN:
                     zs = kline_close[-1] * (1 + kline_zf)
                     # 发送做空信号通知
                     self.send_msg(
-                        f"==={symbol}**BD**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}"
+                        f"==={symbol}**BD**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf * 0.5:.2%}"
                     )
                     # 执行开仓操作
                     if self.open_bn_position(symbol, "SELL", "SHORT", 0.1):
