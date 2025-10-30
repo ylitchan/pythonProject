@@ -491,17 +491,17 @@ class AUTOBN:
         async with semaphore:
             try:
                 # 获取持仓量历史数据（30天）
-                oi_15m = await asyncio.to_thread(
+                oi_5m = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
-                    period="15m",
+                    period="5m",
                     limit=30,
                 )
-                sumOpenInterestValue_15m = [
-                    float(i["sumOpenInterestValue"]) for i in oi_15m
+                sumOpenInterestValue_5m = [
+                    float(i["sumOpenInterestValue"]) for i in oi_5m
                 ]  # 持仓价值（美元）
-                sumOpenInterest_15m = [
-                    float(i["sumOpenInterest"]) for i in oi_15m
+                sumOpenInterest_5m = [
+                    float(i["sumOpenInterest"]) for i in oi_5m
                 ]  # 持仓数量（合约数）
 
                 # 打印减仓信号数据，便于监控
@@ -521,26 +521,31 @@ class AUTOBN:
                 sumOpenInterest_1d = [
                     float(i["sumOpenInterest"]) for i in oi_1d
                 ]  # 持仓数量（合约数）
-                if sumOpenInterest_15m[-1] <= max(
+                if sumOpenInterest_5m[-1] <= max(
                     sumOpenInterest_1d[-2:]
-                ) or sumOpenInterestValue_15m[-1] <= max(sumOpenInterestValue_1d[-2:]):
+                ) or sumOpenInterestValue_5m[-1] <= max(sumOpenInterestValue_1d[-2:]):
                     return False
                 if positionSide == "LONG":
                     return True
                 else:
-                    if sumOpenInterest_15m[-1] <= max(
-                        sumOpenInterest_15m[-3:-1]
-                    ) or sumOpenInterestValue_15m[-1] <= max(
-                        sumOpenInterestValue_15m[-3:-1]
+                    if sumOpenInterest_5m[-1] <= max(
+                        sumOpenInterest_5m[-7:-1]
+                    ) or sumOpenInterestValue_5m[-1] <= max(
+                        sumOpenInterestValue_5m[-7:-1]
                     ):
                         return False
                     for index in range(
                         -2, int((time_target - time.time()) / 15 / 60), -1
                     ):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                        if kline_close[index] > kline_close[index - 1] and kline_volume[
-                            index
-                        ] > max(kline_volume[index - 2 : index]):
+                        if (
+                            kline_close[index] > kline_close[index - 1]
+                            and kline_volume[index]
+                            > max(kline_volume[index - 2 : index])
+                            and sumOpenInterest_5m[-1] > max(sumOpenInterest_5m[-7:-1])
+                            and sumOpenInterestValue_5m[-1]
+                            > max(sumOpenInterestValue_5m[-7:-1])
+                        ):
                             return False
                     return True
             except Exception:
