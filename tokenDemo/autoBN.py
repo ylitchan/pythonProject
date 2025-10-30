@@ -647,16 +647,15 @@ class AUTOBN:
         try:
             close_info = self.alert_all["POSITIONS"].get(symbol)
             open_info = self.alert_all["OBSERVATIONS"].get(symbol)
-            dtn_minute = dtn.minute % 2 == 0
+            dtn_minute = dtn.minute % 1 == 0
             if not close_info and not open_info and not dtn_minute:
                 return
             # 获取日K线数据（30天）
             kline = await self.get_kline(semaphore, symbol, "1Dutc")
-            success.add(symbol)  # 记录成功处理的交易对
-
             # 数据量检查：至少需要4根K线进行分析
             if len(kline) < 4:
                 return
+            success.add(symbol)  # 记录成功处理的交易对
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             kline_zf = sum(
                 list(map(lambda k: abs(k[4] / k[1] - 1), kline[-10:]))
