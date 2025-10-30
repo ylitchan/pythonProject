@@ -474,6 +474,7 @@ class AUTOBN:
         symbol,
         positionSide,
         kline_close=None,
+        kline_volume=None,
         time_target=None,
     ):
         """
@@ -528,10 +529,12 @@ class AUTOBN:
                     return True
                 else:
                     for index in range(
-                        -1, int((time_target - time.time()) / 15 / 60), -1
+                        -2, int((time_target - time.time()) / 15 / 60), -1
                     ):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                        if kline_close[index - 1] > max(kline_close[: index - 1]):
+                        if kline_close[index] > kline_close[index - 1] and kline_volume[
+                            index
+                        ] > max(kline_volume[index - 2 : index]):
                             return False
                     return True
             except Exception:
@@ -743,13 +746,14 @@ class AUTOBN:
                             return
                     elif (
                         open_info[3] == "SHORT"
-                        and kline_close_15[-1] > open_info[0]
+                        and kline_close_15[-1] > kline_close_15[-2]
                         and max(kline_volume_15[-3:-1]) < kline_volume_15[-1]
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
                             open_info[3],
                             kline_close_15,
+                            kline_volume_15,
                             open_info[1],
                         )
                     ):
@@ -1075,12 +1079,12 @@ class AUTOA:
 
                 # 条件4：成交量检查（当日成交量必须是近期最大）
                 # 确保有足够的资金关注和参与
-                if hist.iloc[-3:-1]["成交量"].max() > hist.iloc[-1]["成交量"]:
+                if hist.iloc[-3:-1]["成交量"].max() >= hist.iloc[-1]["成交量"]:
                     continue
 
                 # 条件5：价格位置检查（当前价格必须在近期低点附近）
                 # 避免在高位追涨，寻找回调买入机会
-                if hist.iloc[: -i - 4]["收盘"].max() > hist.iloc[-i - 4]["收盘"]:
+                if hist.iloc[: -i - 4]["收盘"].max() >= hist.iloc[-i - 4]["收盘"]:
                     continue
 
                 # 条件6：避免连续上涨（防止追高）
