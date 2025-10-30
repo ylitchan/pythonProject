@@ -663,6 +663,7 @@ class AUTOBN:
                 return
             success.add(symbol)  # 记录成功处理的交易对
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
+            kline_volume = [k[5] for k in kline]
             kline_zf = sum(
                 list(map(lambda k: abs(k[4] / k[1] - 1), kline[-10:]))
             ) / len(kline[-10:])
@@ -721,6 +722,8 @@ class AUTOBN:
                     kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
                     if (
                         open_info[3] == "LONG"
+                        and kline_close[-2] < kline_close[-1]
+                        and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                         and open_info[0] < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-1]) < kline_volume_15[-1]
@@ -778,8 +781,6 @@ class AUTOBN:
                             self.alert_all["OBSERVATIONS"].pop(symbol)
                             return
             elif dtn_minute:
-                # 计算每日涨跌幅：(收盘价 - 开盘价) / 开盘价
-                kline_volume = [k[5] for k in kline]
                 # 做多信号判断：需要同时满足以下条件
                 # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
                 # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
