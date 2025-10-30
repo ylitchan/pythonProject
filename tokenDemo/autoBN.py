@@ -491,17 +491,17 @@ class AUTOBN:
         async with semaphore:
             try:
                 # 获取持仓量历史数据（30天）
-                oi_5m = await asyncio.to_thread(
+                oi_15m = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
-                    period="5m",
-                    limit=1,
+                    period="15m",
+                    limit=30,
                 )
-                sumOpenInterestValue_5m = [
-                    float(i["sumOpenInterestValue"]) for i in oi_5m
+                sumOpenInterestValue_15m = [
+                    float(i["sumOpenInterestValue"]) for i in oi_15m
                 ]  # 持仓价值（美元）
-                sumOpenInterest_5m = [
-                    float(i["sumOpenInterest"]) for i in oi_5m
+                sumOpenInterest_15m = [
+                    float(i["sumOpenInterest"]) for i in oi_15m
                 ]  # 持仓数量（合约数）
 
                 # 打印减仓信号数据，便于监控
@@ -521,13 +521,19 @@ class AUTOBN:
                 sumOpenInterest_1d = [
                     float(i["sumOpenInterest"]) for i in oi_1d
                 ]  # 持仓数量（合约数）
-                if sumOpenInterest_5m[-1] <= max(
+                if sumOpenInterest_15m[-1] <= max(
                     sumOpenInterest_1d[-2:]
-                ) or sumOpenInterestValue_5m[-1] <= max(sumOpenInterestValue_1d[-2:]):
+                ) or sumOpenInterestValue_15m[-1] <= max(sumOpenInterestValue_1d[-2:]):
                     return False
                 if positionSide == "LONG":
                     return True
                 else:
+                    if sumOpenInterest_15m[-1] <= max(
+                        sumOpenInterest_15m[-3:-1]
+                    ) or sumOpenInterestValue_15m[-1] <= max(
+                        sumOpenInterestValue_15m[-3:-1]
+                    ):
+                        return False
                     for index in range(
                         -2, int((time_target - time.time()) / 15 / 60), -1
                     ):
