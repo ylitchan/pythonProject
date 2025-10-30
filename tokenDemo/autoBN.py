@@ -538,14 +538,9 @@ class AUTOBN:
                         -2, int((time_target - time.time()) / 15 / 60), -1
                     ):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                        if (
-                            kline_close[index] > kline_close[index - 1]
-                            and kline_volume[index]
-                            > max(kline_volume[index - 2 : index])
-                            and sumOpenInterest_5m[-1] > max(sumOpenInterest_5m[-7:-1])
-                            and sumOpenInterestValue_5m[-1]
-                            > max(sumOpenInterestValue_5m[-7:-1])
-                        ):
+                        if kline_close[index] > kline_close[index - 1] and kline_volume[
+                            index
+                        ] > max(kline_volume[index - 2 : index]):
                             return False
                     return True
             except Exception:
