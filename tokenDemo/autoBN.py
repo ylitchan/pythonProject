@@ -533,6 +533,7 @@ class AUTOBN:
                     ) or sumOpenInterestValue_5m[-1] <= max(
                         sumOpenInterestValue_5m[-7:-1]
                     ):
+                        self.alert_all["OBSERVATIONS"].pop(symbol)
                         return False
                     for index in range(
                         -2, int((time_target - time.time()) / 15 / 60), -1
@@ -541,6 +542,7 @@ class AUTOBN:
                         if kline_close[index] > kline_close[index - 1] and kline_volume[
                             index
                         ] > max(kline_volume[index - 2 : index]):
+                            self.alert_all["OBSERVATIONS"].pop(symbol)
                             return False
                     return True
             except Exception:
