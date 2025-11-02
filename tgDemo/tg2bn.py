@@ -64,6 +64,7 @@ class HandleMsg:
             hour="08",
             minute="00",
             second="00",
+            timezone="Asia/Shanghai",  # 明确指定时区
             misfire_grace_time=300,
             max_instances=1,
             coalesce=True,
@@ -456,17 +457,28 @@ class HandleMsg:
         Args:
             account_data (dict): 包含账户信息的字典
         """
-        # 获取账户可用余额
-        if account_data is None:
-            account_data = self.autobn.um_futures_client.account()
-        balance = account_data["totalWalletBalance"]
-        position_risk = []
-        for p in account_data["positions"]:
-            position_risk.append(
-                f"==={p['symbol']}===\n开仓价格:{float(p['notional']) / float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unrealizedProfit']} USDT\n持仓收益:{p['unrealizedProfit'] / abs(p['notional']) * 100:.2%}"
-            )
-        position_risk = "\n\n".join(position_risk)
-        self.autobn.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{position_risk}")
+        try:
+            print(f"[{datetime.now()}] 账户信息推送任务开始执行", flush=True)
+            # 获取账户可用余额
+            if account_data is None:
+                account_data = self.autobn.um_futures_client.account()
+            balance = account_data["totalWalletBalance"]
+            position_risk = []
+            for p in account_data["positions"]:
+                if float(p['positionAmt']) != 0:  # 只显示有持仓的
+                    position_risk.append(
+                        f"==={p['symbol']}===\n开仓价格:{float(p['notional']) / float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unrealizedProfit']} USDT\n持仓收益:{p['unrealizedProfit'] / abs(p['notional']) * 100:.2%}"
+                    )
+            position_risk = "\n\n".join(position_risk) if position_risk else "暂无持仓"
+            self.autobn.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{position_risk}")
+            print(f"[{datetime.now()}] 账户信息推送任务执行完成", flush=True)
+        except Exception as e:
+            error_msg = f"账户信息推送任务执行失败: {str(e)}\n{traceback.format_exc()}"
+            print(error_msg, flush=True)
+            try:
+                self.autobn.send_msg(f"账户信息推送失败: {str(e)}")
+            except Exception:
+                pass
 
     async def handle_msg(self, message):
         """
@@ -634,6 +646,10 @@ async def raw(client, message):
 
 async def main():
     handle_msg.scheduler.start()
+    # 打印已注册的任务信息，用于调试
+    print(f"[{datetime.now()}] 调度器已启动，注册的任务:", flush=True)
+    for job in handle_msg.scheduler.get_jobs():
+        print(f"  - {job.name}: {job.id}, 下次执行时间: {job.next_run_time}", flush=True)
     # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发（实际不会发生）
