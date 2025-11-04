@@ -16,7 +16,7 @@ import sys
 
 # 添加项目根目录到系统路径
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from tokenDemo.autoBN import AUTOBN
+from tokenDemo.autoBN import AUTOBN, AUTOA
 
 
 # Telegram API凭证 - 用于连接到Telegram客户端
@@ -83,6 +83,19 @@ class HandleMsg:
             max_instances=1,  # 同一时间只允许1个实例运行
             coalesce=True,  # 合并错过的执行（避免积压）
             name="跟单止损任务",  # 任务名称
+        )
+        self.scheduler.add_job(
+            AUTOA.monitor_stocks,  # 执行的函数
+            "cron",  # 调度类型：按日历规则
+            hour="12,14",  # 交易时段：12点和14点
+            minute="52-57",  # 每小时的52-57分
+            second="00",  # 整点秒数
+            day_of_week="mon-fri",  # 周一至周五（交易日）
+            timezone="Asia/Shanghai",  # 上海时区
+            misfire_grace_time=60,  # 错过执行的宽限时间（秒）
+            max_instances=1,  # 同一时间只允许1个实例运行
+            coalesce=True,  # 合并错过的执行（避免积压）
+            name="股票监控任务",  # 任务名称
         )
 
     async def increase_oi(
@@ -465,12 +478,14 @@ class HandleMsg:
             balance = account_data["totalWalletBalance"]
             position_risk = []
             for p in account_data["positions"]:
-                if float(p['positionAmt']) != 0:  # 只显示有持仓的
+                if float(p["positionAmt"]) != 0:  # 只显示有持仓的
                     position_risk.append(
                         f"==={p['symbol']}===\n开仓价格:{float(p['notional']) / float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unrealizedProfit']} USDT\n持仓收益:{p['unrealizedProfit'] / abs(p['notional']) * 100:.2%}"
                     )
             position_risk = "\n\n".join(position_risk) if position_risk else "暂无持仓"
-            self.autobn.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{position_risk}")
+            self.autobn.send_msg(
+                f"账户余额:\n{balance} USDT\n持仓信息:\n{position_risk}"
+            )
             print(f"[{datetime.now()}] 账户信息推送任务执行完成", flush=True)
         except Exception as e:
             error_msg = f"账户信息推送任务执行失败: {str(e)}\n{traceback.format_exc()}"
@@ -649,7 +664,9 @@ async def main():
     # 打印已注册的任务信息，用于调试
     print(f"[{datetime.now()}] 调度器已启动，注册的任务:", flush=True)
     for job in handle_msg.scheduler.get_jobs():
-        print(f"  - {job.name}: {job.id}, 下次执行时间: {job.next_run_time}", flush=True)
+        print(
+            f"  - {job.name}: {job.id}, 下次执行时间: {job.next_run_time}", flush=True
+        )
     # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
     await stop_event.wait()  # 等待事件触发（实际不会发生）
