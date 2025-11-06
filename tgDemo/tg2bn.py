@@ -480,7 +480,7 @@ class HandleMsg:
             for p in account_data["positions"]:
                 if float(p["positionAmt"]) != 0:  # 只显示有持仓的
                     position_risk.append(
-                        f"==={p['symbol']}===\n开仓价格:{float(p['notional']) / float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unrealizedProfit']} USDT\n持仓收益:{float(p['unrealizedProfit']) / abs(float(p['notional'])) * 100:.2%}"
+                        f"==={p['symbol']}===\n开仓价格:{float(p['notional']) / float(p['positionAmt'])} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unrealizedProfit']} USDT\n持仓收益:{float(p['unrealizedProfit']) / abs(float(p['notional'])):.2%}"
                     )
             position_risk = "\n\n".join(position_risk) if position_risk else "暂无持仓"
             self.autobn.send_msg(
