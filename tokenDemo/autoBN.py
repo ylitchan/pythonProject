@@ -686,6 +686,12 @@ class AUTOBN:
                         )
                         close_info[1] = kline_close[-1] * (1 - kline_zf * 0.5)
                         close_info[0] = kline_close[-1] * (1 + kline_zf * 0.5)
+                        self.alert_all["OBSERVATIONS"][symbol] = [
+                            kline_close[-1],
+                            time.time(),
+                            "SELL",
+                            "",
+                        ]
                     else:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
@@ -719,6 +725,8 @@ class AUTOBN:
                 if time.time() - open_info[1] > 24 * 60 * 60:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
+                    if not open_info[3]:
+                        return
                     kline_15 = await self.get_kline(semaphore, symbol, "15m")
                     kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
                     kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
@@ -835,7 +843,6 @@ class AUTOBN:
                         )
                     )
                     and kline_close[-1] < kline_close[-2]
-                    and (zy := kline_close[-1] * (1 - kline_zf * 0.5)) < kline[-1][3]
                     and await self.increase_oi(
                         semaphore, symbol, "SHORT", kline_close, kline_volume, dtn
                     )
@@ -844,6 +851,7 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
+                    zy = kline_close[-1] * (1 - kline_zf * 0.5)
                     zs = kline_close[-1] * (1 + kline_zf * 0.5)
                     # 发送做空信号通知
                     self.send_msg(
