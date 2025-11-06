@@ -835,7 +835,7 @@ class AUTOBN:
                         )
                     )
                     and kline_close[-1] < kline_close[-2]
-                    and (zy := kline_close[-1] * (1 - kline_zf * 0.5)) > kline[-1][3]
+                    and (zy := kline_close[-1] * (1 - kline_zf * 0.5)) < kline[-1][3]
                     and await self.increase_oi(
                         semaphore, symbol, "SHORT", kline_close, kline_volume, dtn
                     )
