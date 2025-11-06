@@ -835,6 +835,7 @@ class AUTOBN:
                         )
                     )
                     and kline_close[-1] < kline_close[-2]
+                    and (zy := kline_close[-1] * (1 - kline_zf * 0.5)) > kline[-1][3]
                     and await self.increase_oi(
                         semaphore, symbol, "SHORT", kline_close, kline_volume, dtn
                     )
@@ -843,7 +844,6 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
-                    zy = kline_close[-1] * (1 - kline_zf * 0.5)
                     zs = kline_close[-1] * (1 + kline_zf * 0.5)
                     # 发送做空信号通知
                     self.send_msg(
