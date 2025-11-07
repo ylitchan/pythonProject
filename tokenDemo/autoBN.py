@@ -476,6 +476,7 @@ class AUTOBN:
         kline_close=None,
         kline_volume=None,
         time_target=None,
+        dtn=None,
     ):
         """
         检查减仓信号，判断是否应该平仓
@@ -536,7 +537,7 @@ class AUTOBN:
                         self.alert_all["OBSERVATIONS"].pop(symbol)
                         return False
                     for index in range(
-                        -2, int((time_target - time.time()) / 15 / 60), -1
+                        -2, int((time_target - dtn.timestamp()) / 15 / 60), -1
                     ):
                         # 如果持仓量和价值都增加，说明是正常增仓，继续等待
                         if kline_close[index] > kline_close[index - 1] and kline_volume[
@@ -688,7 +689,7 @@ class AUTOBN:
                         close_info[0] = kline_close[-1] * (1 + kline_zf * 0.5)
                         self.alert_all["OBSERVATIONS"][symbol] = [
                             kline_close[-1],
-                            time.time(),
+                            dtn.timestamp(),
                             "SELL",
                             "",
                         ]
@@ -699,7 +700,7 @@ class AUTOBN:
                         self.alert_all["POSITIONS"].pop(symbol)
                         self.alert_all["OBSERVATIONS"][symbol] = [
                             kline_close[-1],
-                            time.time(),
+                            dtn.timestamp(),
                             "SELL",
                             "SHORT",
                         ]
@@ -712,7 +713,7 @@ class AUTOBN:
                         close_info[1] = kline_close[-1] * (1 - kline_zf * 0.5)
                         self.alert_all["OBSERVATIONS"][symbol] = [
                             kline_close[-1],
-                            time.time(),
+                            dtn.timestamp(),
                             "SELL",
                             "SHORT",
                         ]
@@ -722,7 +723,7 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
             elif open_info:
-                if time.time() - open_info[1] > 24 * 60 * 60:
+                if dtn.timestamp() - open_info[1] > 24 * 60 * 60:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
                     if not open_info[3]:
@@ -766,6 +767,7 @@ class AUTOBN:
                         open_info[3] == "SHORT"
                         and kline_close_15[-1] > kline_close_15[-2]
                         and max(kline_volume_15[-3:-1]) < kline_volume_15[-1]
+                        and dtn.timestamp() - open_info[1] >= 15 * 60
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
@@ -773,6 +775,7 @@ class AUTOBN:
                             kline_close_15,
                             kline_volume_15,
                             open_info[1],
+                            dtn,
                         )
                     ):
                         # 设置止盈止损：止盈9%，止损9%
@@ -823,7 +826,7 @@ class AUTOBN:
                     )
                     self.alert_all["OBSERVATIONS"][symbol] = [
                         kline_close[-1],
-                        time.time(),
+                        dtn.timestamp(),
                         "SELL",
                         "LONG",
                     ]
