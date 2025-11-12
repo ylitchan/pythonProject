@@ -676,6 +676,7 @@ class AUTOBN:
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
                 if (
                     kline_close[-1] <= close_info[1]
+                    and kline_close[-1] < kline[-1][1]
                     or close_info[3] == "LONG"
                     and close_info[4]
                     > sum(kline_close[-10:]) / len(kline_close[-10:])
@@ -704,7 +705,9 @@ class AUTOBN:
                             "SELL",
                             "SHORT",
                         ]
-                elif kline_close[-1] >= close_info[0]:
+                elif (
+                    kline_close[-1] >= close_info[0] and kline_close[-1] > kline[-1][1]
+                ):
                     if close_info[3] == "LONG":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
@@ -722,6 +725,15 @@ class AUTOBN:
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
+                elif dtn_minute % 15 == 0:
+                    if close_info[3] == "SHORT" and kline_close[-1] <= close_info[4]:
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
+                        )
+                    elif close_info[3] == "LONG" and kline_close[-1] >= close_info[4]:
+                        self.close_bn_position(
+                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
+                        )
             elif open_info:
                 if dtn.timestamp() - open_info[1] > 24 * 60 * 60:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
