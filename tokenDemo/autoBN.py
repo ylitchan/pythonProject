@@ -749,11 +749,11 @@ class AUTOBN:
                         and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                         and open_info[0] < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
-                        and max(kline_volume_15[:-1]) < kline_volume_15[-1]
+                        and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
                         and sum(kline_volume_15[: -int(len(kline_volume_15) * 2 / 3)])
                         / len(kline_volume_15[: -int(len(kline_volume_15) * 2 / 3)])
                         * 9
-                        < kline_volume_15[-1]
+                        < max(kline_volume_15[-2:])
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
@@ -821,7 +821,7 @@ class AUTOBN:
                         )
                     )
                     and kline_close[-2] < kline_close[-1]
-                    # and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
+                    and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                     and await self.increase_oi(
                         semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                     )
