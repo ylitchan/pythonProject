@@ -667,9 +667,8 @@ class AUTOBN:
             success.add(symbol)  # 记录成功处理的交易对
             kline_close = [k[4] for k in kline]  # 提取收盘价列表
             kline_volume = [k[5] for k in kline]
-            kline_zf = sum(
-                list(map(lambda k: abs(k[4] / k[1] - 1), kline[-10:]))
-            ) / len(kline[-10:])
+            kline_zf = list(map(lambda k: abs(k[4] / k[1] - 1), kline[-10:]))
+            kline_zf_mean = sum(kline_zf) / len(kline_zf)
             # 检查现有持仓是否需要平仓
             if close_info:
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
@@ -686,8 +685,8 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        close_info[1] = kline_close[-1] * (1 - kline_zf * 0.5)
-                        close_info[0] = kline_close[-1] * (1 + kline_zf * 0.5)
+                        close_info[1] = kline_close[-1] * (1 - kline_zf_mean * 0.5)
+                        close_info[0] = kline_close[-1] * (1 + kline_zf_mean * 0.5)
                         self.alert_all["OBSERVATIONS"][symbol] = [
                             kline_close[-1],
                             dtn.timestamp(),
@@ -712,8 +711,8 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                        close_info[0] = kline_close[-1] * (1 + kline_zf * 0.5)
-                        close_info[1] = kline_close[-1] * (1 - kline_zf * 0.5)
+                        close_info[0] = kline_close[-1] * (1 + kline_zf_mean * 0.5)
+                        close_info[1] = kline_close[-1] * (1 - kline_zf_mean * 0.5)
                         self.alert_all["OBSERVATIONS"][symbol] = [
                             kline_close[-1],
                             dtn.timestamp(),
@@ -745,6 +744,7 @@ class AUTOBN:
                     kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
                     if (
                         open_info[3] == "LONG"
+                        and kline_zf[-1] < max(kline_zf[:-1])
                         and kline_close[-2] < kline_close[-1]
                         and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                         and open_info[0] < kline_close_15[-1]
@@ -761,10 +761,10 @@ class AUTOBN:
                             kline_close_15,
                         )
                     ):
-                        zy = kline_close[-1] * (1 + kline_zf * 0.5)
-                        zs = kline_close[-1] * (1 - kline_zf * 0.5)
+                        zy = kline_close[-1] * (1 + kline_zf_mean * 0.5)
+                        zs = kline_close[-1] * (1 - kline_zf_mean * 0.5)
                         self.send_msg(
-                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf * 0.5:.2%}"
+                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
                         )
                         if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                             self.alert_all["POSITIONS"][symbol] = [
@@ -791,10 +791,10 @@ class AUTOBN:
                         )
                     ):
                         # 设置止盈止损：止盈9%，止损9%
-                        zy = kline_close[-1] * (1 + kline_zf * 0.5)
-                        zs = kline_close[-1] * (1 - kline_zf * 0.5)
+                        zy = kline_close[-1] * (1 + kline_zf_mean * 0.5)
+                        zs = kline_close[-1] * (1 - kline_zf_mean * 0.5)
                         self.send_msg(
-                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf * 0.5:.2%}"
+                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
                         )
                         if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                             self.alert_all["POSITIONS"][symbol] = [
@@ -830,11 +830,11 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
-                    zy = kline_close[-1] * (1 + kline_zf * 0.5)
-                    zs = kline_close[-1] * (1 - kline_zf * 0.5)
+                    zy = kline_close[-1] * (1 + kline_zf_mean * 0.5)
+                    zs = kline_close[-1] * (1 - kline_zf_mean * 0.5)
                     # 发送做多信号通知
                     self.send_msg(
-                        f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf * 0.5:.2%}"
+                        f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
                     )
                     self.alert_all["OBSERVATIONS"][symbol] = [
                         kline_close[-1],
@@ -866,11 +866,11 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
-                    zy = kline_close[-1] * (1 - kline_zf * 0.5)
-                    zs = kline_close[-1] * (1 + kline_zf * 0.5)
+                    zy = kline_close[-1] * (1 - kline_zf_mean * 0.5)
+                    zs = kline_close[-1] * (1 + kline_zf_mean * 0.5)
                     # 发送做空信号通知
                     self.send_msg(
-                        f"==={symbol}**BD**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf * 0.5:.2%}"
+                        f"==={symbol}**BD**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
                     )
                     # 执行开仓操作
                     if self.open_bn_position(symbol, "SELL", "SHORT", 0.1):
