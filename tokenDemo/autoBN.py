@@ -768,7 +768,7 @@ class AUTOBN:
                                 * 9
                                 < max(kline_volume_15[index - 1 : index + 1])
                             )
-                            for index in range(-2, int(-len(kline_15) / 3), -1)
+                            for index in range(-3, int(-len(kline_15) / 3), -1)
                         )
                         and await self.decrease_oi(
                             semaphore,
