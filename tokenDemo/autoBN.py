@@ -744,7 +744,6 @@ class AUTOBN:
                     kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
                     if (
                         open_info[3] == "LONG"
-                        and kline_zf[-1] < max(kline_zf[:-1])
                         and kline_close[-2] < kline_close[-1]
                         and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                         and open_info[0] < kline_close_15[-1]
@@ -754,6 +753,23 @@ class AUTOBN:
                         / len(kline_volume_15[: -int(len(kline_volume_15) * 2 / 3)])
                         * 9
                         < max(kline_volume_15[-2:])
+                        and not any(
+                            (
+                                sum(
+                                    kline_volume_15[:index][
+                                        : -int(len(kline_volume_15[:index]) * 2 / 3)
+                                    ]
+                                )
+                                / len(
+                                    kline_volume_15[:index][
+                                        : -int(len(kline_volume_15) * 2 / 3)
+                                    ]
+                                )
+                                * 9
+                                < max(kline_volume_15[index - 1 : index + 1])
+                            )
+                            for index in range(-2, int(-len(kline_15) / 3), -1)
+                        )
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
