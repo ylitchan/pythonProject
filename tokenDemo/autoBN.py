@@ -821,7 +821,7 @@ class AUTOBN:
                         )
                     )
                     and kline_close[-2] < kline_close[-1]
-                    and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
+                    # and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                     and await self.increase_oi(
                         semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                     )
