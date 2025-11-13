@@ -676,10 +676,6 @@ class AUTOBN:
                 if (
                     kline_close[-1] <= close_info[1]
                     and kline_close[-1] < kline[-1][1]
-                    or close_info[3] == "LONG"
-                    and close_info[4]
-                    > sum(kline_close[-10:]) / len(kline_close[-10:])
-                    > kline_close[-1]
                 ):
                     if close_info[3] == "SHORT":
                         self.close_bn_position(
