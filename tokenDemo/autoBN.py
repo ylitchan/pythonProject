@@ -1199,7 +1199,6 @@ class AUTOA:
 
 
 async def main():
-    AUTOA.monitor_stocks()
     current_dir = os.path.dirname(os.path.abspath(__file__))
     autobn = AUTOBN.from_cfg(
         bn_api_file=os.path.join(current_dir, "bn.json"),
