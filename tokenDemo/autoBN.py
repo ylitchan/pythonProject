@@ -54,13 +54,6 @@ class AUTOBN:
         }
         obj.margin_mode = margin_mode_map.get(margin_mode_raw, "CROSSED")
 
-        # HTTP 会话配置（可覆盖）
-        obj.session = kwargs.get("session") or requests.Session()
-        obj.session.verify = kwargs.get("session_verify", False)
-        obj.session.headers = kwargs.get(
-            "session_headers", {"Content-Type": "application/json"}
-        )
-
         # 微信配置（可覆盖 -> 环境 -> 默认）
         obj.wx_key = kwargs.get(
             "wx_key", os.getenv("WX_KEY", "fe197940-30c1-4cea-a41a-17b461423f83")
@@ -116,6 +109,7 @@ class AUTOBN:
             msg: 要发送的消息内容
             wx: 是否使用微信发送（True=微信，False=企业微信）
         """
+        global session
         try:
             # 记录发送时间，便于调试和追踪
             current_time = datetime.datetime.now()
@@ -134,14 +128,14 @@ class AUTOBN:
                         }
                     ]
                 }
-                response = self.session.post(
+                response = session.post(
                     f"http://wechatpadpro:1238/message/SendTextMessage?key={self.wx_key}",
                     json=json_msg,
                 )
             else:
                 # 企业微信发送格式：使用企业微信机器人webhook
                 json_msg = {"msgtype": "text", "text": {"content": msg}}
-                response = self.session.post(
+                response = session.post(
                     url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={self.qy_key}",
                     json=json_msg,
                 )
@@ -1015,8 +1009,41 @@ class AUTOBN:
 
 
 class AUTOA:
+    qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
+    alert_all_file = "alert_all_A.json"
+    alert_all = json.load(open(alert_all_file, "r"))
+
+    @classmethod
+    def send_msg(cls, msg):
+        """
+        发送消息通知函数
+
+        功能：通过企业微信或微信发送交易通知消息
+        参数：
+            msg: 要发送的消息内容
+            wx: 是否使用微信发送（True=微信，False=企业微信）
+        """
+        global session
+        try:
+            # 记录发送时间，便于调试和追踪
+            current_time = datetime.datetime.now()
+            print(f"{current_time} - 发送消息: {msg}", flush=True)
+            # 企业微信发送格式：使用企业微信机器人webhook
+            json_msg = {"msgtype": "text", "text": {"content": msg}}
+            response = session.post(
+                url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={cls.qy_key}",
+                json=json_msg,
+            )
+
+            # 检查发送结果，失败时记录状态码
+            if response.status_code != 200:
+                print(f"消息发送失败，状态码: {response.status_code}", flush=True)
+        except Exception as e:
+            # 异常处理：记录错误但不中断程序运行
+            print(f"消息发送异常: {str(e)}", flush=True)
+
     @staticmethod
-    def get_last_trading_days(today=None, days=60):
+    def get_last_trading_days(today=None, days=10):
         """
         获取A股交易日历
 
@@ -1045,13 +1072,9 @@ class AUTOA:
 
             # 获取指定日期前的最近n个交易日，按时间降序排列
             recent_trading_days = valid_dates.sort_values(ascending=False).iloc[:days]
-            start_date = recent_trading_days.min().strftime("%Y%m%d")  # 最早日期
-            end_date = recent_trading_days.max().strftime("%Y%m%d")  # 最晚日期
 
             # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
-            zt_date = [i.strftime("%Y%m%d") for i in recent_trading_days.iloc[3:10]]
-
-            return start_date, end_date, zt_date
+            return [i.strftime("%Y%m%d") for i in recent_trading_days.iloc]
         except Exception as e:
             print(f"获取交易日历失败: {str(e)}", flush=True)
             return None, None, []
@@ -1067,79 +1090,86 @@ class AUTOA:
             符合条件的股票代码和名称集合
         """
         # 获取交易日历信息
-        start_date, end_date, zt_dates = cls.get_last_trading_days()
+        today = datetime.datetime.today()
+        zt_dates = cls.get_last_trading_days(today)
+        if (today_str := today.strftime("%Y%m%d")) not in zt_dates:
+            return []
         selected = set()  # 存储符合条件的股票
-
-        # 遍历近期涨停日期，获取涨停股池
-        for i, zt_date in enumerate(zt_dates):
-            # 获取当天涨停股票列表
-            zt_df = ak.stock_zt_pool_em(date=zt_date)
-            if zt_df.empty:
-                print(f"没有在 {zt_date} 找到涨停股票。", flush=True)
-                continue
-
-            # 提取股票代码和名称
+        if today.hour == 15:
+            zt_df = ak.stock_zt_pool_em(date=today_str)
             stock_codes = zt_df[["代码", "名称"]].values.tolist()
-            print(f"{zt_date}涨停股：{stock_codes}", flush=True)
-
-            # 遍历涨停股票，进行技术分析
             for code in stock_codes:
-                try:
+                if (
+                    code[1] not in cls.alert_all["POSITIONS"]
+                    and code[1] not in cls.alert_all["OBSERVATIONS"]
+                ):
                     # 获取股票历史数据（前复权）
                     hist = ak.stock_zh_a_hist(
                         symbol=code[0],
                         period="daily",
-                        start_date=start_date,
-                        end_date=end_date,
+                        start_date=zt_dates[-1],
+                        end_date=zt_dates[0],
                         adjust="qfq",
                     )
-                except Exception:
-                    # 获取数据失败，跳过该股票
-                    traceback.print_exc()
-                    continue
+                    kline_zf_mean = hist["涨跌幅"].abs().mean()
+                    price_close = hist.iloc[-1]["最新价"]
+                    zy = price_close * (1 + kline_zf_mean * 0.5)
+                    zs = price_close * (1 - kline_zf_mean * 0.5)
+                    selected.add(
+                        f"==={code[1]}做多===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+                    )
+                    cls.alert_all["POSITIONS"][code[1]] = [
+                        price_close,
+                        today.timestamp(),
+                        "SELL",
+                        "LONG",
+                        price_close,
+                    ]
+            # 保存分析结果到文件
+            with open(cls.alert_all_file, "w") as f:
+                json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
+            return selected
 
-                # 添加最新涨跌幅到股票信息中
-                code.append(str(hist.iloc[-1]["涨跌幅"]))
-                print(code, flush=True)
-
-                # 股票筛选条件：多维度筛选优质股票
-                # 条件1：数据量充足（至少60天历史数据）
-                if len(hist) < 60:
-                    continue
-
-                # 条件2：当日必须上涨（涨跌幅>0）
-                if hist.iloc[-1]["涨跌幅"] <= 0:
-                    continue
-
-                # 条件3：价格位置检查
-                # 3a：当前价格必须高于近10天均价（确保在上升趋势中）
-                # 3b：检查近期是否有价格回调（避免追高）
-                if hist.iloc[-10:]["收盘"].mean() > hist.iloc[-1]["收盘"] or any(
-                    hist.iloc[-9 + x : x + 1]["收盘"].mean() > hist.iloc[x]["收盘"]
-                    for x in range(-2, -i - 5, -1)
-                ):
-                    continue
-
-                # 条件4：成交量检查（当日成交量必须是近期最大）
-                # 确保有足够的资金关注和参与
-                if hist.iloc[-3:-1]["成交量"].max() >= hist.iloc[-1]["成交量"]:
-                    continue
-
-                # 条件5：价格位置检查（当前价格必须在近期低点附近）
-                # 避免在高位追涨，寻找回调买入机会
-                if hist.iloc[: -i - 4]["收盘"].max() >= hist.iloc[-i - 4]["收盘"]:
-                    continue
-
-                # 条件6：避免连续上涨（防止追高）
-                # 检查近期是否有连续放量上涨的情况
-                if i > 0 and any(
-                    hist.iloc[x]["成交量"] > hist.iloc[x - 2 : x]["成交量"].max()
-                    for x in range(-2, -i - 2, -1)
-                ):
-                    continue
-                # 通过所有筛选条件，添加到结果集合
-                selected.add("".join(code))
-
+        for code, close_info in cls.alert_all["POSITIONS"].items():
+            # 获取股票历史数据（前复权）
+            hist = ak.stock_zh_a_hist(
+                symbol=code,
+                period="daily",
+                start_date=zt_dates[-1],
+                end_date=zt_dates[0],
+                adjust="qfq",
+            )
+            price_close = hist.iloc[-1]["最新价"]
+            if price_close <= close_info[1] or price_close >= close_info[0]:
+                cls.alert_all["OBSERVATIONS"][close_info[0]] = [
+                    price_close,
+                    today.timestamp(),
+                    "SELL",
+                    "LONG",
+                ]
+                msg = f"{close_info[0]}平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
+                cls.send_msg(msg)
+        for code, open_info in cls.alert_all["OBSERVATIONS"].items():
+            # 获取股票历史数据（前复权）
+            hist = ak.stock_zh_a_hist(
+                symbol=code,
+                period="daily",
+                start_date=zt_dates[-1],
+                end_date=zt_dates[0],
+                adjust="qfq",
+            )
+            price_close = hist.iloc[-1]["最新价"]
+            if today.timestamp() - open_info[1] > 10 * 24 * 60 * 60:
+                cls.alert_all["OBSERVATIONS"].pop(code)
+            elif (
+                hist.iloc[-2]["最新价"] < price_close
+                and hist.iloc[-3:-1]["成交量"].max() < hist.iloc[-1]["成交量"]
+            ):
+                kline_zf_mean = hist.iloc[-10:]["涨跌幅"].abs().mean()
+                zy = price_close * (1 + kline_zf_mean * 0.5)
+                zs = price_close * (1 - kline_zf_mean * 0.5)
+                msg = f"==={code}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+                cls.send_msg(msg)
         return selected
 
     @classmethod
@@ -1157,23 +1187,19 @@ class AUTOA:
         # 如果有符合条件的股票，发送通知
         if filtered:
             # 构建企业微信消息格式
-            json_msg = {
+            msg = {
                 "msgtype": "text",
                 "text": {
-                    "content": f"===A{len(filtered)}低吸===\n"
+                    "content": f"===A{len(filtered)} BZ1===\n"
                     + "\n-------\n".join(filtered)
                 },
             }
             # 发送到企业微信群
-            requests.post(
-                url="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=6f2ec864-c474-4c8f-b069-1e3c35eb7d73",
-                headers={"Content-Type": "application/json"},
-                json=json_msg,
-                verify=False,
-            )
+            cls.send_msg(msg)
 
 
 async def main():
+    AUTOA.monitor_stocks()
     current_dir = os.path.dirname(os.path.abspath(__file__))
     autobn = AUTOBN.from_cfg(
         bn_api_file=os.path.join(current_dir, "bn.json"),
@@ -1193,8 +1219,8 @@ async def main():
     scheduler.add_job(
         AUTOA.monitor_stocks,  # 执行的函数
         "cron",  # 调度类型：按日历规则
-        hour="12,14",  # 交易时段：12点和14点
-        minute="52-57",  # 每小时的52-57分
+        hour="09-15",  # 交易时段：12点和14点
+        minute="*/15",  # 每小时的52-57分
         second="00",  # 整点秒数
         day_of_week="mon-fri",  # 周一至周五（交易日）
         timezone="Asia/Shanghai",  # 上海时区
@@ -1234,7 +1260,10 @@ if __name__ == "__main__":
     功能：初始化所有必要的配置和客户端，然后启动主程序
     """
     print("autoBN启动", flush=True)
-
+    # HTTP 会话配置（可覆盖）
+    session = requests.Session()
+    session.verify = False
+    session.headers = {"Content-Type": "application/json"}
     # 初始化任务调度器
     scheduler = AsyncIOScheduler()
 
