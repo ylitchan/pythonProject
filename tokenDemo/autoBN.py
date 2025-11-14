@@ -656,9 +656,9 @@ class AUTOBN:
         try:
             close_info = self.alert_all["POSITIONS"].get(symbol)
             open_info = self.alert_all["OBSERVATIONS"].get(symbol)
-            dtn_minute = dtn.minute % 1 == 0
-            if not close_info and not open_info and not dtn_minute:
+            if not close_info and not open_info:
                 return
+            dtn_minute = dtn.minute
             # 获取日K线数据（30天）
             kline = await self.get_kline(semaphore, symbol, "1Dutc")
             # 数据量检查：至少需要4根K线进行分析
@@ -673,9 +673,10 @@ class AUTOBN:
             if close_info:
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
+                kline_15 = await self.get_kline(semaphore, symbol, "15m")
                 if (
                     kline_close[-1] <= close_info[1]
-                    and kline_close[-1] < kline[-1][1]
+                    and kline_15[-1][4] < kline_15[-1][1]
                 ):
                     if close_info[3] == "SHORT":
                         self.close_bn_position(
@@ -701,7 +702,8 @@ class AUTOBN:
                             "SHORT",
                         ]
                 elif (
-                    kline_close[-1] >= close_info[0] and kline_close[-1] > kline[-1][1]
+                    kline_close[-1] >= close_info[0]
+                    and kline_15[-1][4] > kline_15[-1][1]
                 ):
                     if close_info[3] == "LONG":
                         self.close_bn_position(
@@ -721,11 +723,11 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                 elif dtn_minute % 15 == 0:
-                    if close_info[3] == "SHORT" and kline_close[-1] <= close_info[4]:
+                    if close_info[3] == "SHORT" and kline_15[-1][4] < close_info[4]:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
-                    elif close_info[3] == "LONG" and kline_close[-1] >= close_info[4]:
+                    elif close_info[3] == "LONG" and kline_15[-1][4] > close_info[4]:
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
                         )
@@ -817,7 +819,7 @@ class AUTOBN:
                             ]
                             self.alert_all["OBSERVATIONS"].pop(symbol)
                             return
-            elif dtn_minute:
+            else:
                 # 做多信号判断：需要同时满足以下条件
                 # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
                 # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
