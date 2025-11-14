@@ -656,8 +656,6 @@ class AUTOBN:
         try:
             close_info = self.alert_all["POSITIONS"].get(symbol)
             open_info = self.alert_all["OBSERVATIONS"].get(symbol)
-            if not close_info and not open_info:
-                return
             dtn_minute = dtn.minute
             # 获取日K线数据（30天）
             kline = await self.get_kline(semaphore, symbol, "1Dutc")
