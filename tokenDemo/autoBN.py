@@ -1112,8 +1112,8 @@ class AUTOA:
             stock_codes = zt_df[["代码", "名称"]].values.tolist()
             for code in stock_codes:
                 if (
-                    code[1] not in cls.alert_all["POSITIONS"]
-                    and code[1] not in cls.alert_all["OBSERVATIONS"]
+                    code[0] not in cls.alert_all["POSITIONS"]
+                    and code[0] not in cls.alert_all["OBSERVATIONS"]
                 ):
                     # 获取股票历史数据（前复权）
                     hist = ak.stock_zh_a_hist(
@@ -1130,10 +1130,10 @@ class AUTOA:
                     selected.add(
                         f"==={code[1]}做多===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
                     )
-                    cls.alert_all["POSITIONS"][code[1]] = [
-                        price_close,
-                        today.timestamp(),
-                        "SELL",
+                    cls.alert_all["POSITIONS"][code[0]] = [
+                        zy,
+                        zs,
+                        code[1],
                         "LONG",
                         price_close,
                     ]
@@ -1153,14 +1153,15 @@ class AUTOA:
             )
             price_close = hist.iloc[-1]["最新价"]
             if price_close <= close_info[1] or price_close >= close_info[0]:
-                cls.alert_all["OBSERVATIONS"][close_info[0]] = [
+                cls.alert_all["OBSERVATIONS"][code] = [
                     price_close,
                     today.timestamp(),
-                    "SELL",
+                    close_info[2],
                     "LONG",
                 ]
-                msg = f"{close_info[0]}平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
+                msg = f"{close_info[2]}平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
                 cls.send_msg(msg)
+
         for code, open_info in cls.alert_all["OBSERVATIONS"].items():
             # 获取股票历史数据（前复权）
             hist = ak.stock_zh_a_hist(
@@ -1180,6 +1181,13 @@ class AUTOA:
                 kline_zf_mean = hist.iloc[-10:]["涨跌幅"].abs().mean()
                 zy = price_close * (1 + kline_zf_mean * 0.5)
                 zs = price_close * (1 - kline_zf_mean * 0.5)
+                cls.alert_all["POSITIONS"][code] = [
+                    zy,
+                    zs,
+                    open_info[2],
+                    "LONG",
+                    price_close,
+                ]
                 msg = f"==={code}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
                 cls.send_msg(msg)
         return selected
