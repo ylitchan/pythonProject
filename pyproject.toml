@@ -1,0 +1,14 @@
+[project]
+name = "pythonproject"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "akshare>=1.17.85",
+    "apscheduler>=3.11.1",
+    "binance-futures-connector>=4.1.0",
+    "pandas>=2.3.3",
+    "pyrogram>=2.0.106",
+    "requests>=2.32.5",
+]
