@@ -1223,7 +1223,7 @@ async def main():
     autobn = AUTOBN.from_cfg(
         bn_api_file=os.path.join(current_dir, "bn.json"),
         alert_all_file=os.path.join(current_dir, "alert_all.json"),
-        qy_key="6f2ec864-c474-4c8f-b069-1e3c35eb7d73",
+        qy_key="095984b1-5bc0-43ac-8037-d65a9608d120",
     )
     """
     主函数：设置定时任务并启动调度器
