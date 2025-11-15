@@ -14,6 +14,11 @@ import pandas as pd  # 数据分析库
 import requests  # HTTP请求库
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # 异步任务调度器
 
+# HTTP 会话配置（可覆盖）
+session = requests.Session()
+session.verify = False
+session.headers = {"Content-Type": "application/json"}
+
 
 class AUTOBN:
     @classmethod
@@ -920,8 +925,12 @@ class AUTOBN:
             for k, v in self.alert_all["POSITIONS"].items()
             if k in position_risk_symbol
         }
+        positions_data = []
         for p in position_risk:
             entryPrice = float(p["entryPrice"])
+            positions_data.append(
+                f"==={p['symbol']}===\n开仓价格:{entryPrice} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unrealizedProfit']} USDT\n持仓收益:{float(p['unrealizedProfit']) / abs(float(p['notional'])):.2%}"
+            )
             if p["symbol"] not in self.alert_all["POSITIONS"]:
                 if p["positionSide"] == "LONG":
                     self.alert_all["POSITIONS"][p["symbol"]] = [
@@ -943,6 +952,7 @@ class AUTOBN:
                 self.alert_all["POSITIONS"][p["symbol"]].append(entryPrice)
             else:
                 self.alert_all["POSITIONS"][p["symbol"]][-1] = entryPrice
+        return "\n\n".join(positions_data) if positions_data else "暂无持仓"
 
     async def rzq_market(self, market):
         """
@@ -958,15 +968,13 @@ class AUTOBN:
             market: 市场名称，如'BN'（币安）
         """
         now = datetime.datetime.now()
-        self.is_early_morning = now.hour == 8 and now.minute == 10
-        if self.is_early_morning:
-            self.send_msg(f"{market}任务开始 - {now}")
+        self.is_early_morning = now.hour == 8 and now.minute == 0
 
         # 重试机制：最多尝试10次获取交易对信息
         if now.minute % 15 == 0 or not self.symbols:
             for i in range(10):
                 try:
-                    self.get_position_risk()
+                    positions_data = self.get_position_risk()
                     self.get_symbols_info()
                     self.symbols = list(self.symbols_info.keys())
                     break  # 成功获取，退出重试循环
@@ -974,6 +982,10 @@ class AUTOBN:
                     # 获取失败，等待2秒后重试
                     traceback.print_exc()
                     await asyncio.sleep(2)
+        if self.is_early_morning:
+            balance = self.um_futures_client.account()["totalWalletBalance"]
+            self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
+            print(f"[{datetime.now()}] 账户信息推送任务执行完成", flush=True)
         # 创建信号量，限制最大并发数为10，避免API限制
         semaphore = asyncio.Semaphore(10)
         print(now, f"{market}任务开始 - 总交易对数量: {len(self.symbols)}", flush=True)
@@ -1092,11 +1104,11 @@ class AUTOA:
         # 获取交易日历信息
         today = datetime.datetime.today()
         zt_dates = cls.get_last_trading_days(today)
-        if (today_str := today.strftime("%Y%m%d")) not in zt_dates:
+        if today.strftime("%Y%m%d") not in zt_dates:
             return []
         selected = set()  # 存储符合条件的股票
         if today.hour == 15:
-            zt_df = ak.stock_zt_pool_em(date=today_str)
+            zt_df = ak.stock_zt_pool_em(date=zt_dates[-1])
             stock_codes = zt_df[["代码", "名称"]].values.tolist()
             for code in stock_codes:
                 if (
@@ -1259,10 +1271,6 @@ if __name__ == "__main__":
     功能：初始化所有必要的配置和客户端，然后启动主程序
     """
     print("autoBN启动", flush=True)
-    # HTTP 会话配置（可覆盖）
-    session = requests.Session()
-    session.verify = False
-    session.headers = {"Content-Type": "application/json"}
     # 初始化任务调度器
     scheduler = AsyncIOScheduler()
 
