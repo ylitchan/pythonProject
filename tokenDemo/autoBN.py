@@ -36,7 +36,7 @@ class AUTOBN:
             raise ValueError("from_cfg 需要提供 qy_key")
 
         # 交易参数配置（可覆盖）
-        obj.leverage = kwargs.get("leverage", 3)
+        obj.leverage = kwargs.get("leverage", 1)
         obj.health4open = kwargs.get("health4open", 70)
         # 仓位模式：'CROSSED' 全仓，'ISOLATED' 逐仓；支持大小写/中文/别名
         # 仅设置新开仓/下单前的目标模式；若该 symbol 已有仓位，交易所可能拒绝切换
@@ -373,7 +373,7 @@ class AUTOBN:
                 )
                 realized_pnl = price_diff * close_amount
                 pnl_percent = price_diff / entryPrice
-                msg = f"{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent * self.leverage:.2%}"
+                msg = f"{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}"
                 self.send_msg(msg)
                 return symbol  # 成功平仓，退出循环
             except Exception:
@@ -719,15 +719,6 @@ class AUTOBN:
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
-                elif dtn_minute % 15 == 0:
-                    if close_info[3] == "SHORT" and kline_15[-1][4] < close_info[4]:
-                        self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
-                        )
-                    elif close_info[3] == "LONG" and kline_15[-1][4] > close_info[4]:
-                        self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
-                        )
             elif open_info:
                 if dtn.timestamp() - open_info[1] > 24 * 60 * 60:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
