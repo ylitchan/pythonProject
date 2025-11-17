@@ -656,7 +656,6 @@ class AUTOBN:
         try:
             close_info = self.alert_all["POSITIONS"].get(symbol)
             open_info = self.alert_all["OBSERVATIONS"].get(symbol)
-            dtn_minute = dtn.minute
             # 获取日K线数据（30天）
             kline = await self.get_kline(semaphore, symbol, "1Dutc")
             # 数据量检查：至少需要4根K线进行分析
@@ -1113,7 +1112,58 @@ class AUTOA:
         return hist
 
     @classmethod
-    def filter_stocks(cls):
+    def on_positions(cls, code, zt_dates, close_info, today):
+        hist = cls.stock_zh_a_hist(
+            code,  # 股票代码
+            "date,code,open,high,low,close,preclose,volume,amount",
+            start_date=zt_dates[-1],
+            end_date=zt_dates[0],
+            frequency="d",  # 日K
+            adjustflag="3",  # 3：前复权；1：不复权；2：后复权
+        )
+        price_close = hist.iloc[-1]["close"]
+        if price_close <= close_info[1] or price_close >= close_info[0]:
+            cls.alert_all["OBSERVATIONS"][code] = [
+                price_close,
+                today.timestamp(),
+                close_info[2],
+                "LONG",
+            ]
+            msg = f"{close_info[2]}平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
+            cls.send_msg(msg)
+
+    @classmethod
+    def on_observations(cls, code, zt_dates, open_info, today):
+        hist = cls.stock_zh_a_hist(
+            code,  # 股票代码
+            "date,code,open,high,low,close,preclose,volume,amount",
+            start_date=zt_dates[-1],
+            end_date=zt_dates[0],
+            frequency="d",  # 日K
+            adjustflag="3",  # 3：前复权；1：不复权；2：后复权
+        )
+        price_close = hist.iloc[-1]["close"]
+        if today.timestamp() - open_info[1] > 10 * 24 * 60 * 60:
+            cls.alert_all["OBSERVATIONS"].pop(code)
+        elif (
+            hist.iloc[-2]["close"] < price_close
+            and hist.iloc[-3:-1]["volume"].max() < hist.iloc[-1]["volume"]
+        ):
+            kline_zf_mean = hist.iloc[-10:]["涨跌幅"].abs().mean()
+            zy = price_close * (1 + kline_zf_mean * 0.5)
+            zs = price_close * (1 - kline_zf_mean * 0.5)
+            cls.alert_all["POSITIONS"][code] = [
+                zy,
+                zs,
+                open_info[2],
+                "LONG",
+                price_close,
+            ]
+            msg = f"==={code}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+            cls.send_msg(msg)
+
+    @classmethod
+    async def filter_stocks(cls):
         """
         筛选符合量能条件的A股股票
 
@@ -1128,6 +1178,7 @@ class AUTOA:
         if today.strftime("%Y-%m-%d") not in zt_dates:
             return []
         selected = set()  # 存储符合条件的股票
+
         if today.hour == 15:
             zt_df = ak.stock_zt_pool_em(date=zt_dates[0].replace("-", ""))
             stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
@@ -1173,74 +1224,30 @@ class AUTOA:
                 json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
             return selected
 
-        for code, close_info in cls.alert_all["POSITIONS"].items():
-            # 获取股票历史数据（前复权）
-            # hist = ak.stock_zh_a_hist(
-            #     symbol=code,
-            #     period="daily",
-            #     start_date=zt_dates[-1],
-            #     end_date=zt_dates[0],
-            #     adjust="qfq",
-            # )
-            hist = cls.stock_zh_a_hist(
-                code,  # 股票代码
-                "date,code,open,high,low,close,preclose,volume,amount",
-                start_date=zt_dates[-1],
-                end_date=zt_dates[0],
-                frequency="d",  # 日K
-                adjustflag="3",  # 3：前复权；1：不复权；2：后复权
-            )
-            price_close = hist.iloc[-1]["close"]
-            if price_close <= close_info[1] or price_close >= close_info[0]:
-                cls.alert_all["OBSERVATIONS"][code] = [
-                    price_close,
-                    today.timestamp(),
-                    close_info[2],
-                    "LONG",
-                ]
-                msg = f"{close_info[2]}平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
-                cls.send_msg(msg)
-
-        for code, open_info in cls.alert_all["OBSERVATIONS"].items():
-            # 获取股票历史数据（前复权）
-            # hist = ak.stock_zh_a_hist(
-            #     symbol=code,
-            #     period="daily",
-            #     start_date=zt_dates[-1],
-            #     end_date=zt_dates[0],
-            #     adjust="qfq",
-            # )
-            hist = cls.stock_zh_a_hist(
-                code,  # 股票代码
-                "date,code,open,high,low,close,preclose,volume,amount",
-                start_date=zt_dates[-1],
-                end_date=zt_dates[0],
-                frequency="d",  # 日K
-                adjustflag="3",  # 3：前复权；1：不复权；2：后复权
-            )
-            price_close = hist.iloc[-1]["close"]
-            if today.timestamp() - open_info[1] > 10 * 24 * 60 * 60:
-                cls.alert_all["OBSERVATIONS"].pop(code)
-            elif (
-                hist.iloc[-2]["close"] < price_close
-                and hist.iloc[-3:-1]["volume"].max() < hist.iloc[-1]["volume"]
-            ):
-                kline_zf_mean = hist.iloc[-10:]["涨跌幅"].abs().mean()
-                zy = price_close * (1 + kline_zf_mean * 0.5)
-                zs = price_close * (1 - kline_zf_mean * 0.5)
-                cls.alert_all["POSITIONS"][code] = [
-                    zy,
-                    zs,
-                    open_info[2],
-                    "LONG",
-                    price_close,
-                ]
-                msg = f"==={code}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
-                cls.send_msg(msg)
+        # for code, close_info in cls.alert_all["POSITIONS"].items():
+        # 获取股票历史数据（前复权）
+        # hist = ak.stock_zh_a_hist(
+        #     symbol=code,
+        #     period="daily",
+        #     start_date=zt_dates[-1],
+        #     end_date=zt_dates[0],
+        #     adjust="qfq",
+        # )
+        # 创建异步任务列表
+        tasks = [
+            cls.on_positionsn(code, zt_dates, close_info, today)
+            for code, close_info in cls.alert_all["POSITIONS"].items()
+        ] + [
+            cls.on_observations(code, zt_dates, open_info, today)
+            for code, open_info in cls.alert_all["OBSERVATIONS"].items()
+        ]
+        # 等待当前批次所有任务完成
+        await asyncio.gather(*tasks)
+        gc.collect()  # 垃圾回收，释放内存
         return selected
 
     @classmethod
-    def monitor_stocks(cls):
+    async def monitor_stocks(cls):
         """
         监控A股并发送通知
 
@@ -1250,7 +1257,7 @@ class AUTOA:
         # 登录系统
         bs.login()
         # 筛选符合量能条件的股票
-        filtered = cls.filter_stocks()
+        filtered = await cls.filter_stocks()
         print(f"符合量能条件的股票：{filtered}", flush=True)
 
         # 如果有符合条件的股票，发送通知
