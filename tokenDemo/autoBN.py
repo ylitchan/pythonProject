@@ -115,7 +115,6 @@ class AUTOBN:
             msg: 要发送的消息内容
             wx: 是否使用微信发送（True=微信，False=企业微信）
         """
-        global session
         try:
             # 记录发送时间，便于调试和追踪
             current_time = datetime.datetime.now()
@@ -1016,6 +1015,7 @@ class AUTOA:
     alert_all_file = "alert_all_A.json"
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
     zt_dates = []
+    hist_cache = {}
 
     @classmethod
     def send_msg(cls, msg):
@@ -1027,7 +1027,6 @@ class AUTOA:
             msg: 要发送的消息内容
             wx: 是否使用微信发送（True=微信，False=企业微信）
         """
-        global session
         try:
             # 记录发送时间，便于调试和追踪
             current_time = datetime.datetime.now()
@@ -1083,8 +1082,9 @@ class AUTOA:
             print(f"获取交易日历失败: {str(e)}", flush=True)
             return None, None, []
 
-    @staticmethod
+    @classmethod
     async def stock_zh_a_hist(
+        cls,
         code,
         fields="date,code,open,high,low,close,preclose,volume,amount",
         start_date=None,
@@ -1094,19 +1094,23 @@ class AUTOA:
     ):
         try:
             code_pre = "sh" if code[0] == "6" else "sz"
-            rs = bs.query_history_k_data_plus(
-                f"{code_pre}.{code}",  # 股票代码
-                fields,
-                start_date=start_date,
-                end_date=end_date,
-                frequency=frequency,  # 日K
-                adjustflag=adjustflag,  # 3：前复权；1：不复权；2：后复权
-            )
+            if code in cls.hist_cache:
+                data_list = cls.hist_cache[code]
+            else:
+                rs = bs.query_history_k_data_plus(
+                    f"{code_pre}.{code}",  # 股票代码
+                    fields,
+                    start_date=start_date,
+                    end_date=end_date,
+                    frequency=frequency,  # 日K
+                    adjustflag=adjustflag,  # 3：前复权；1：不复权；2：后复权
+                )
 
-            # 将结果转换为 DataFrame
-            data_list = []
-            while (rs.error_code == "0") & rs.next():
-                data_list.append(rs.get_row_data())
+                # 将结果转换为 DataFrame
+                data_list = []
+                while (rs.error_code == "0") & rs.next():
+                    data_list.append(rs.get_row_data())
+                cls.hist_cache[code] = data_list
             res = requests.get(
                 url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}"
             ).json()["result"]["data"]
@@ -1247,6 +1251,7 @@ class AUTOA:
                         price_close,
                     ]
             cls.zt_dates.clear()
+            cls.hist_cache.clear()
             # 保存分析结果到文件
             with open(cls.alert_all_file, "w", encoding="utf-8") as f:
                 json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
