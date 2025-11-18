@@ -1209,7 +1209,8 @@ class AUTOA:
         # 获取交易日历信息
         today = datetime.datetime.today()
         if (
-            today.strftime("%Y-%m-%d") not in cls.zt_dates
+            cls.zt_dates
+            and today.strftime("%Y-%m-%d") not in cls.zt_dates
             or today.hour == 15
             and today.minute >= 1
         ):
