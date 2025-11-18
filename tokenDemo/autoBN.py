@@ -1014,6 +1014,7 @@ class AUTOA:
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = "alert_all_A.json"
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
+    alert_all_old = copy.deepcopy(alert_all)
     zt_dates = []
     hist_cache = {}
 
@@ -1253,9 +1254,6 @@ class AUTOA:
                     ]
             cls.zt_dates.clear()
             cls.hist_cache.clear()
-            # 保存分析结果到文件
-            with open(cls.alert_all_file, "w", encoding="utf-8") as f:
-                json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
             return selected
 
         # for code, close_info in cls.alert_all["POSITIONS"].items():
@@ -1306,6 +1304,12 @@ class AUTOA:
             }
             # 发送到企业微信群
             cls.send_msg(msg)
+        if cls.alert_all != cls.alert_all_old:
+            cls.alert_all_old = copy.deepcopy(cls.alert_all)
+            # 保存分析结果到文件
+            with open(cls.alert_all_file, "w", encoding="utf-8") as f:
+                json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
+
         bs.logout()
 
 
