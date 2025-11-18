@@ -1129,6 +1129,7 @@ class AUTOA:
                 close_info[2],
                 "LONG",
             ]
+            cls.alert_all["POSITIONS"].pop(code)
             msg = f"{close_info[2]}平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
             cls.send_msg(msg)
 
