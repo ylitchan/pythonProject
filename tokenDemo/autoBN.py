@@ -1112,7 +1112,7 @@ class AUTOA:
         return hist
 
     @classmethod
-    def on_positions(cls, code, zt_dates, close_info, today):
+    async def on_positions(cls, code, zt_dates, close_info, today):
         hist = cls.stock_zh_a_hist(
             code,  # 股票代码
             "date,code,open,high,low,close,preclose,volume,amount",
@@ -1133,7 +1133,7 @@ class AUTOA:
             cls.send_msg(msg)
 
     @classmethod
-    def on_observations(cls, code, zt_dates, open_info, today):
+    async def on_observations(cls, code, zt_dates, open_info, today):
         hist = cls.stock_zh_a_hist(
             code,  # 股票代码
             "date,code,open,high,low,close,preclose,volume,amount",
@@ -1235,7 +1235,7 @@ class AUTOA:
         # )
         # 创建异步任务列表
         tasks = [
-            cls.on_positionsn(code, zt_dates, close_info, today)
+            cls.on_positions(code, zt_dates, close_info, today)
             for code, close_info in cls.alert_all["POSITIONS"].items()
         ] + [
             cls.on_observations(code, zt_dates, open_info, today)
