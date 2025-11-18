@@ -1146,7 +1146,7 @@ class AUTOA:
         if today.timestamp() - open_info[1] > 10 * 24 * 60 * 60:
             cls.alert_all["OBSERVATIONS"].pop(code)
         elif (
-            hist.iloc[-2]["close"] < price_close
+            max(hist.iloc[-2]["close"], hist.iloc[-1]["open"]) < price_close
             and hist.iloc[-3:-1]["volume"].max() < hist.iloc[-1]["volume"]
         ):
             kline_zf_mean = hist.iloc[-10:]["涨跌幅"].abs().mean()
