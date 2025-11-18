@@ -1096,7 +1096,7 @@ class AUTOA:
         try:
             code_pre = "sh" if code[0] == "6" else "sz"
             if code in cls.hist_cache:
-                data_list = cls.hist_cache[code]
+                data_list = copy.deepcopy(cls.hist_cache[code])
             else:
                 rs = bs.query_history_k_data_plus(
                     f"{code_pre}.{code}",  # 股票代码
@@ -1111,7 +1111,7 @@ class AUTOA:
                 data_list = []
                 while (rs.error_code == "0") & rs.next():
                     data_list.append(rs.get_row_data())
-                cls.hist_cache[code] = data_list
+                cls.hist_cache[code] = copy.deepcopy(data_list)
             res = requests.get(
                 url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}"
             ).json()["result"]["data"]
