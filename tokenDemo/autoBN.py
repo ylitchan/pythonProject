@@ -1015,6 +1015,7 @@ class AUTOA:
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = "alert_all_A.json"
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
+    zt_dates = []
 
     @classmethod
     def send_msg(cls, msg):
@@ -1091,25 +1092,49 @@ class AUTOA:
         frequency="d",
         adjustflag="3",
     ):
-        rs = bs.query_history_k_data_plus(
-            f"sh.{code}" if code[0] == "6" else f"sz.{code}",  # 股票代码
-            fields,
-            start_date=start_date,
-            end_date=end_date,
-            frequency=frequency,  # 日K
-            adjustflag=adjustflag,  # 3：前复权；1：不复权；2：后复权
-        )
+        try:
+            code_pre = "sh" if code[0] == "6" else "sz"
+            rs = bs.query_history_k_data_plus(
+                f"{code_pre}.{code}",  # 股票代码
+                fields,
+                start_date=start_date,
+                end_date=end_date,
+                frequency=frequency,  # 日K
+                adjustflag=adjustflag,  # 3：前复权；1：不复权；2：后复权
+            )
 
-        # 将结果转换为 DataFrame
-        data_list = []
-        while (rs.error_code == "0") & rs.next():
-            data_list.append(rs.get_row_data())
-        hist = pd.DataFrame(data_list, columns=rs.fields)
-        hist["close"] = pd.to_numeric(hist["close"], errors="coerce")
-        hist["volume"] = pd.to_numeric(hist["volume"], errors="coerce")
-        hist["preclose"] = pd.to_numeric(hist["preclose"], errors="coerce")
-        hist["涨跌幅"] = (hist["close"] - hist["preclose"]) / hist["preclose"]
-        return hist
+            # 将结果转换为 DataFrame
+            data_list = []
+            while (rs.error_code == "0") & rs.next():
+                data_list.append(rs.get_row_data())
+            res = requests.get(
+                url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}"
+            ).json()["result"]["data"]
+            hist_today = pd.DataFrame(res, columns=["m", "v", "p", "avg_p"])
+            hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
+            volume = hist_today["v"].sum()
+            data_list.append(
+                [
+                    end_date,
+                    f"{code_pre}.{code}",
+                    res[0]["p"],
+                    res[-1]["p"],
+                    res[0]["p"],
+                    res[-1]["p"],
+                    data_list[-1][5],
+                    volume,
+                    0,
+                ]
+            )
+            hist = pd.DataFrame(data_list, columns=rs.fields)
+            hist["close"] = pd.to_numeric(hist["close"], errors="coerce")
+            hist["volume"] = pd.to_numeric(hist["volume"], errors="coerce")
+            hist["preclose"] = pd.to_numeric(hist["preclose"], errors="coerce")
+            hist["涨跌幅"] = (hist["close"] - hist["preclose"]) / hist["preclose"]
+            return hist
+        except Exception as e:
+            traceback.print_exc()
+            return pd.DataFrame()
 
     @classmethod
     async def on_positions(cls, code, zt_dates, close_info, today):
@@ -1121,6 +1146,8 @@ class AUTOA:
             frequency="d",  # 日K
             adjustflag="3",  # 3：前复权；1：不复权；2：后复权
         )
+        if hist.empty:
+            return
         price_close = float(hist.iloc[-1]["close"])
         if price_close <= close_info[1] or price_close >= close_info[0]:
             cls.alert_all["OBSERVATIONS"][code] = [
@@ -1130,7 +1157,7 @@ class AUTOA:
                 "LONG",
             ]
             cls.alert_all["POSITIONS"].pop(code)
-            msg = f"{close_info[2]}平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
+            msg = f"{close_info[2]} 平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
             cls.send_msg(msg)
 
     @classmethod
@@ -1143,6 +1170,8 @@ class AUTOA:
             frequency="d",  # 日K
             adjustflag="3",  # 3：前复权；1：不复权；2：后复权
         )
+        if hist.empty:
+            return
         price_close = hist.iloc[-1]["close"]
         if today.timestamp() - open_info[1] > 10 * 24 * 60 * 60:
             cls.alert_all["OBSERVATIONS"].pop(code)
@@ -1175,13 +1204,17 @@ class AUTOA:
         """
         # 获取交易日历信息
         today = datetime.datetime.today()
-        zt_dates = cls.get_last_trading_days(today)
-        if today.strftime("%Y-%m-%d") not in zt_dates:
+        if (
+            today.strftime("%Y-%m-%d") not in cls.zt_dates
+            or today.hour == 15
+            and today.minute >= 1
+        ):
             return []
+        if not cls.zt_dates:
+            cls.zt_dates = cls.get_last_trading_days(today)
         selected = set()  # 存储符合条件的股票
-
         if today.hour == 15:
-            zt_df = ak.stock_zt_pool_em(date=zt_dates[0].replace("-", ""))
+            zt_df = ak.stock_zt_pool_em(date=cls.zt_dates[0].replace("-", ""))
             stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
             for code in stock_codes:
                 if (
@@ -1189,23 +1222,16 @@ class AUTOA:
                     and code[0] not in cls.alert_all["POSITIONS"]
                     and code[0] not in cls.alert_all["OBSERVATIONS"]
                 ):
-                    # 获取股票历史数据（前复权）
-                    # hist = ak.stock_zh_a_hist(
-                    #     symbol=f"sh.{code[0]}" if code[0][0] == "6" else f"sz.{code[0]}",
-                    #     period="daily",
-                    #     start_date=zt_dates[-1],
-                    #     end_date=zt_dates[0],
-                    #     adjust="qfq",
-                    # )
                     hist = await cls.stock_zh_a_hist(
                         code[0],  # 股票代码
                         "date,code,open,high,low,close,preclose,volume,amount",
-                        start_date=zt_dates[-1],
-                        end_date=zt_dates[0],
+                        start_date=cls.zt_dates[-1],
+                        end_date=cls.zt_dates[0],
                         frequency="d",  # 日K
                         adjustflag="3",  # 3：前复权；1：不复权；2：后复权
                     )
-
+                    if hist.empty:
+                        continue
                     kline_zf_mean = hist["涨跌幅"].abs().mean()
                     price_close = hist.iloc[-1]["close"]
                     zy = price_close * (1 + kline_zf_mean * 0.5)
@@ -1220,6 +1246,7 @@ class AUTOA:
                         "LONG",
                         price_close,
                     ]
+            cls.zt_dates.clear()
             # 保存分析结果到文件
             with open(cls.alert_all_file, "w", encoding="utf-8") as f:
                 json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
@@ -1236,10 +1263,10 @@ class AUTOA:
         # )
         # 创建异步任务列表
         tasks = [
-            cls.on_positions(code, zt_dates, close_info, today)
+            cls.on_positions(code, cls.zt_dates, close_info, today)
             for code, close_info in cls.alert_all["POSITIONS"].items()
         ] + [
-            cls.on_observations(code, zt_dates, open_info, today)
+            cls.on_observations(code, cls.zt_dates, open_info, today)
             for code, open_info in cls.alert_all["OBSERVATIONS"].items()
         ]
         # 等待当前批次所有任务完成
@@ -1297,7 +1324,7 @@ async def main():
         AUTOA.monitor_stocks,  # 执行的函数
         "cron",  # 调度类型：按日历规则
         hour="09-15",  # 交易时段：12点和14点
-        minute="*/15",  # 每小时的52-57分
+        minute="*/5",  # 每小时的52-57分
         second="00",  # 整点秒数
         day_of_week="mon-fri",  # 周一至周五（交易日）
         timezone="Asia/Shanghai",  # 上海时区
