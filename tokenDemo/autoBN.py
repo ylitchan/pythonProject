@@ -1121,7 +1121,7 @@ class AUTOA:
             frequency="d",  # 日K
             adjustflag="3",  # 3：前复权；1：不复权；2：后复权
         )
-        price_close = hist.iloc[-1]["close"]
+        price_close = float(hist.iloc[-1]["close"])
         if price_close <= close_info[1] or price_close >= close_info[0]:
             cls.alert_all["OBSERVATIONS"][code] = [
                 price_close,
