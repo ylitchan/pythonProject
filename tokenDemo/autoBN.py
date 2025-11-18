@@ -1083,7 +1083,7 @@ class AUTOA:
             return None, None, []
 
     @staticmethod
-    def stock_zh_a_hist(
+    async def stock_zh_a_hist(
         code,
         fields="date,code,open,high,low,close,preclose,volume,amount",
         start_date=None,
@@ -1113,7 +1113,7 @@ class AUTOA:
 
     @classmethod
     async def on_positions(cls, code, zt_dates, close_info, today):
-        hist = cls.stock_zh_a_hist(
+        hist = await cls.stock_zh_a_hist(
             code,  # 股票代码
             "date,code,open,high,low,close,preclose,volume,amount",
             start_date=zt_dates[-1],
@@ -1135,7 +1135,7 @@ class AUTOA:
 
     @classmethod
     async def on_observations(cls, code, zt_dates, open_info, today):
-        hist = cls.stock_zh_a_hist(
+        hist = await cls.stock_zh_a_hist(
             code,  # 股票代码
             "date,code,open,high,low,close,preclose,volume,amount",
             start_date=zt_dates[-1],
@@ -1197,7 +1197,7 @@ class AUTOA:
                     #     end_date=zt_dates[0],
                     #     adjust="qfq",
                     # )
-                    hist = cls.stock_zh_a_hist(
+                    hist = await cls.stock_zh_a_hist(
                         code[0],  # 股票代码
                         "date,code,open,high,low,close,preclose,volume,amount",
                         start_date=zt_dates[-1],
