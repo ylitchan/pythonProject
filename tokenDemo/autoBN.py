@@ -1131,7 +1131,7 @@ class AUTOA:
                     0,
                 ]
             )
-            hist = pd.DataFrame(data_list, columns=rs.fields)
+            hist = pd.DataFrame(data_list, columns=fields.split(","))
             hist["close"] = pd.to_numeric(hist["close"], errors="coerce")
             hist["volume"] = pd.to_numeric(hist["volume"], errors="coerce")
             hist["preclose"] = pd.to_numeric(hist["preclose"], errors="coerce")
