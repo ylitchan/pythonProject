@@ -1155,7 +1155,11 @@ class AUTOA:
         if hist.empty:
             return
         price_close = float(hist.iloc[-1]["close"])
-        if price_close <= close_info[1] or price_close >= close_info[0]:
+        if (
+            int(today.strftime("%Y%m%d")) > close_info[3]
+            and price_close <= close_info[1]
+            or price_close >= close_info[0]
+        ):
             cls.alert_all["OBSERVATIONS"][code] = [
                 price_close,
                 today.timestamp(),
@@ -1196,7 +1200,7 @@ class AUTOA:
                 "LONG",
                 price_close,
             ]
-            msg = f"==={code}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+            msg = f"==={open_info[2]}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
             cls.send_msg(msg)
 
     @classmethod
@@ -1251,7 +1255,7 @@ class AUTOA:
                         zy,
                         zs,
                         code[1],
-                        "LONG",
+                        int(today.strftime("%Y%m%d")),
                         price_close,
                     ]
             cls.zt_dates.clear()
