@@ -670,10 +670,7 @@ class AUTOBN:
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
                 kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                if (
-                    kline_close[-1] <= close_info[1]
-                    and kline_15[-1][4] < kline_15[-1][1]
-                ):
+                if kline_close[-1] <= close_info[1]:
                     if close_info[3] == "SHORT":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
@@ -697,10 +694,7 @@ class AUTOBN:
                             "SELL",
                             "SHORT",
                         ]
-                elif (
-                    kline_close[-1] >= close_info[0]
-                    and kline_15[-1][4] > kline_15[-1][1]
-                ):
+                elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == "LONG":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
