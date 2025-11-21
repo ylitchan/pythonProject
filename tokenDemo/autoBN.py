@@ -1194,6 +1194,7 @@ class AUTOA:
                 "LONG",
                 price_close,
             ]
+            cls.alert_all["OBSERVATIONS"].pop(code)
             msg = f"==={open_info[2]}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
             cls.send_msg(msg)
 
