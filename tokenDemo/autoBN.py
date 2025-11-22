@@ -767,6 +767,14 @@ class AUTOBN:
                         self.send_msg(
                             f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
                         )
+                        if max(kline_zf[:-1]) < kline_close_15[-3] / kline[-1][1] - 1:
+                            self.alert_all["OBSERVATIONS"][symbol] = [
+                                kline_close[-1],
+                                dtn.timestamp(),
+                                "SELL",
+                                "SHORT",
+                            ]
+                            return
                         if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                             self.alert_all["POSITIONS"][symbol] = [
                                 zy,
@@ -779,7 +787,8 @@ class AUTOBN:
                     elif (
                         open_info[3] == "SHORT"
                         and kline_close_15[-1] > kline_close_15[-2]
-                        and max(kline_volume_15[-3:-1]) < kline_volume_15[-1]
+                        and max(kline_volume_15[-3], kline_volume_15[-2] * 1.5)
+                        < kline_volume_15[-1]
                         and dtn.timestamp() - open_info[1] >= 15 * 60
                         and await self.decrease_oi(
                             semaphore,
@@ -1182,7 +1191,8 @@ class AUTOA:
             cls.alert_all["OBSERVATIONS"].pop(code)
         elif (
             max(hist.iloc[-2]["close"], hist.iloc[-1]["open"]) < price_close
-            and hist.iloc[-3:-1]["volume"].max() < hist.iloc[-1]["volume"]
+            and max(hist.iloc[-3]["volume"], hist.iloc[-2]["volume"] * 1.5)
+            < hist.iloc[-1]["volume"]
         ):
             kline_zf_mean = hist.iloc[-10:]["涨跌幅"].abs().mean()
             zy = price_close * (1 + kline_zf_mean * 0.5)
