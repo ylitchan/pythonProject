@@ -525,6 +525,7 @@ class AUTOBN:
                     sumOpenInterest_1d[-2:]
                 ) or sumOpenInterestValue_5m[-1] <= max(sumOpenInterestValue_1d[-2:]):
                     return False
+                return True
                 if positionSide == "LONG":
                     return True
                 else:
