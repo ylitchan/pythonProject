@@ -670,10 +670,7 @@ class AUTOBN:
                 # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
                 # 平仓条件：价格触及止损/止盈 或 减仓信号触发
                 kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                if (
-                    kline_close[-1] <= close_info[1]
-                    and kline_15[-1][4] < kline_15[-1][1]
-                ):
+                if kline_close[-1] <= close_info[1]:
                     if close_info[3] == "SHORT":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
@@ -697,10 +694,7 @@ class AUTOBN:
                             "SELL",
                             "SHORT",
                         ]
-                elif (
-                    kline_close[-1] >= close_info[0]
-                    and kline_15[-1][4] > kline_15[-1][1]
-                ):
+                elif kline_close[-1] >= close_info[0]:
                     if close_info[3] == "LONG":
                         self.close_bn_position(
                             symbol, close_info[2], close_info[3], kline_close[-1], 0.5
@@ -1140,13 +1134,14 @@ class AUTOA:
                     0,
                 ]
             )
-            hist = pd.DataFrame(data_list, columns=rs.fields)
+            hist = pd.DataFrame(data_list, columns=fields.split(","))
+            hist["open"] = pd.to_numeric(hist["open"], errors="coerce")
             hist["close"] = pd.to_numeric(hist["close"], errors="coerce")
             hist["volume"] = pd.to_numeric(hist["volume"], errors="coerce")
             hist["preclose"] = pd.to_numeric(hist["preclose"], errors="coerce")
             hist["涨跌幅"] = (hist["close"] - hist["preclose"]) / hist["preclose"]
             return hist
-        except Exception as e:
+        except Exception:
             traceback.print_exc()
             return pd.DataFrame()
 
@@ -1163,7 +1158,9 @@ class AUTOA:
         if hist.empty:
             return
         price_close = float(hist.iloc[-1]["close"])
-        if price_close <= close_info[1] or price_close >= close_info[0]:
+        if int(today.strftime("%Y%m%d")) > close_info[3] and (
+            price_close <= close_info[1] or price_close >= close_info[0]
+        ):
             cls.alert_all["OBSERVATIONS"][code] = [
                 price_close,
                 today.timestamp(),
@@ -1190,7 +1187,8 @@ class AUTOA:
         if today.timestamp() - open_info[1] > 10 * 24 * 60 * 60:
             cls.alert_all["OBSERVATIONS"].pop(code)
         elif (
-            max(hist.iloc[-2]["close"], hist.iloc[-1]["open"]) < price_close
+            today.timestamp() - open_info[1] >= 24 * 60 * 60
+            and max(hist.iloc[-2]["close"], hist.iloc[-1]["open"]) < price_close
             and max(hist.iloc[-3]["volume"], hist.iloc[-2]["volume"] * 1.5)
             < hist.iloc[-1]["volume"]
         ):
@@ -1204,7 +1202,8 @@ class AUTOA:
                 "LONG",
                 price_close,
             ]
-            msg = f"==={code}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+            cls.alert_all["OBSERVATIONS"].pop(code)
+            msg = f"==={open_info[2]}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
             cls.send_msg(msg)
 
     @classmethod
@@ -1259,7 +1258,7 @@ class AUTOA:
                         zy,
                         zs,
                         code[1],
-                        "LONG",
+                        int(today.strftime("%Y%m%d")),
                         price_close,
                     ]
             cls.zt_dates.clear()
