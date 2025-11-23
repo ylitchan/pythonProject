@@ -762,14 +762,6 @@ class AUTOBN:
                         self.send_msg(
                             f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
                         )
-                        if max(kline_zf[:-1]) < kline_close_15[-3] / kline[-1][1] - 1:
-                            self.alert_all["OBSERVATIONS"][symbol] = [
-                                kline_close[-1],
-                                dtn.timestamp(),
-                                "SELL",
-                                "SHORT",
-                            ]
-                            return
                         if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
                             self.alert_all["POSITIONS"][symbol] = [
                                 zy,
