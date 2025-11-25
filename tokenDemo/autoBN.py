@@ -1192,7 +1192,7 @@ class AUTOA:
                 zy,
                 zs,
                 open_info[2],
-                "LONG",
+                int(today.strftime("%Y%m%d")),
                 price_close,
             ]
             cls.alert_all["OBSERVATIONS"].pop(code)
