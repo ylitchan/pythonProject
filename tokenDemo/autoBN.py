@@ -725,7 +725,6 @@ class AUTOBN:
                     if (
                         open_info[3] == "LONG"
                         and kline_close[-2] < kline_close[-1]
-                        and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                         and open_info[0] < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
