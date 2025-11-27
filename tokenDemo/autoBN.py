@@ -714,6 +714,7 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                 else:
+                    close_info[-1] = kline_close[-1]
                     if kline_close[-1] > close_info[-1]:
                         close_info[1] = kline_close[-1] * (1 - kline_zf_mean * 0.5)
                     else:
