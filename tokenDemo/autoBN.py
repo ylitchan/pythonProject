@@ -713,6 +713,28 @@ class AUTOBN:
                             symbol, close_info[2], close_info[3], kline_close[-1], 1
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
+                else:
+                    if close_info[3] == "LONG":
+                        kline_15 = await self.get_kline(semaphore, symbol, "15m")
+                        kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
+                        if kline_close[-1] < sum(kline_close_15[-10:]) / len(
+                            kline_close_15[-10:]
+                        ):
+                            self.close_bn_position(
+                                symbol, close_info[2], close_info[3], kline_close[-1], 1
+                            )
+                            self.alert_all["POSITIONS"].pop(symbol)
+                            self.alert_all["OBSERVATIONS"][symbol] = [
+                                kline_close[-1],
+                                dtn.timestamp(),
+                                "SELL",
+                                "SHORT",
+                            ]
+                            return
+                    if kline_close[-1] > close_info[-1]:
+                        close_info[1] = kline_close[-1] * (1 - kline_zf_mean * 0.5)
+                    else:
+                        close_info[0] = kline_close[-1] * (1 + kline_zf_mean * 0.5)
             elif open_info:
                 if dtn.timestamp() - open_info[1] > 24 * 60 * 60:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
@@ -817,7 +839,7 @@ class AUTOBN:
                         )
                     )
                     and kline_close[-2] < kline_close[-1]
-                    and max(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
+                    and min(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                     and await self.increase_oi(
                         semaphore, symbol, "LONG", kline_close, kline_volume, dtn
                     )
@@ -1160,8 +1182,9 @@ class AUTOA:
                 "LONG",
             ]
             cls.alert_all["POSITIONS"].pop(code)
-            msg = f"{close_info[2]} 平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
-            cls.send_msg(msg)
+            if close_info[-1] == "BZ2":
+                msg = f"{close_info[2]} 平仓\n委托价格:{price_close}\n平仓收益:{price_close / close_info[4] - 1:.2%}"
+                cls.send_msg(msg)
 
     @classmethod
     async def on_observations(cls, code, zt_dates, open_info, today):
@@ -1180,7 +1203,12 @@ class AUTOA:
             cls.alert_all["OBSERVATIONS"].pop(code)
         elif (
             today.timestamp() - open_info[1] >= 24 * 60 * 60
-            and max(hist.iloc[-2]["close"], hist.iloc[-1]["open"]) < price_close
+            and max(
+                hist.iloc[-2]["close"],
+                hist.iloc[-1]["open"],
+                hist.iloc[-10:]["close"].mean(),
+            )
+            < price_close
             and max(hist.iloc[-3]["volume"], hist.iloc[-2]["volume"] * 1.5)
             < hist.iloc[-1]["volume"]
         ):
@@ -1192,7 +1220,7 @@ class AUTOA:
                 zs,
                 open_info[2],
                 int(today.strftime("%Y%m%d")),
-                price_close,
+                "BZ2",
             ]
             cls.alert_all["OBSERVATIONS"].pop(code)
             msg = f"==={open_info[2]}**BZ2**===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
@@ -1251,7 +1279,7 @@ class AUTOA:
                         zs,
                         code[1],
                         int(today.strftime("%Y%m%d")),
-                        price_close,
+                        "BZ1",
                     ]
             cls.zt_dates.clear()
             cls.hist_cache.clear()
