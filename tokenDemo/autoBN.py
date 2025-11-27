@@ -714,23 +714,6 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                 else:
-                    if close_info[3] == "LONG":
-                        kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                        kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
-                        if kline_close_15[-1] < sum(kline_close_15[-10:]) / len(
-                            kline_close_15[-10:]
-                        ):
-                            self.close_bn_position(
-                                symbol, close_info[2], close_info[3], kline_close[-1], 1
-                            )
-                            self.alert_all["POSITIONS"].pop(symbol)
-                            self.alert_all["OBSERVATIONS"][symbol] = [
-                                kline_close[-1],
-                                dtn.timestamp(),
-                                "SELL",
-                                "SHORT",
-                            ]
-                            return
                     if kline_close[-1] > close_info[-1]:
                         close_info[1] = kline_close[-1] * (1 - kline_zf_mean * 0.5)
                     else:
