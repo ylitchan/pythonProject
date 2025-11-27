@@ -24,6 +24,8 @@ from typing import List, Union, Optional
 class PositionSide(str, Enum):
     LONG = "LONG"
     SHORT = "SHORT"
+    BZ1 = "BZ1"
+    BZ2 = "BZ2"
 
 
 class OrderSide(str, Enum):
@@ -514,7 +516,7 @@ class AUTOBN:
                 )
         return None
 
-    async def increase_oi(
+    async def check_bd(
         self,
         semaphore,
         symbol,
@@ -528,48 +530,43 @@ class AUTOBN:
         """
         async with semaphore:
             try:
-                if positionSide == PositionSide.LONG.value:
-                    # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
-                    # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
-                    return True
-                else:
-                    # 获取持仓量历史数据
-                    oi_1d = await asyncio.to_thread(
-                        self.um_futures_client.open_interest_hist,
-                        symbol=symbol,
-                        period="1d",
-                        limit=self.KLINE_LIMIT,
-                    )
-                    dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
-                    if oi_1d[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
-                        return False
-                    sumOpenInterestValue_1d = [
-                        float(i["sumOpenInterestValue"]) for i in oi_1d
-                    ]  # 持仓价值（美元）
-                    sumOpenInterest_1d = [
-                        float(i["sumOpenInterest"]) for i in oi_1d
-                    ]  # 持仓数量（合约数）
+                # 获取持仓量历史数据
+                oi_1d = await asyncio.to_thread(
+                    self.um_futures_client.open_interest_hist,
+                    symbol=symbol,
+                    period="1d",
+                    limit=self.KLINE_LIMIT,
+                )
+                dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
+                if oi_1d[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
+                    return False
+                sumOpenInterestValue_1d = [
+                    float(i["sumOpenInterestValue"]) for i in oi_1d
+                ]  # 持仓价值（美元）
+                sumOpenInterest_1d = [
+                    float(i["sumOpenInterest"]) for i in oi_1d
+                ]  # 持仓数量（合约数）
 
-                    # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
-                    # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
-                    return any(
-                        (
-                            kline_close[index - 1] == max(kline_close)
-                            and sumOpenInterestValue_1d[index]
-                            == max(sumOpenInterestValue_1d)
-                            and kline_close[-2] > max(kline_close[-4:-2])
-                            and sumOpenInterestValue_1d[-1]
-                            > max(sumOpenInterestValue_1d[-3:-1])
-                            and max(kline_volume[-3:-1]) == max(kline_volume)
-                            and sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
-                        )
-                        for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
+                # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
+                # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
+                return any(
+                    (
+                        kline_close[index - 1] == max(kline_close)
+                        and sumOpenInterestValue_1d[index]
+                        == max(sumOpenInterestValue_1d)
+                        and kline_close[-2] > max(kline_close[-4:-2])
+                        and sumOpenInterestValue_1d[-1]
+                        > max(sumOpenInterestValue_1d[-3:-1])
+                        and max(kline_volume[-3:-1]) == max(kline_volume)
+                        and sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
                     )
+                    for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
+                )
             except Exception:
                 traceback.print_exc()
                 return False
 
-    async def decrease_oi(
+    async def check_bz(
         self,
         semaphore,
         symbol,
@@ -579,9 +576,6 @@ class AUTOBN:
         time_target=None,
         dtn=None,
     ):
-        """
-        检查减仓信号，判断是否应该平仓
-        """
         async with semaphore:
             try:
                 # 获取持仓量历史数据
@@ -864,13 +858,20 @@ class AUTOBN:
                     early_volume_avg = sum(early_volume_slice) / len(early_volume_slice)
 
                     if (
-                        open_info.position_side == PositionSide.LONG
+                        open_info.position_side == PositionSide.BZ1
                         and max(kline_close[-2], avg_close_15) < current_price
                         and open_info.price < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
                         and early_volume_avg * 9 < max(kline_volume_15[-2:])
-                        and not any(
+                        and await self.check_bz(
+                            semaphore,
+                            symbol,
+                            open_info.position_side.value,
+                            kline_close_15,
+                        )
+                    ):
+                        if any(
                             (
                                 sum(kline_volume_15[:index][:volume_cutoff])
                                 / len(kline_volume_15[:index][:volume_cutoff])
@@ -878,14 +879,15 @@ class AUTOBN:
                                 < max(kline_volume_15[index - 1 : index + 1])
                             )
                             for index in range(-3, int(-len(kline_15) / 3), -1)
-                        )
-                        and await self.decrease_oi(
-                            semaphore,
-                            symbol,
-                            open_info.position_side.value,
-                            kline_close_15,
-                        )
-                    ):
+                        ):
+                            new_obs = Observation(
+                                price=current_price,
+                                timestamp=current_timestamp,
+                                side=OrderSide.SELL,
+                                position_side=PositionSide.BZ2,
+                            )
+                            self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
+                            return
                         zy, zs = calc_stop_profit_loss(current_price, is_long=True)
                         self.send_msg(
                             f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
@@ -903,13 +905,13 @@ class AUTOBN:
                             self.alert_all["OBSERVATIONS"].pop(symbol)
                             return
                     elif (
-                        open_info.position_side == PositionSide.SHORT
+                        open_info.position_side == PositionSide.BZ2
                         and kline_close_15[-1] > max(kline_close_15[-2], avg_close_15)
                         and max(kline_volume_15[-3], kline_volume_15[-2] * 1.5)
                         < kline_volume_15[-1]
                         and current_timestamp - open_info.timestamp
                         >= self.FIFTEEN_MIN_SECONDS
-                        and await self.decrease_oi(
+                        and await self.check_bz(
                             semaphore,
                             symbol,
                             open_info.position_side.value,
@@ -919,6 +921,26 @@ class AUTOBN:
                             dtn,
                         )
                     ):
+                        if any(
+                            (
+                                kline_close_15[index] > kline_close_15[index - 1]
+                                and max(
+                                    kline_volume_15[index - 2],
+                                    kline_volume_15[index - 1] * 1.5,
+                                )
+                                < kline_volume_15[index]
+                            )
+                            for index in range(
+                                -3,
+                                int(
+                                    (open_info.timestamp - current_timestamp)
+                                    / self.FIFTEEN_MIN_SECONDS
+                                ),
+                                -1,
+                            )
+                        ):
+                            self.alert_all["OBSERVATIONS"].pop(symbol)
+                            return
                         zy, zs = calc_stop_profit_loss(current_price, is_long=True)
                         self.send_msg(
                             f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
@@ -930,7 +952,7 @@ class AUTOBN:
                                 take_profit=zy,
                                 stop_loss=zs,
                                 close_side=OrderSide.SELL,
-                                position_side=PositionSide.LONG,
+                                position_side=PositionSide.BZ2,
                             )
                             self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
                             self.alert_all["OBSERVATIONS"].pop(symbol)
@@ -951,14 +973,6 @@ class AUTOBN:
                     )
                     and kline_close[-2] < current_price
                     and min(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
-                    and await self.increase_oi(
-                        semaphore,
-                        symbol,
-                        PositionSide.LONG.value,
-                        kline_close,
-                        kline_volume,
-                        dtn,
-                    )
                 ):
                     if close_info and close_info.position_side == PositionSide.SHORT:
                         self.close_bn_position(
@@ -976,7 +990,7 @@ class AUTOBN:
                         price=current_price,
                         timestamp=current_timestamp,
                         side=OrderSide.SELL,
-                        position_side=PositionSide.LONG,
+                        position_side=PositionSide.BZ1,
                     )
                     self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
 
@@ -993,7 +1007,7 @@ class AUTOBN:
                         )
                     )
                     and current_price < kline_close[-2]
-                    and await self.increase_oi(
+                    and await self.check_bd(
                         semaphore,
                         symbol,
                         PositionSide.SHORT.value,
