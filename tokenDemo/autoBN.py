@@ -14,6 +14,87 @@ import baostock as bs
 import pandas as pd  # 数据分析库
 import requests  # HTTP请求库
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # 异步任务调度器
+from enum import Enum
+from dataclasses import dataclass
+from typing import List, Union, Optional
+
+# ==================== 类型定义 ====================
+
+
+class PositionSide(str, Enum):
+    LONG = "LONG"
+    SHORT = "SHORT"
+
+
+class OrderSide(str, Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+@dataclass
+class Position:
+    """持仓信息数据类"""
+
+    take_profit: float  # 止盈价 [0]
+    stop_loss: float  # 止损价 [1]
+    close_side: OrderSide  # 平仓方向 [2]
+    position_side: PositionSide  # 持仓方向 [3]
+    entry_price: float = 0.0  # 开仓均价 [4]
+
+    def to_list(self) -> List:
+        """转换为列表格式（用于JSON存储兼容）"""
+        return [
+            self.take_profit,
+            self.stop_loss,
+            self.close_side.value,
+            self.position_side.value,
+            self.entry_price,
+        ]
+
+    @classmethod
+    def from_list(cls, data: List):
+        """从列表创建对象"""
+        entry_price = data[4] if len(data) > 4 else 0.0
+        return cls(
+            take_profit=float(data[0]),
+            stop_loss=float(data[1]),
+            close_side=OrderSide(data[2]),
+            position_side=PositionSide(data[3]),
+            entry_price=float(entry_price),
+        )
+
+
+@dataclass
+class Observation:
+    """观察列表信息数据类"""
+
+    price: float  # 触发价格 [0]
+    timestamp: float  # 触发时间 [1]
+    side: OrderSide  # 信号方向 [2]
+    position_side: Union[PositionSide, str]  # 相关持仓方向 [3] (可能为空字符串)
+
+    def to_list(self) -> List:
+        """转换为列表格式"""
+        pos_side = (
+            self.position_side.value
+            if isinstance(self.position_side, PositionSide)
+            else self.position_side
+        )
+        return [self.price, self.timestamp, self.side.value, pos_side]
+
+    @classmethod
+    def from_list(cls, data: List):
+        """从列表创建对象"""
+        pos_side = data[3]
+        if pos_side in [e.value for e in PositionSide]:
+            pos_side = PositionSide(pos_side)
+        return cls(
+            price=float(data[0]),
+            timestamp=float(data[1]),
+            side=OrderSide(data[2]),
+            position_side=pos_side,
+        )
+
 
 # HTTP 会话配置（可覆盖）
 session = requests.Session()
@@ -22,6 +103,39 @@ session.headers = {"Content-Type": "application/json"}
 
 
 class AUTOBN:
+    """币安期货自动交易类"""
+
+    # ==================== 交易参数常量 ====================
+    DEFAULT_CLOSE_RATIO = 0.5  # 默认平仓比例
+    DEFAULT_OPEN_RATIO = 0.1  # 默认开仓比例
+    MAX_BALANCE_USAGE = 0.7  # 最大资金使用比例
+    DEFAULT_LEVERAGE = 1  # 默认杠杆倍数
+    MIN_NOTIONAL = 6  # 最小交易额（USDT）
+
+    # ==================== 风控参数常量 ====================
+    DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值
+    MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率（0.4%）
+
+    # ==================== 并发控制常量 ====================
+    MAX_CONCURRENT_REQUESTS = 10  # 最大并发请求数
+    CHUNK_SIZE = 10  # 批处理大小
+
+    # ==================== 基差监控常量 ====================
+    BASIS_WARNING_THRESHOLD = 1.02  # 基差警告阈值（2%）
+    BASIS_ALERT_THRESHOLD = 1.015  # 基差异常阈值（1.5%）
+    BASIS_WARNING_COOLDOWN = 60  # 基差警告冷却时间（秒）
+    BASIS_ALERT_COOLDOWN = 180  # 基差异常冷却时间（秒）
+
+    # ==================== 时间常量 ====================
+    ONE_DAY_SECONDS = 24 * 60 * 60  # 一天的秒数
+    FIFTEEN_MIN_SECONDS = 15 * 60  # 15分钟的秒数
+    RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
+    CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
+
+    # ==================== K线相关常量 ====================
+    KLINE_LIMIT = 30  # K线数据条数
+    MIN_KLINE_FOR_ANALYSIS = 4  # 分析所需最小K线数量
+
     @classmethod
     def from_cfg(cls, **kwargs):
         obj = cls.__new__(cls)
@@ -37,8 +151,8 @@ class AUTOBN:
             raise ValueError("from_cfg 需要提供 qy_key")
 
         # 交易参数配置（可覆盖）
-        obj.leverage = kwargs.get("leverage", 1)
-        obj.health4open = kwargs.get("health4open", 70)
+        obj.leverage = kwargs.get("leverage", cls.DEFAULT_LEVERAGE)
+        obj.health4open = kwargs.get("health4open", cls.DEFAULT_HEALTH_THRESHOLD)
         # 仓位模式：'CROSSED' 全仓，'ISOLATED' 逐仓；支持大小写/中文/别名
         # 仅设置新开仓/下单前的目标模式；若该 symbol 已有仓位，交易所可能拒绝切换
         margin_mode_raw = (
@@ -180,8 +294,8 @@ class AUTOBN:
                 )  # 单个持仓的维持保证金
                 total_maintenance_margin += maintenance_margin
 
-        # 加上新增头寸的维持保证金（按0.4%计算）
-        total_maintenance_margin += notional * 0.004
+        # 加上新增头寸的维持保证金
+        total_maintenance_margin += notional * self.MAINTENANCE_MARGIN_RATE
 
         # 计算健康度
         if total_maintenance_margin == 0 and total_balance >= 0:
@@ -256,8 +370,8 @@ class AUTOBN:
             # 资金管理策略：限制单次开仓金额，控制风险
             # 策略1：设置资金槽位，单次开仓不超过总资金的 open_ratio（默认 1/3）
             self.slot_balance[0] = max(balance * open_ratio, self.slot_balance[0])
-            # 策略2：实际开仓金额不超过槽位和总资金70%的较小值
-            safe_balance = min(self.slot_balance[0], balance * 0.7)
+            # 策略2：实际开仓金额不超过槽位和总资金的较小值
+            safe_balance = min(self.slot_balance[0], balance * self.MAX_BALANCE_USAGE)
 
             # 计算开仓数量：可用资金 * 杠杆 / 当前价格
             amount_raw = safe_balance * self.leverage / markPrice
@@ -273,10 +387,10 @@ class AUTOBN:
             # 计算名义价值（用于风险控制）
             notional = amount * markPrice
 
-            # 最小交易额检查（币安要求最低6 USDT）
-            if notional < 6:
+            # 最小交易额检查
+            if notional < self.MIN_NOTIONAL:
                 self.send_msg(
-                    f"{symbol} 开仓失败：交易额 {notional} 低于最小要求 6 USDT"
+                    f"{symbol} 开仓失败：交易额 {notional} 低于最小要求 {self.MIN_NOTIONAL} USDT"
                 )
                 return None
 
@@ -357,6 +471,7 @@ class AUTOBN:
         while close_amount > 0:
             try:
                 # 执行市价单平仓
+                # 执行市价单平仓
                 tx = self.um_futures_client.new_order(
                     symbol=symbol,
                     side=side,  # 平仓方向
@@ -364,21 +479,27 @@ class AUTOBN:
                     quantity=close_amount,  # 平仓数量
                     positionSide=positionSide,  # 持仓方向
                 )
-                entryPrice = self.alert_all["POSITIONS"][symbol][-1]
+                # 尝试获取开仓价格，如果使用的是对象则获取entry_price，否则获取列表最后一个元素
+                pos_data = self.alert_all["POSITIONS"].get(symbol)
+                if pos_data and len(pos_data) >= 5:
+                    entryPrice = pos_data[4]
+                else:
+                    entryPrice = price_close  # 无法获取时使用当前价格避免报错
+
                 # 发送成功通知
                 price_diff = (
                     price_close - entryPrice
-                    if positionSide == "LONG"
+                    if positionSide == PositionSide.LONG.value
                     else entryPrice - price_close
                 )
                 realized_pnl = price_diff * close_amount
-                pnl_percent = price_diff / entryPrice
+                pnl_percent = price_diff / entryPrice if entryPrice != 0 else 0
                 msg = f"{symbol}平仓\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}"
                 self.send_msg(msg)
                 return symbol  # 成功平仓，退出循环
             except Exception:
-                # 平仓失败，等待3秒后重试F
-                time.sleep(3)
+                # 平仓失败，等待后重试
+                time.sleep(self.CLOSE_RETRY_DELAY)
                 traceback.print_exc()  # 打印错误信息
                 msg = f"bn平仓{symbol}失败，当前价格:{price_close}"
                 self.send_msg(msg)
@@ -404,29 +525,20 @@ class AUTOBN:
     ):
         """
         检查增仓信号，判断是否适合开仓
-
-        功能：分析持仓量变化和多空比，判断市场情绪和资金流向
-        参数：
-            semaphore: 异步信号量，控制并发数量
-            symbol: 交易对符号，如'BTCUSDT'
-            positionSide: 持仓方向，'LONG'或'SHORT'
-            kline_close: K线收盘价列表，可选参数
-        返回：
-            True表示适合开仓，False表示不适合
         """
         async with semaphore:
             try:
-                if positionSide == "LONG":
+                if positionSide == PositionSide.LONG.value:
                     # 做多条件检查：需要持仓量增加且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须大于前3天最大值（说明有资金流入）
                     return True
                 else:
-                    # 获取持仓量历史数据（30天）
+                    # 获取持仓量历史数据
                     oi_1d = await asyncio.to_thread(
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
                         period="1d",
-                        limit=30,
+                        limit=self.KLINE_LIMIT,
                     )
                     dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
                     if oi_1d[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
@@ -438,16 +550,6 @@ class AUTOBN:
                         float(i["sumOpenInterest"]) for i in oi_1d
                     ]  # 持仓数量（合约数）
 
-                    # 获取多空比历史数据（100天）
-                    # lsar = await asyncio.to_thread(self.um_futures_client.long_short_account_ratio, symbol=symbol,
-                    #                                period="1d", limit=30)
-                    # lsar = [float(i['longShortRatio']) for i in lsar]  # 多空比列表
-
-                    # 打印分析数据，便于监控和调试
-                    # print(
-                    #     f"{symbol} 增仓信号{max(sumOpenInterest_1d[-3:-1])}——>{sumOpenInterest_1d[-1]} ${max(sumOpenInterestValue_1d[-3:-1])}——>${sumOpenInterestValue_1d[-1]}",
-                    #     flush=True,
-                    # )
                     # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
                     # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
                     return any(
@@ -479,23 +581,15 @@ class AUTOBN:
     ):
         """
         检查减仓信号，判断是否应该平仓
-
-        功能：分析持仓量变化，判断获利了结或止损时机
-        参数：
-            semaphore: 异步信号量，控制并发数量
-            symbol: 交易对符号，如'BTCUSDT'
-            positionSide: 持仓方向，'LONG'或'SHORT'
-        返回：
-            True表示应该平仓，False表示继续持有
         """
         async with semaphore:
             try:
-                # 获取持仓量历史数据（30天）
+                # 获取持仓量历史数据
                 oi_5m = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
                     period="5m",
-                    limit=30,
+                    limit=self.KLINE_LIMIT,
                 )
                 sumOpenInterestValue_5m = [
                     float(i["sumOpenInterestValue"]) for i in oi_5m
@@ -504,11 +598,6 @@ class AUTOBN:
                     float(i["sumOpenInterest"]) for i in oi_5m
                 ]  # 持仓数量（合约数）
 
-                # 打印减仓信号数据，便于监控
-                # print(
-                #     f"{symbol} 减仓信号{sumOpenInterest_5m[-2]}——>{sumOpenInterest_5m[-1]} ${sumOpenInterestValue_5m[-2]}——>${sumOpenInterestValue_5m[-1]}",
-                #     flush=True,
-                # )
                 oi_1d = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
@@ -521,31 +610,12 @@ class AUTOBN:
                 sumOpenInterest_1d = [
                     float(i["sumOpenInterest"]) for i in oi_1d
                 ]  # 持仓数量（合约数）
+
                 if sumOpenInterest_5m[-1] <= max(
                     sumOpenInterest_1d[-2:]
                 ) or sumOpenInterestValue_5m[-1] <= max(sumOpenInterestValue_1d[-2:]):
                     return False
                 return True
-                if positionSide == "LONG":
-                    return True
-                else:
-                    if sumOpenInterest_5m[-1] <= max(
-                        sumOpenInterest_5m[-7:-1]
-                    ) or sumOpenInterestValue_5m[-1] <= max(
-                        sumOpenInterestValue_5m[-7:-1]
-                    ):
-                        self.alert_all["OBSERVATIONS"].pop(symbol)
-                        return False
-                    for index in range(
-                        -2, int((time_target - dtn.timestamp()) / 15 / 60), -1
-                    ):
-                        # 如果持仓量和价值都增加，说明是正常增仓，继续等待
-                        if kline_close[index] > kline_close[index - 1] and kline_volume[
-                            index
-                        ] > max(kline_volume[index - 2 : index]):
-                            self.alert_all["OBSERVATIONS"].pop(symbol)
-                            return False
-                    return True
             except Exception:
                 traceback.print_exc()
                 return False
@@ -566,12 +636,12 @@ class AUTOBN:
             # 提取时间周期前缀并转小写（如'1Dutc' -> '1d'）
             interval = t.replace("utc", "").lower()
             try:
-                # 异步获取K线数据（30根K线）
+                # 异步获取K线数据
                 kline = await asyncio.to_thread(
                     self.um_futures_client.klines,
                     symbol=symbol,
                     interval=interval,
-                    limit=30,
+                    limit=self.KLINE_LIMIT,
                 )
                 # 将所有数据转换为浮点数格式
                 return [list(map(float, sublist)) for sublist in kline]
@@ -594,7 +664,7 @@ class AUTOBN:
             try:
                 # 获取指数价格（现货价格）
                 index_price = await asyncio.to_thread(
-                    self.session.get,
+                    session.get,
                     url="https://fapi.binance.com/fapi/v1/premiumIndex",
                 )
                 index_price = {
@@ -604,7 +674,7 @@ class AUTOBN:
                 # 获取期货市场价格
                 market_price = (
                     await asyncio.to_thread(
-                        self.session.get,
+                        session.get,
                         url="https://fapi.binance.com/fapi/v2/ticker/price",
                     )
                 ).json()
@@ -618,14 +688,21 @@ class AUTOBN:
                     if (
                         basis := index_price.get(p["symbol"], float(p["price"]))
                         / float(p["price"])
-                    ) > 1.02 and time_now - BASIS.get(p["symbol"], 0) > 60:
-                        # 基差超过2%且距离上次通知超过60秒，发送警告
+                    ) > self.BASIS_WARNING_THRESHOLD and time_now - BASIS.get(
+                        p["symbol"], 0
+                    ) > self.BASIS_WARNING_COOLDOWN:
+                        # 基差超过警告阈值且距离上次通知超过冷却时间，发送警告
                         BASIS[p["symbol"]] = time.time()
                         self.send_msg(
-                            f"{p['symbol']} 基差超过2%：{basis * 100 - 100:.2%}", True
+                            f"{p['symbol']} 基差超过{(self.BASIS_WARNING_THRESHOLD - 1) * 100:.1f}%：{basis * 100 - 100:.2%}",
+                            True,
                         )
-                    elif basis >= 1.015 and time_now - BASIS.get(p["symbol"], 0) > 180:
-                        # 基差超过1.5%且距离上次通知超过180秒，发送异常提醒
+                    elif (
+                        basis >= self.BASIS_ALERT_THRESHOLD
+                        and time_now - BASIS.get(p["symbol"], 0)
+                        > self.BASIS_ALERT_COOLDOWN
+                    ):
+                        # 基差超过异常阈值且距离上次通知超过冷却时间，发送异常提醒
                         BASIS[p["symbol"]] = time.time()
                         self.send_msg(
                             f"{p['symbol']} 基差异常：{basis * 100 - 100:.2%}", True
@@ -635,125 +712,168 @@ class AUTOBN:
                 traceback.print_exc()
             finally:
                 # 每2秒检查一次
-                await asyncio.sleep(2)
+                await asyncio.sleep(self.RETRY_DELAY_SECONDS)
 
     async def rzq_token(self, semaphore, symbol, success, dtn):
         """
         核心交易逻辑：分析K线数据并执行交易决策
-
-        功能：这是整个交易系统的核心函数，负责：
-        1. 获取K线数据
-        2. 检查现有持仓是否需要平仓
-        3. 分析市场信号决定是否开仓
-        4. 执行开仓操作
-
-        参数：
-            semaphore: 异步信号量，控制并发数量
-            symbol: 交易对符号，如'BTCUSDT'
-            success: 成功处理的交易对集合
-            symbols_info: 交易对配置信息
         """
         try:
-            close_info = self.alert_all["POSITIONS"].get(symbol)
-            open_info = self.alert_all["OBSERVATIONS"].get(symbol)
+            # 获取原始数据并转换为对象
+            close_info_list = self.alert_all["POSITIONS"].get(symbol)
+            open_info_list = self.alert_all["OBSERVATIONS"].get(symbol)
+
+            close_info: Optional[Position] = (
+                Position.from_list(close_info_list) if close_info_list else None
+            )
+            open_info: Optional[Observation] = (
+                Observation.from_list(open_info_list) if open_info_list else None
+            )
+
             # 获取日K线数据（30天）
             kline = await self.get_kline(semaphore, symbol, "1Dutc")
-            # 数据量检查：至少需要4根K线进行分析
-            if len(kline) < 4:
+            # 数据量检查
+            if len(kline) < self.MIN_KLINE_FOR_ANALYSIS:
                 return
-            success.add(symbol)  # 记录成功处理的交易对
-            kline_close = [k[4] for k in kline]  # 提取收盘价列表
+            success.add(symbol)
+            kline_close = [k[4] for k in kline]
             kline_volume = [k[5] for k in kline]
             kline_zf = list(map(lambda k: abs(k[4] / k[1] - 1), kline[-10:]))
             kline_zf_mean = sum(kline_zf) / len(kline_zf)
+
+            # 预计算常用值
+            current_price = kline_close[-1]
+            zf_half = kline_zf_mean * 0.5
+            current_timestamp = dtn.timestamp()
+
+            # 止盈止损计算辅助函数
+            def calc_stop_profit_loss(price, is_long=True):
+                if is_long:
+                    return (price * (1 + zf_half), price * (1 - zf_half))
+                else:
+                    return (price * (1 - zf_half), price * (1 + zf_half))
+
+            # 延迟获取15分钟K线
+            kline_15 = None
+            kline_close_15 = None
+            kline_volume_15 = None
+
+            async def get_kline_15_data():
+                nonlocal kline_15, kline_close_15, kline_volume_15
+                if kline_15 is None:
+                    kline_15 = await self.get_kline(semaphore, symbol, "15m")
+                    kline_close_15 = [k[4] for k in kline_15]
+                    kline_volume_15 = [k[5] for k in kline_15]
+                return kline_15, kline_close_15, kline_volume_15
+
             # 检查现有持仓是否需要平仓
             if close_info:
-                # close_info格式：[止盈价, 止损价, 平仓方向, 持仓方向]
-                # 平仓条件：价格触及止损/止盈 或 减仓信号触发
-                kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                if kline_close[-1] <= close_info[1]:
-                    if close_info[3] == "SHORT":
+                await get_kline_15_data()
+
+                if current_price <= close_info.stop_loss:  # 触及止损
+                    if close_info.position_side == PositionSide.SHORT:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
+                            symbol,
+                            close_info.close_side.value,
+                            close_info.position_side.value,
+                            current_price,
+                            0.5,
                         )
-                        close_info[1] = kline_close[-1] * (1 - kline_zf_mean * 0.5)
-                        close_info[0] = kline_close[-1] * (1 + kline_zf_mean * 0.5)
-                        self.alert_all["OBSERVATIONS"][symbol] = [
-                            kline_close[-1],
-                            dtn.timestamp(),
-                            "SELL",
-                            "",
-                        ]
+                        # 更新止盈止损
+                        close_info.take_profit, close_info.stop_loss = (
+                            calc_stop_profit_loss(current_price, is_long=True)
+                        )
+
+                        # 转换为 Observation 对象并保存
+                        new_obs = Observation(
+                            price=current_price,
+                            timestamp=current_timestamp,
+                            side=OrderSide.SELL,
+                            position_side="",
+                        )
+                        self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                            symbol,
+                            close_info.close_side.value,
+                            close_info.position_side.value,
+                            current_price,
+                            1,
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
-                        self.alert_all["OBSERVATIONS"][symbol] = [
-                            kline_close[-1],
-                            dtn.timestamp(),
-                            "SELL",
-                            "SHORT",
-                        ]
-                elif kline_close[-1] >= close_info[0]:
-                    if close_info[3] == "LONG":
-                        self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 0.5
+
+                        new_obs = Observation(
+                            price=current_price,
+                            timestamp=current_timestamp,
+                            side=OrderSide.SELL,
+                            position_side=PositionSide.SHORT,
                         )
-                        close_info[0] = kline_close[-1] * (1 + kline_zf_mean * 0.5)
-                        close_info[1] = kline_close[-1] * (1 - kline_zf_mean * 0.5)
-                        self.alert_all["OBSERVATIONS"][symbol] = [
-                            kline_close[-1],
-                            dtn.timestamp(),
-                            "SELL",
-                            "SHORT",
-                        ]
+                        self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
+
+                elif current_price >= close_info.take_profit:  # 触及止盈
+                    if close_info.position_side == PositionSide.LONG:
+                        self.close_bn_position(
+                            symbol,
+                            close_info.close_side.value,
+                            close_info.position_side.value,
+                            current_price,
+                            0.5,
+                        )
+                        close_info.take_profit, close_info.stop_loss = (
+                            calc_stop_profit_loss(current_price, is_long=True)
+                        )
+
+                        new_obs = Observation(
+                            price=current_price,
+                            timestamp=current_timestamp,
+                            side=OrderSide.SELL,
+                            position_side=PositionSide.SHORT,
+                        )
+                        self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                     else:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                            symbol,
+                            close_info.close_side.value,
+                            close_info.position_side.value,
+                            current_price,
+                            1,
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                 else:
-                    close_info[-1] = kline_close[-1]
-                    if kline_close[-1] > close_info[-1]:
-                        close_info[1] = kline_close[-1] * (1 - kline_zf_mean * 0.5)
+                    # 更新最新价格和动态止盈止损
+                    close_info.entry_price = current_price
+                    if current_price > close_info.entry_price:
+                        close_info.stop_loss = current_price * (1 - zf_half)
                     else:
-                        close_info[0] = kline_close[-1] * (1 + kline_zf_mean * 0.5)
+                        close_info.take_profit = current_price * (1 + zf_half)
+                    # 更新回字典
+                    self.alert_all["POSITIONS"][symbol] = close_info.to_list()
+
             elif open_info:
-                if dtn.timestamp() - open_info[1] > 24 * 60 * 60:
+                if current_timestamp - open_info.timestamp > self.ONE_DAY_SECONDS:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
-                    if not open_info[3]:
+                    if not open_info.position_side:
                         return
-                    kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                    kline_close_15 = [k[4] for k in kline_15]  # 提取收盘价列表
-                    kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
+
+                    await get_kline_15_data()
+
+                    avg_close_15 = sum(kline_close_15[-10:]) / len(kline_close_15[-10:])
+                    volume_cutoff = -int(len(kline_volume_15) * 2 / 3)
+                    early_volume_slice = kline_volume_15[:volume_cutoff]
+                    early_volume_avg = sum(early_volume_slice) / len(early_volume_slice)
+
                     if (
-                        open_info[3] == "LONG"
-                        and max(
-                            kline_close[-2],
-                            sum(kline_close_15[-10:]) / len(kline_close_15[-10:]),
-                        )
-                        < kline_close[-1]
-                        and open_info[0] < kline_close_15[-1]
+                        open_info.position_side == PositionSide.LONG
+                        and max(kline_close[-2], avg_close_15) < current_price
+                        and open_info.price < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
-                        and sum(kline_volume_15[: -int(len(kline_volume_15) * 2 / 3)])
-                        / len(kline_volume_15[: -int(len(kline_volume_15) * 2 / 3)])
-                        * 9
-                        < max(kline_volume_15[-2:])
+                        and early_volume_avg * 9 < max(kline_volume_15[-2:])
                         and not any(
                             (
-                                sum(
-                                    kline_volume_15[:index][
-                                        : -int(len(kline_volume_15[:index]) * 2 / 3)
-                                    ]
-                                )
-                                / len(
-                                    kline_volume_15[:index][
-                                        : -int(len(kline_volume_15) * 2 / 3)
-                                    ]
-                                )
+                                sum(kline_volume_15[:index][:volume_cutoff])
+                                / len(kline_volume_15[:index][:volume_cutoff])
                                 * 9
                                 < max(kline_volume_15[index - 1 : index + 1])
                             )
@@ -762,132 +882,149 @@ class AUTOBN:
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
-                            open_info[3],
+                            open_info.position_side.value,
                             kline_close_15,
                         )
                     ):
-                        zy = kline_close[-1] * (1 + kline_zf_mean * 0.5)
-                        zs = kline_close[-1] * (1 - kline_zf_mean * 0.5)
+                        zy, zs = calc_stop_profit_loss(current_price, is_long=True)
                         self.send_msg(
-                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
                         )
-                        if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
-                            self.alert_all["POSITIONS"][symbol] = [
-                                zy,
-                                zs,
-                                "SELL",
-                                "LONG",
-                            ]
+                        if self.open_bn_position(
+                            symbol, OrderSide.BUY.value, PositionSide.LONG.value, 0.1
+                        ):
+                            new_pos = Position(
+                                take_profit=zy,
+                                stop_loss=zs,
+                                close_side=OrderSide.SELL,
+                                position_side=PositionSide.LONG,
+                            )
+                            self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
                             self.alert_all["OBSERVATIONS"].pop(symbol)
                             return
                     elif (
-                        open_info[3] == "SHORT"
-                        and kline_close_15[-1]
-                        > max(
-                            kline_close_15[-2],
-                            sum(kline_close_15[-10:]) / len(kline_close_15[-10:]),
-                        )
+                        open_info.position_side == PositionSide.SHORT
+                        and kline_close_15[-1] > max(kline_close_15[-2], avg_close_15)
                         and max(kline_volume_15[-3], kline_volume_15[-2] * 1.5)
                         < kline_volume_15[-1]
-                        and dtn.timestamp() - open_info[1] >= 15 * 60
+                        and current_timestamp - open_info.timestamp
+                        >= self.FIFTEEN_MIN_SECONDS
                         and await self.decrease_oi(
                             semaphore,
                             symbol,
-                            open_info[3],
+                            open_info.position_side.value,
                             kline_close_15,
                             kline_volume_15,
-                            open_info[1],
+                            open_info.timestamp,
                             dtn,
                         )
                     ):
-                        # 设置止盈止损：止盈9%，止损9%
-                        zy = kline_close[-1] * (1 + kline_zf_mean * 0.5)
-                        zs = kline_close[-1] * (1 - kline_zf_mean * 0.5)
+                        zy, zs = calc_stop_profit_loss(current_price, is_long=True)
                         self.send_msg(
-                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
                         )
-                        if self.open_bn_position(symbol, "BUY", "LONG", 0.1):
-                            self.alert_all["POSITIONS"][symbol] = [
-                                zy,
-                                zs,
-                                "SELL",
-                                "LONG",
-                            ]
+                        if self.open_bn_position(
+                            symbol, OrderSide.BUY.value, PositionSide.LONG.value, 0.1
+                        ):
+                            new_pos = Position(
+                                take_profit=zy,
+                                stop_loss=zs,
+                                close_side=OrderSide.SELL,
+                                position_side=PositionSide.LONG,
+                            )
+                            self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
                             self.alert_all["OBSERVATIONS"].pop(symbol)
                             return
             else:
-                # 做多信号判断：需要同时满足以下条件
-                # 条件1：价格连续上涨（前3天 < 前2天 < 前1天）
-                # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最大值）
-                # 条件3：持仓量增加信号（increase_oi函数返回True）
+                # 做多信号判断
                 if (
                     (
                         self.is_early_morning
                         or (
-                            self.alert_all["POSITIONS"].get(
-                                symbol, [0, 0, "BUY", "SHORT"]
-                            )[3]
-                            != "LONG"
+                            # 检查是否已有空头持仓
+                            symbol not in self.alert_all["POSITIONS"]
+                            or Position.from_list(
+                                self.alert_all["POSITIONS"][symbol]
+                            ).position_side
+                            != PositionSide.LONG
                         )
                     )
-                    and kline_close[-2] < kline_close[-1]
+                    and kline_close[-2] < current_price
                     and min(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
                     and await self.increase_oi(
-                        semaphore, symbol, "LONG", kline_close, kline_volume, dtn
+                        semaphore,
+                        symbol,
+                        PositionSide.LONG.value,
+                        kline_close,
+                        kline_volume,
+                        dtn,
                     )
                 ):
-                    if close_info and close_info[3] == "SHORT":
+                    if close_info and close_info.position_side == PositionSide.SHORT:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                            symbol,
+                            close_info.close_side.value,
+                            close_info.position_side.value,
+                            current_price,
+                            1,
                         )
-                    zy = kline_close[-1] * (1 + kline_zf_mean * 0.5)
-                    zs = kline_close[-1] * (1 - kline_zf_mean * 0.5)
-                    # 发送做多信号通知
+                    zy, zs = calc_stop_profit_loss(current_price, is_long=True)
                     self.send_msg(
-                        f"==={symbol}做多===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+                        f"==={symbol}做多===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
                     )
-                    self.alert_all["OBSERVATIONS"][symbol] = [
-                        kline_close[-1],
-                        dtn.timestamp(),
-                        "SELL",
-                        "LONG",
-                    ]
+                    new_obs = Observation(
+                        price=current_price,
+                        timestamp=current_timestamp,
+                        side=OrderSide.SELL,
+                        position_side=PositionSide.LONG,
+                    )
+                    self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
 
-                # 做空信号判断：需要同时满足以下条件
-                # 条件1：价格连续下跌（前3天 > 前2天 > 前1天）
-                # 条件2：成交量放大（前2天成交量 > 前3天和前4天的最小值）
-                # 条件3：持仓量增加信号（increase_oi函数返回True）
+                # 做空信号判断
                 elif (
                     (
                         self.is_early_morning
                         or (
-                            self.alert_all["POSITIONS"].get(
-                                symbol, [0, 0, "SELL", "LONG"]
-                            )[3]
-                            != "SHORT"
+                            symbol not in self.alert_all["POSITIONS"]
+                            or Position.from_list(
+                                self.alert_all["POSITIONS"][symbol]
+                            ).position_side
+                            != PositionSide.SHORT
                         )
                     )
-                    and kline_close[-1] < kline_close[-2]
+                    and current_price < kline_close[-2]
                     and await self.increase_oi(
-                        semaphore, symbol, "SHORT", kline_close, kline_volume, dtn
+                        semaphore,
+                        symbol,
+                        PositionSide.SHORT.value,
+                        kline_close,
+                        kline_volume,
+                        dtn,
                     )
                 ):
-                    if close_info and close_info[3] == "LONG":
+                    if close_info and close_info.position_side == PositionSide.LONG:
                         self.close_bn_position(
-                            symbol, close_info[2], close_info[3], kline_close[-1], 1
+                            symbol,
+                            close_info.close_side.value,
+                            close_info.position_side.value,
+                            current_price,
+                            1,
                         )
-                    zy = kline_close[-1] * (1 - kline_zf_mean * 0.5)
-                    zs = kline_close[-1] * (1 + kline_zf_mean * 0.5)
-                    # 发送做空信号通知
+                    zy, zs = calc_stop_profit_loss(current_price, is_long=False)
                     self.send_msg(
-                        f"==={symbol}**BD**===\n价格:{kline_close[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
+                        f"==={symbol}**BD**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
                     )
-                    # 执行开仓操作
-                    if self.open_bn_position(symbol, "SELL", "SHORT", 0.1):
-                        # 记录持仓信息：[止盈价, 止损价, 平仓方向, 持仓方向]
-                        self.alert_all["POSITIONS"][symbol] = [zs, zy, "BUY", "SHORT"]
+                    if self.open_bn_position(
+                        symbol, OrderSide.SELL.value, PositionSide.SHORT.value, 0.1
+                    ):
+                        new_pos = Position(
+                            take_profit=zs,  # 做空止损是上界
+                            stop_loss=zy,  # 做空止盈是下界
+                            close_side=OrderSide.BUY,
+                            position_side=PositionSide.SHORT,
+                        )
+                        self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
         except Exception:
-            # 异常处理：打印错误信息但不中断程序
             traceback.print_exc()
             return
 
@@ -930,27 +1067,35 @@ class AUTOBN:
             positions_data.append(
                 f"==={p['symbol']}===\n开仓价格:{entryPrice} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unRealizedProfit']} USDT\n持仓收益:{float(p['unRealizedProfit']) / abs(float(p['notional'])):.2%}"
             )
+
             if p["symbol"] not in self.alert_all["POSITIONS"]:
-                if p["positionSide"] == "LONG":
-                    self.alert_all["POSITIONS"][p["symbol"]] = [
-                        entryPrice * 1.03,
-                        entryPrice * 0.97,
-                        "SELL",
-                        "LONG",
-                        entryPrice,
-                    ]
+                if p["positionSide"] == PositionSide.LONG.value:
+                    new_pos = Position(
+                        take_profit=entryPrice * 1.03,
+                        stop_loss=entryPrice * 0.97,
+                        close_side=OrderSide.SELL,
+                        position_side=PositionSide.LONG,
+                        entry_price=entryPrice,
+                    )
+                    self.alert_all["POSITIONS"][p["symbol"]] = new_pos.to_list()
                 else:
-                    self.alert_all["POSITIONS"][p["symbol"]] = [
-                        entryPrice * 1.03,
-                        entryPrice * 0.97,
-                        "BUY",
-                        "SHORT",
-                        entryPrice,
-                    ]
-            elif len(self.alert_all["POSITIONS"][p["symbol"]]) < 5:
-                self.alert_all["POSITIONS"][p["symbol"]].append(entryPrice)
+                    new_pos = Position(
+                        take_profit=entryPrice * 1.03,
+                        stop_loss=entryPrice * 0.97,
+                        close_side=OrderSide.BUY,
+                        position_side=PositionSide.SHORT,
+                        entry_price=entryPrice,
+                    )
+                    self.alert_all["POSITIONS"][p["symbol"]] = new_pos.to_list()
             else:
-                self.alert_all["POSITIONS"][p["symbol"]][-1] = entryPrice
+                # 更新现有持仓的开仓价格
+                # 先转换为对象，更新属性，再转换回列表
+                current_pos_list = self.alert_all["POSITIONS"][p["symbol"]]
+                # 兼容旧数据：如果列表长度小于5，说明缺少entry_price，from_list会自动处理
+                pos_obj = Position.from_list(current_pos_list)
+                pos_obj.entry_price = entryPrice
+                self.alert_all["POSITIONS"][p["symbol"]] = pos_obj.to_list()
+
         return "\n\n".join(positions_data) if positions_data else "暂无持仓"
 
     async def rzq_market(self, market):
@@ -966,6 +1111,21 @@ class AUTOBN:
         参数：
             market: 市场名称，如'BN'（币安）
         """
+        try:
+            # 设置超时时间为5分钟，防止任务卡住
+            await asyncio.wait_for(self._rzq_market_impl(market), timeout=300)
+        except asyncio.TimeoutError:
+            error_msg = f"{market} 市场分析任务超时(5分钟)，已强制中断"
+            print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
+            self.send_msg(error_msg)
+        except Exception as e:
+            error_msg = f"{market} 市场分析任务异常: {str(e)}"
+            print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
+            traceback.print_exc()
+            self.send_msg(error_msg)
+
+    async def _rzq_market_impl(self, market):
+        """市场分析的实际实现"""
         now = datetime.datetime.now()
         self.is_early_morning = now.hour == 8 and now.minute == 0
 
@@ -978,19 +1138,19 @@ class AUTOBN:
                     self.symbols = list(self.symbols_info.keys())
                     break  # 成功获取，退出重试循环
                 except Exception:
-                    # 获取失败，等待2秒后重试
+                    # 获取失败，等待后重试
                     traceback.print_exc()
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(self.RETRY_DELAY_SECONDS)
         if self.is_early_morning:
             balance = self.um_futures_client.account()["totalWalletBalance"]
             self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
-            print(f"[{datetime.now()}] 账户信息推送任务执行完成", flush=True)
-        # 创建信号量，限制最大并发数为10，避免API限制
-        semaphore = asyncio.Semaphore(10)
+            print(f"[{datetime.datetime.now()}] 账户信息推送任务执行完成", flush=True)
+        # 创建信号量，限制最大并发数，避免API限制
+        semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
         print(now, f"{market}任务开始 - 总交易对数量: {len(self.symbols)}", flush=True)
 
         success = set()  # 记录成功处理的交易对
-        chunk_size = 10  # 分批处理，避免内存占用过高
+        chunk_size = self.CHUNK_SIZE  # 分批处理，避免内存占用过高
         # symbols = ["OGUSDT"]
         # 分批处理所有交易对
         for i in range(0, len(self.symbols), chunk_size):
@@ -1307,31 +1467,43 @@ class AUTOA:
         功能：筛选符合条件的A股股票，并通过企业微信发送通知
         策略：低吸策略，寻找回调买入机会
         """
+        try:
+            # 设置超时时间为3分钟，防止任务卡住
+            await asyncio.wait_for(cls._monitor_stocks_impl(), timeout=180)
+        except asyncio.TimeoutError:
+            error_msg = "A股监控任务超时(3分钟)，已强制中断"
+            print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
+            cls.send_msg(error_msg)
+        except Exception as e:
+            error_msg = f"A股监控任务异常: {str(e)}"
+            print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
+            traceback.print_exc()
+            cls.send_msg(error_msg)
+
+    async def _monitor_stocks_impl(cls):
+        """A股监控的实际实现"""
         # 登录系统
         bs.login()
-        # 筛选符合量能条件的股票
-        filtered = await cls.filter_stocks()
-        print(f"符合量能条件的股票：{filtered}", flush=True)
+        try:
+            # 筛选符合量能条件的股票
+            filtered = await cls.filter_stocks()
+            print(f"符合量能条件的股票：{filtered}", flush=True)
 
-        # 如果有符合条件的股票，发送通知
-        if filtered:
-            # 构建企业微信消息格式
-            msg = {
-                "msgtype": "text",
-                "text": {
-                    "content": f"===A{len(filtered)} BZ1===\n"
-                    + "\n-------\n".join(filtered)
-                },
-            }
-            # 发送到企业微信群
-            cls.send_msg(msg)
-        if cls.alert_all != cls.alert_all_old:
-            cls.alert_all_old = copy.deepcopy(cls.alert_all)
-            # 保存分析结果到文件
-            with open(cls.alert_all_file, "w", encoding="utf-8") as f:
-                json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
+            # 如果有符合条件的股票，发送通知
+            if filtered:
+                # 构建消息内容
+                content = f"===A{len(filtered)} BZ1===\n" + "\n-------\n".join(filtered)
+                # 发送到企业微信群
+                cls.send_msg(content)
 
-        bs.logout()
+            if cls.alert_all != cls.alert_all_old:
+                cls.alert_all_old = copy.deepcopy(cls.alert_all)
+                # 保存分析结果到文件
+                with open(cls.alert_all_file, "w", encoding="utf-8") as f:
+                    json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
+        finally:
+            # 确保总是登出，即使发生异常
+            bs.logout()
 
 
 async def main():
