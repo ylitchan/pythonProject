@@ -746,7 +746,11 @@ class AUTOBN:
                     kline_volume_15 = [k[5] for k in kline_15]  # 提取成交量列表
                     if (
                         open_info[3] == "LONG"
-                        and kline_close[-2] < kline_close[-1]
+                        and max(
+                            kline_close[-2],
+                            sum(kline_close_15[-10:]) / len(kline_close_15[-10:]),
+                        )
+                        < kline_close[-1]
                         and open_info[0] < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
@@ -794,7 +798,11 @@ class AUTOBN:
                             return
                     elif (
                         open_info[3] == "SHORT"
-                        and kline_close_15[-1] > kline_close_15[-2]
+                        and kline_close_15[-1]
+                        > max(
+                            kline_close_15[-2],
+                            sum(kline_close_15[-10:]) / len(kline_close_15[-10:]),
+                        )
                         and max(kline_volume_15[-3], kline_volume_15[-2] * 1.5)
                         < kline_volume_15[-1]
                         and dtn.timestamp() - open_info[1] >= 15 * 60
