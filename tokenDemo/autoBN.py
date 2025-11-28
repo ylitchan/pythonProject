@@ -67,8 +67,8 @@ class Position:
             take_profit=float(data[0]),
             stop_loss=float(data[1]),
             close_side=OrderSide(data[2]),
-            position_side=str(data[3]),  # 确保是字符串
-            entry_price=float(entry_price),
+            position_side=data[3],  # 类型注解已声明为str，无需显式转换
+            entry_price=float(data[4]) if len(data) > 4 else 0.0,
         )
 
 
@@ -84,30 +84,21 @@ class Observation:
     price: float  # 触发价格 [0]
     timestamp: float  # 触发时间（Unix时间戳）[1]
     side: OrderSide  # 信号方向 [2] (BUY/SELL)
-    position_side: Union[
-        PositionSide, str
-    ]  # [3] 关联信息：可能是持仓方向(LONG/SHORT)、策略标签(BZ1/BZ2)或空字符串
+    position_side: str  # [3] 关联信息：持仓方向(LONG/SHORT)、策略标签(BZ1/BZ2)或空字符串
 
     def to_list(self) -> List:
         """转换为列表格式"""
-        pos_side = (
-            self.position_side.value
-            if isinstance(self.position_side, PositionSide)
-            else self.position_side
-        )
-        return [self.price, self.timestamp, self.side.value, pos_side]
+        return [self.price, self.timestamp, self.side.value, self.position_side]
 
     @classmethod
     def from_list(cls, data: List):
         """从列表创建对象"""
-        pos_side = data[3]
-        if pos_side in [e.value for e in PositionSide]:
-            pos_side = PositionSide(pos_side)
+        pos_side = str(data[3])  # 始终保持为字符串，不转换为枚举
         return cls(
             price=float(data[0]),
             timestamp=float(data[1]),
             side=OrderSide(data[2]),
-            position_side=pos_side,
+            position_side=data[3],  # 类型注解已声明为str，无需显式转换
         )
 
 
@@ -792,14 +783,15 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side.value,
+                            close_info.position_side,  # 已经是字符串，不需要 .value
                             current_price,
                             0.5,
                         )
-                        # 更新止盈止损
+                        # 更新止盈止损并持久化到字典
                         close_info.take_profit, close_info.stop_loss = (
                             calc_stop_profit_loss(current_price, is_long=True)
                         )
+                        self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
                         # 转换为 Observation 对象并保存
                         new_obs = Observation(
@@ -813,7 +805,7 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side.value,
+                            close_info.position_side,  # 已经是字符串，不需要 .value
                             current_price,
                             1,
                         )
@@ -832,13 +824,15 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side.value,
+                            close_info.position_side,  # 已经是字符串，不需要 .value
                             current_price,
                             0.5,
                         )
+                        # 更新止盈止损并持久化到字典
                         close_info.take_profit, close_info.stop_loss = (
                             calc_stop_profit_loss(current_price, is_long=True)
                         )
+                        self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
                         new_obs = Observation(
                             price=current_price,
@@ -851,18 +845,18 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side.value,
+                            close_info.position_side,  # 已经是字符串，不需要 .value
                             current_price,
                             1,
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                 else:
-                    # 更新最新价格和动态止盈止损
-                    close_info.entry_price = current_price
+                    # 更新动态止盈止损
                     if current_price > close_info.entry_price:
                         close_info.stop_loss = current_price * (1 - zf_half)
                     else:
                         close_info.take_profit = current_price * (1 + zf_half)
+                    close_info.entry_price = current_price
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
@@ -890,7 +884,7 @@ class AUTOBN:
                         and await self.check_bz(
                             semaphore,
                             symbol,
-                            open_info.position_side.value,
+                            open_info.position_side,
                             kline_close_15,
                         )
                     ):
@@ -923,6 +917,7 @@ class AUTOBN:
                                 stop_loss=zs,
                                 close_side=OrderSide.SELL,
                                 position_side=PositionSide.LONG.value,
+                                entry_price=current_price,
                             )
                             self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
                             self.alert_all["OBSERVATIONS"].pop(symbol)
@@ -937,7 +932,7 @@ class AUTOBN:
                         and await self.check_bz(
                             semaphore,
                             symbol,
-                            open_info.position_side.value,
+                            open_info.position_side,
                             kline_close_15,
                             kline_volume_15,
                             open_info.timestamp,
@@ -976,6 +971,7 @@ class AUTOBN:
                                 stop_loss=zs,
                                 close_side=OrderSide.SELL,
                                 position_side=PositionSide.BZ2.value,
+                                entry_price=current_price,
                             )
                             self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
                             self.alert_all["OBSERVATIONS"].pop(symbol)
@@ -1004,7 +1000,7 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side.value,
+                            close_info.position_side,  # 已经是字符串，不需要 .value
                             current_price,
                             1,
                         )
@@ -1049,7 +1045,7 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side.value,
+                            close_info.position_side,  # 已经是字符串，不需要 .value
                             current_price,
                             1,
                         )
@@ -1065,6 +1061,7 @@ class AUTOBN:
                             stop_loss=zy,  # 做空止盈是下界
                             close_side=OrderSide.BUY,
                             position_side=PositionSide.SHORT.value,
+                            entry_price=current_price,
                         )
                         self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
         except Exception:
@@ -1306,27 +1303,39 @@ class AUTOA:
         adjustflag="3",
     ):
         try:
+            loop = asyncio.get_running_loop()
             code_pre = "sh" if code[0] == "6" else "sz"
             if code in cls.hist_cache:
                 data_list = copy.deepcopy(cls.hist_cache[code])
             else:
-                rs = bs.query_history_k_data_plus(
-                    f"{code_pre}.{code}",  # 股票代码
-                    fields,
-                    start_date=start_date,
-                    end_date=end_date,
-                    frequency=frequency,  # 日K
-                    adjustflag=adjustflag,  # 3：前复权；1：不复权；2：后复权
-                )
+                def fetch_bs_data():
+                    rs = bs.query_history_k_data_plus(
+                        f"{code_pre}.{code}",  # 股票代码
+                        fields,
+                        start_date=start_date,
+                        end_date=end_date,
+                        frequency=frequency,  # 日K
+                        adjustflag=adjustflag,  # 3：前复权；1：不复权；2：后复权
+                    )
+                    dl = []
+                    while (rs.error_code == "0") & rs.next():
+                        dl.append(rs.get_row_data())
+                    return dl
 
-                # 将结果转换为 DataFrame
-                data_list = []
-                while (rs.error_code == "0") & rs.next():
-                    data_list.append(rs.get_row_data())
+                data_list = await loop.run_in_executor(None, fetch_bs_data)
                 cls.hist_cache[code] = copy.deepcopy(data_list)
-            res = requests.get(
-                url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}"
-            ).json()["result"]["data"]
+
+            def fetch_sina_data():
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Referer": "https://finance.sina.com.cn/"
+                }
+                return requests.get(
+                    url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}",
+                    headers=headers
+                ).json()["result"]["data"]
+
+            res = await loop.run_in_executor(None, fetch_sina_data)
             hist_today = pd.DataFrame(res, columns=["m", "v", "p", "avg_p"])
             hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
             volume = hist_today["v"].sum()
@@ -1626,6 +1635,7 @@ class AUTOA:
             traceback.print_exc()
             cls.send_msg(error_msg)
 
+    @classmethod
     async def _monitor_stocks_impl(cls):
         """A股监控的实际实现"""
         # 登录系统
@@ -1682,12 +1692,13 @@ async def main():
     任务1：A股监控（交易时段执行）
     任务2：币安市场分析（每分钟执行）
     """
+    print("配置A股监控任务...", flush=True)
     # 设置A股监控定时任务
     scheduler.add_job(
         AUTOA.monitor_stocks,  # 执行的函数
         "cron",  # 调度类型：按日历规则
-        hour="09-15",  # 交易时段：12点和14点
-        minute="*/5",  # 每小时的52-57分
+        hour="09-15",  # 交易时段：09:00 - 15:00
+        minute="*/5",  # 每5分钟执行一次
         second="00",  # 整点秒数
         day_of_week="mon-fri",  # 周一至周五（交易日）
         timezone="Asia/Shanghai",  # 上海时区
@@ -1697,12 +1708,13 @@ async def main():
         name="股票监控任务",  # 任务名称
     )
 
+    print("配置币安市场分析任务...", flush=True)
     # 设置币安市场分析定时任务
     scheduler.add_job(
         autobn.rzq_market,  # 执行的函数
         "cron",  # 调度类型：按日历规则
         hour="*",  # 每小时执行
-        minute="*",  # 每5分钟
+        minute="*",  # 每分钟
         second="00",  # 整点秒数
         timezone="Asia/Shanghai",  # 上海时区
         args=("BN",),  # 传递参数
@@ -1712,8 +1724,10 @@ async def main():
         name="币安市场分析任务",  # 任务名称
     )
 
+    print("启动调度器...", flush=True)
     # 启动调度器
     scheduler.start()
+    print("调度器已启动，等待任务触发...", flush=True)
 
     # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
