@@ -142,6 +142,12 @@ class AUTOBN:
     KLINE_LIMIT = 30  # K线数据条数
     MIN_KLINE_FOR_ANALYSIS = 4  # 分析所需最小K线数量
 
+    # ==================== ATR风控常量 ====================
+    ATR_PERIOD = 10  # ATR计算周期
+    ATR_STOP_LOSS_MULTIPLIER = 2.0  # ATR止损倍数
+    ATR_TAKE_PROFIT_MULTIPLIER = 4.0  # ATR止盈倍数 (盈亏比1:2)
+    ATR_TRAILING_STOP_MULTIPLIER = 1.5  # ATR移动止损倍数
+
     @classmethod
     def from_cfg(cls, **kwargs):
         obj = cls.__new__(cls)
@@ -722,10 +728,12 @@ class AUTOBN:
                 # 每2秒检查一次
                 await asyncio.sleep(self.RETRY_DELAY_SECONDS)
 
-    def calculate_atr(self, kline_data, period=10):
+    def calculate_atr(self, kline_data, period=None):
         """
         计算ATR (平均真实波幅)
         """
+        if period is None:
+            period = self.ATR_PERIOD
         if not kline_data or len(kline_data) < period + 1:
             return 0.0
 
@@ -791,9 +799,9 @@ class AUTOBN:
                 if atr <= 0:
                     return (0, 0)
 
-                # ATR模式：止损2倍ATR，止盈4倍ATR (盈亏比1:2)
-                sl_dist = atr * 2.0
-                tp_dist = atr * 4.0
+                # ATR模式：使用类常量定义的倍数
+                sl_dist = atr * self.ATR_STOP_LOSS_MULTIPLIER
+                tp_dist = atr * self.ATR_TAKE_PROFIT_MULTIPLIER
                 if is_long:
                     return (price + tp_dist, price - sl_dist)
                 else:
@@ -804,6 +812,31 @@ class AUTOBN:
             if close_info:
                 await get_kline_15_data()
                 atr_value = self.calculate_atr(kline_15)
+
+                # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
+                if (
+                    close_info.take_profit == 0 or close_info.stop_loss == 0
+                ) and atr_value > 0:
+                    if close_info.position_side == PositionSide.LONG.value:
+                        close_info.take_profit = close_info.entry_price + (
+                            atr_value * self.ATR_TAKE_PROFIT_MULTIPLIER
+                        )
+                        close_info.stop_loss = close_info.entry_price - (
+                            atr_value * self.ATR_STOP_LOSS_MULTIPLIER
+                        )
+                    elif close_info.position_side == PositionSide.SHORT.value:
+                        close_info.take_profit = close_info.entry_price - (
+                            atr_value * self.ATR_TAKE_PROFIT_MULTIPLIER
+                        )
+                        close_info.stop_loss = close_info.entry_price + (
+                            atr_value * self.ATR_STOP_LOSS_MULTIPLIER
+                        )
+                    # 更新到字典
+                    self.alert_all["POSITIONS"][symbol] = close_info.to_list()
+                    print(
+                        f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}",
+                        flush=True,
+                    )
 
                 if current_price <= close_info.stop_loss:  # 触及止损
                     if close_info.position_side == PositionSide.SHORT.value:
@@ -890,7 +923,7 @@ class AUTOBN:
                 else:
                     # 更新动态止盈止损 (吊灯止损逻辑)
                     if atr_value > 0:
-                        trailing_dist = atr_value * 1.5
+                        trailing_dist = atr_value * self.ATR_TRAILING_STOP_MULTIPLIER
                         if close_info.position_side == PositionSide.LONG.value:
                             # 移动止损：只上不下
                             new_sl = current_price - trailing_dist
@@ -960,7 +993,9 @@ class AUTOBN:
                         )
                         if zy == 0 and zs == 0:
                             return
-                        rate_show = atr_value * 2.0 / current_price
+                        rate_show = (
+                            atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
+                        )
                         self.send_msg(
                             f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                         )
@@ -1012,7 +1047,9 @@ class AUTOBN:
                     )
                     if zy == 0 and zs == 0:
                         return
-                    rate_show = atr_value * 2.0 / current_price
+                    rate_show = (
+                        atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
+                    )
                     self.send_msg(
                         f"==={symbol}做多===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                     )
@@ -1064,7 +1101,9 @@ class AUTOBN:
                     )
                     if zy == 0 and zs == 0:
                         return
-                    rate_show = atr_value * 2.0 / current_price
+                    rate_show = (
+                        atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
+                    )
                     self.send_msg(
                         f"==={symbol}**BD**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                     )
@@ -1124,10 +1163,11 @@ class AUTOBN:
             )
 
             if p["symbol"] not in self.alert_all["POSITIONS"]:
+                # 发现未记录的持仓,止盈止损暂设为0,等待rzq_token用ATR更新
                 if p["positionSide"] == PositionSide.LONG.value:
                     new_pos = Position(
-                        take_profit=entryPrice * 1.03,
-                        stop_loss=entryPrice * 0.97,
+                        take_profit=0,  # 标记:需要ATR更新
+                        stop_loss=0,  # 标记:需要ATR更新
                         close_side=OrderSide.SELL,
                         position_side=PositionSide.LONG.value,
                         entry_price=entryPrice,
@@ -1135,8 +1175,8 @@ class AUTOBN:
                     self.alert_all["POSITIONS"][p["symbol"]] = new_pos.to_list()
                 else:
                     new_pos = Position(
-                        take_profit=entryPrice * 1.03,
-                        stop_loss=entryPrice * 0.97,
+                        take_profit=0,  # 标记:需要ATR更新
+                        stop_loss=0,  # 标记:需要ATR更新
                         close_side=OrderSide.BUY,
                         position_side=PositionSide.SHORT.value,
                         entry_price=entryPrice,
@@ -1235,6 +1275,12 @@ class AUTOBN:
 
 
 class AUTOA:
+    # ==================== ATR风控常量 ====================
+    ATR_PERIOD = 10  # ATR计算周期
+    ATR_STOP_LOSS_MULTIPLIER = 2.0  # ATR止损倍数
+    ATR_TAKE_PROFIT_MULTIPLIER = 4.0  # ATR止盈倍数 (盈亏比1:2)
+    ATR_TRAILING_STOP_MULTIPLIER = 1.5  # ATR移动止损倍数
+
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = "alert_all_A.json"
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
@@ -1242,12 +1288,14 @@ class AUTOA:
     zt_dates = []
     hist_cache = {}
 
-    @staticmethod
-    def calculate_atr(hist_data, period=10):
+    @classmethod
+    def calculate_atr(cls, hist_data, period=None):
         """
         计算ATR (平均真实波幅)
         :param hist_data: DataFrame, 包含 high, low, close 列
         """
+        if period is None:
+            period = cls.ATR_PERIOD
         if hist_data.empty or len(hist_data) < period + 1:
             return 0.0
 
@@ -1565,8 +1613,8 @@ class AUTOA:
 
                 # 3. 动态止盈止损：ATR模式 (止损2x, 止盈4x)
                 if atr > 0:
-                    stop_loss_dist = atr * 2.0
-                    take_profit_dist = atr * 4.0
+                    stop_loss_dist = atr * cls.ATR_STOP_LOSS_MULTIPLIER
+                    take_profit_dist = atr * cls.ATR_TAKE_PROFIT_MULTIPLIER
 
                     take_profit = price_close + take_profit_dist
                     stop_loss = price_close - stop_loss_dist
@@ -1640,9 +1688,9 @@ class AUTOA:
                     # 使用ATR计算止盈止损
                     atr = cls.calculate_atr(hist)
                     if atr > 0:
-                        zy = price_close + (atr * 4.0)
-                        zs = price_close - (atr * 2.0)
-                        rate_show = (atr * 2.0) / price_close
+                        zy = price_close + (atr * cls.ATR_TAKE_PROFIT_MULTIPLIER)
+                        zs = price_close - (atr * cls.ATR_STOP_LOSS_MULTIPLIER)
+                        rate_show = (atr * cls.ATR_STOP_LOSS_MULTIPLIER) / price_close
 
                         selected.add(
                             f"==={code[1]}===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
