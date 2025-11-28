@@ -722,6 +722,28 @@ class AUTOBN:
                 # 每2秒检查一次
                 await asyncio.sleep(self.RETRY_DELAY_SECONDS)
 
+    def calculate_atr(self, kline_data, period=10):
+        """
+        计算ATR (平均真实波幅)
+        """
+        if not kline_data or len(kline_data) < period + 1:
+            return 0.0
+
+        tr_list = []
+        for i in range(1, len(kline_data)):
+            high = kline_data[i][2]
+            low = kline_data[i][3]
+            prev_close = kline_data[i - 1][4]
+
+            # TR = Max(H-L, |H-PC|, |L-PC|)
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            tr_list.append(tr)
+
+        if not tr_list:
+            return 0.0
+        # 简单移动平均计算ATR
+        return sum(tr_list[-period:]) / min(len(tr_list), period)
+
     async def rzq_token(self, semaphore, symbol, success, dtn):
         """
         核心交易逻辑：分析K线数据并执行交易决策
@@ -746,20 +768,10 @@ class AUTOBN:
             success.add(symbol)
             kline_close = [k[4] for k in kline]
             kline_volume = [k[5] for k in kline]
-            kline_zf = list(map(lambda k: abs(k[4] / k[1] - 1), kline[-10:]))
-            kline_zf_mean = sum(kline_zf) / len(kline_zf)
 
             # 预计算常用值
             current_price = kline_close[-1]
-            zf_half = kline_zf_mean * 0.5
             current_timestamp = dtn.timestamp()
-
-            # 止盈止损计算辅助函数
-            def calc_stop_profit_loss(price, is_long=True):
-                if is_long:
-                    return (price * (1 + zf_half), price * (1 - zf_half))
-                else:
-                    return (price * (1 - zf_half), price * (1 + zf_half))
 
             # 延迟获取15分钟K线
             kline_15 = None
@@ -774,9 +786,24 @@ class AUTOBN:
                     kline_volume_15 = [k[5] for k in kline_15]
                 return kline_15, kline_close_15, kline_volume_15
 
+            # 止盈止损计算辅助函数 (支持ATR)
+            def calc_stop_profit_loss(price, is_long=True, atr=0):
+                if atr <= 0:
+                    return (0, 0)
+
+                # ATR模式：止损2倍ATR，止盈4倍ATR (盈亏比1:2)
+                sl_dist = atr * 2.0
+                tp_dist = atr * 4.0
+                if is_long:
+                    return (price + tp_dist, price - sl_dist)
+                else:
+                    # 做空：返回 (下界/止盈位, 上界/止损位)
+                    return (price - tp_dist, price + sl_dist)
+
             # 检查现有持仓是否需要平仓
             if close_info:
                 await get_kline_15_data()
+                atr_value = self.calculate_atr(kline_15)
 
                 if current_price <= close_info.stop_loss:  # 触及止损
                     if close_info.position_side == PositionSide.SHORT.value:
@@ -788,9 +815,14 @@ class AUTOBN:
                             0.5,
                         )
                         # 更新止盈止损并持久化到字典
-                        close_info.take_profit, close_info.stop_loss = (
-                            calc_stop_profit_loss(current_price, is_long=True)
-                        )
+                        if atr_value > 0:
+                            new_tp, new_sl = calc_stop_profit_loss(
+                                current_price, is_long=True, atr=atr_value
+                            )
+                            if new_tp > 0 and new_sl > 0:
+                                close_info.take_profit = new_tp
+                                close_info.stop_loss = new_sl
+
                         self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
                         # 转换为 Observation 对象并保存
@@ -829,9 +861,14 @@ class AUTOBN:
                             0.5,
                         )
                         # 更新止盈止损并持久化到字典
-                        close_info.take_profit, close_info.stop_loss = (
-                            calc_stop_profit_loss(current_price, is_long=True)
-                        )
+                        if atr_value > 0:
+                            new_tp, new_sl = calc_stop_profit_loss(
+                                current_price, is_long=True, atr=atr_value
+                            )
+                            if new_tp > 0 and new_sl > 0:
+                                close_info.take_profit = new_tp
+                                close_info.stop_loss = new_sl
+
                         self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
                         new_obs = Observation(
@@ -851,19 +888,24 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                 else:
-                    # 更新动态止盈止损
-                    if (
-                        close_info.position_side == PositionSide.LONG.value
-                        and current_price > close_info.entry_price
-                    ):
-                        close_info.stop_loss = current_price * (1 - zf_half)
-                        close_info.entry_price = current_price
-                    elif (
-                        close_info.position_side == PositionSide.SHORT.value
-                        and current_price < close_info.entry_price
-                    ):
-                        close_info.take_profit = current_price * (1 + zf_half)
-                        close_info.entry_price = current_price
+                    # 更新动态止盈止损 (吊灯止损逻辑)
+                    if atr_value > 0:
+                        trailing_dist = atr_value * 1.5
+                        if close_info.position_side == PositionSide.LONG.value:
+                            # 移动止损：只上不下
+                            new_sl = current_price - trailing_dist
+                            if new_sl > close_info.stop_loss:
+                                close_info.stop_loss = new_sl
+                                # 只有当价格创新高时才更新entry_price作为参考
+                                if current_price > close_info.entry_price:
+                                    close_info.entry_price = current_price
+                        elif close_info.position_side == PositionSide.SHORT.value:
+                            # 移动止损：只下不上 (做空止损是上界/take_profit变量)
+                            new_sl = current_price + trailing_dist
+                            if new_sl < close_info.take_profit:
+                                close_info.take_profit = new_sl
+                                if current_price < close_info.entry_price:
+                                    close_info.entry_price = current_price
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
@@ -875,6 +917,7 @@ class AUTOBN:
                         return
 
                     await get_kline_15_data()
+                    atr_value = self.calculate_atr(kline_15)
 
                     avg_close_15 = sum(kline_close_15[-10:]) / len(kline_close_15[-10:])
                     volume_cutoff = -int(len(kline_volume_15) * 2 / 3)
@@ -912,63 +955,14 @@ class AUTOBN:
                             )
                             self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                             return
-                        zy, zs = calc_stop_profit_loss(current_price, is_long=True)
-                        self.send_msg(
-                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
+                        zy, zs = calc_stop_profit_loss(
+                            current_price, is_long=True, atr=atr_value
                         )
-                        if self.open_bn_position(
-                            symbol, OrderSide.BUY.value, PositionSide.LONG.value, 0.1
-                        ):
-                            new_pos = Position(
-                                take_profit=zy,
-                                stop_loss=zs,
-                                close_side=OrderSide.SELL,
-                                position_side=PositionSide.LONG.value,
-                                entry_price=current_price,
-                            )
-                            self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
-                            self.alert_all["OBSERVATIONS"].pop(symbol)
+                        if zy == 0 and zs == 0:
                             return
-                    elif (
-                        open_info.position_side == PositionSide.BZ2.value
-                        and kline_close_15[-1] > max(kline_close_15[-2], avg_close_15)
-                        and max(kline_volume_15[-3], kline_volume_15[-2] * 1.5)
-                        < kline_volume_15[-1]
-                        and current_timestamp - open_info.timestamp
-                        >= self.FIFTEEN_MIN_SECONDS
-                        and await self.check_bz(
-                            semaphore,
-                            symbol,
-                            open_info.position_side,
-                            kline_close_15,
-                            kline_volume_15,
-                            open_info.timestamp,
-                            dtn,
-                        )
-                    ):
-                        if any(
-                            (
-                                kline_close_15[index] > kline_close_15[index - 1]
-                                and max(
-                                    kline_volume_15[index - 2],
-                                    kline_volume_15[index - 1] * 1.5,
-                                )
-                                < kline_volume_15[index]
-                            )
-                            for index in range(
-                                -3,
-                                int(
-                                    (open_info.timestamp - current_timestamp)
-                                    / self.FIFTEEN_MIN_SECONDS
-                                ),
-                                -1,
-                            )
-                        ):
-                            self.alert_all["OBSERVATIONS"].pop(symbol)
-                            return
-                        zy, zs = calc_stop_profit_loss(current_price, is_long=True)
+                        rate_show = atr_value * 2.0 / current_price
                         self.send_msg(
-                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
+                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                         )
                         if self.open_bn_position(
                             symbol, OrderSide.BUY.value, PositionSide.LONG.value, 0.1
@@ -1011,9 +1005,16 @@ class AUTOBN:
                             current_price,
                             1,
                         )
-                    zy, zs = calc_stop_profit_loss(current_price, is_long=True)
+                    await get_kline_15_data()
+                    atr_value = self.calculate_atr(kline_15)
+                    zy, zs = calc_stop_profit_loss(
+                        current_price, is_long=True, atr=atr_value
+                    )
+                    if zy == 0 and zs == 0:
+                        return
+                    rate_show = atr_value * 2.0 / current_price
                     self.send_msg(
-                        f"==={symbol}做多===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
+                        f"==={symbol}做多===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                     )
                     new_obs = Observation(
                         price=current_price,
@@ -1056,9 +1057,16 @@ class AUTOBN:
                             current_price,
                             1,
                         )
-                    zy, zs = calc_stop_profit_loss(current_price, is_long=False)
+                    await get_kline_15_data()
+                    atr_value = self.calculate_atr(kline_15)
+                    zy, zs = calc_stop_profit_loss(
+                        current_price, is_long=False, atr=atr_value
+                    )
+                    if zy == 0 and zs == 0:
+                        return
+                    rate_show = atr_value * 2.0 / current_price
                     self.send_msg(
-                        f"==={symbol}**BD**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{zf_half:.2%}"
+                        f"==={symbol}**BD**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                     )
                     if self.open_bn_position(
                         symbol, OrderSide.SELL.value, PositionSide.SHORT.value, 0.1
@@ -1234,6 +1242,33 @@ class AUTOA:
     zt_dates = []
     hist_cache = {}
 
+    @staticmethod
+    def calculate_atr(hist_data, period=10):
+        """
+        计算ATR (平均真实波幅)
+        :param hist_data: DataFrame, 包含 high, low, close 列
+        """
+        if hist_data.empty or len(hist_data) < period + 1:
+            return 0.0
+
+        tr_list = []
+        # 转换为列表处理以提高性能
+        highs = hist_data["high"].values
+        lows = hist_data["low"].values
+        closes = hist_data["close"].values
+
+        for i in range(1, len(hist_data)):
+            h = float(highs[i])
+            low_price = float(lows[i])
+            pc = float(closes[i - 1])
+
+            tr = max(h - low_price, abs(h - pc), abs(low_price - pc))
+            tr_list.append(tr)
+
+        if not tr_list:
+            return 0.0
+        return sum(tr_list[-period:]) / min(len(tr_list), period)
+
     @classmethod
     def send_msg(cls, msg):
         """
@@ -1263,7 +1298,7 @@ class AUTOA:
             print(f"消息发送异常: {str(e)}", flush=True)
 
     @staticmethod
-    def get_last_trading_days(today=None, days=10):
+    def get_last_trading_days(today=None, days=30):
         """
         获取A股交易日历
 
@@ -1439,6 +1474,23 @@ class AUTOA:
                 )
                 msg = f"{close_info[2]} 平仓\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}"
                 cls.send_msg(msg)
+        else:
+            # 未触及止盈止损，执行移动止损逻辑 (吊灯止损)
+            atr = cls.calculate_atr(hist)
+            if atr > 0:
+                # 移动止损：价格 - 1.5 * ATR
+                trailing_sl = price_close - (atr * 1.5)
+                # 只有当新止损位高于旧止损位时才更新 (只上不下)
+                if trailing_sl > close_info[1]:
+                    close_info[1] = trailing_sl
+                    # 如果价格创新高，也可以选择更新entry_price作为参考(可选)
+                    if price_close > close_info[4]:
+                        close_info[4] = price_close
+
+                    # 更新回字典
+                    cls.alert_all["POSITIONS"][code] = close_info
+                    # 可选：发送移动止损通知
+                    # cls.send_msg(f"{close_info[2]} 移动止损更新\n现价:{price_close:.2f}\n新止损:{trailing_sl:.2f}(前值:{old_sl:.2f})")
 
     @classmethod
     async def on_observations(cls, code, zt_dates, open_info, today):
@@ -1507,60 +1559,40 @@ class AUTOA:
             if price_breakout and volume_breakout:
                 # ========== 计算止盈止损（ATR动态方法） ==========
 
-                # 1. 计算ATR（平均真实波幅）- 衡量价格波动性
-                # True Range = max(H-L, |H-Prev_C|, |L-Prev_C|)
-                # ATR = TR的N日平均
-                tr_list = []
-                for i in range(1, len(hist)):
-                    high = float(hist.iloc[i]["high"])
-                    low = float(hist.iloc[i]["low"])
-                    prev_close = float(hist.iloc[i - 1]["close"])
-
-                    # True Range取三者最大值
-                    tr = max(
-                        high - low,  # 当日最高最低差
-                        abs(high - prev_close),  # 最高与昨收差
-                        abs(low - prev_close),  # 最低与昨收差
-                    )
-                    tr_list.append(tr)
-
-                # ATR = 最近10天TR的平均值
-                atr = sum(tr_list[-10:]) / min(len(tr_list), 10) if tr_list else 0
+                # 1. 计算ATR（平均真实波幅）
+                atr = cls.calculate_atr(hist)
                 atr_percent = (atr / price_close) if price_close > 0 else 0
 
-                # 2. 计算传统波动率（作为ATR的补充参考）
-                kline_zf_mean = hist.iloc[-10:]["涨跌幅"].abs().mean()
+                # 3. 动态止盈止损：ATR模式 (止损2x, 止盈4x)
+                if atr > 0:
+                    stop_loss_dist = atr * 2.0
+                    take_profit_dist = atr * 4.0
 
-                # 3. 动态止盈止损：取ATR和传统波动率的较大值
-                # 目的：在低波动期提供足够保护，在高波动期避免过早止损
-                stop_distance = max(atr_percent, kline_zf_mean) * 0.5
+                    take_profit = price_close + take_profit_dist
+                    stop_loss = price_close - stop_loss_dist
 
-                take_profit = price_close * (1 + stop_distance)  # 止盈
-                stop_loss = price_close * (1 - stop_distance)  # 止损
+                    # 4. 记录到持仓列表
+                    cls.alert_all["POSITIONS"][code] = [
+                        take_profit,
+                        stop_loss,
+                        open_info[2],  # 股票名称
+                        int(today.strftime("%Y%m%d")),  # 买入日期
+                        price_close,
+                        "BZ2",  # 策略标签：BZ2=观察列表突破买入
+                    ]
 
-                # 4. 记录到持仓列表
-                cls.alert_all["POSITIONS"][code] = [
-                    take_profit,
-                    stop_loss,
-                    open_info[2],  # 股票名称
-                    int(today.strftime("%Y%m%d")),  # 买入日期
-                    price_close,
-                    "BZ2",  # 策略标签：BZ2=观察列表突破买入
-                ]
+                    # 5. 从观察列表移除
+                    cls.alert_all["OBSERVATIONS"].pop(code)
 
-                # 5. 从观察列表移除
-                cls.alert_all["OBSERVATIONS"].pop(code)
-
-                # 6. 发送买入通知
-                msg = (
-                    f"==={open_info[2]}**BZ2**===\n"
-                    f"价格:{price_close:.2f}\n"
-                    f"止盈:{take_profit:.2f}\n"
-                    f"止损:{stop_loss:.2f}\n"
-                    f"收益率:{stop_distance:.2%}\n"
-                    f"ATR:{atr:.4f}({atr_percent:.2%})"
-                )
-                cls.send_msg(msg)
+                    # 6. 发送买入通知
+                    msg = (
+                        f"==={open_info[2]}**BZ2**===\n"
+                        f"价格:{price_close:.2f}\n"
+                        f"止盈:{take_profit:.2f}\n"
+                        f"止损:{stop_loss:.2f}\n"
+                        f"收益率:{atr_percent:.2%}\n"
+                    )
+                    cls.send_msg(msg)
 
     @classmethod
     async def filter_stocks(cls):
@@ -1603,22 +1635,27 @@ class AUTOA:
                     )
                     if hist.empty:
                         continue
-                    kline_zf_mean = hist["涨跌幅"].abs().mean()
                     price_close = hist.iloc[-1]["close"]
-                    zy = price_close * (1 + kline_zf_mean * 0.5)
-                    zs = price_close * (1 - kline_zf_mean * 0.5)
-                    selected.add(
-                        f"==={code[1]}===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{kline_zf_mean * 0.5:.2%}"
-                    )
-                    # 记录到持仓列表：[止盈, 止损, 股票名称, 日期, 策略标签]
-                    cls.alert_all["POSITIONS"][code[0]] = [
-                        zy,
-                        zs,
-                        code[1],  # 股票名称
-                        int(today.strftime("%Y%m%d")),  # 买入日期
-                        price_close,
-                        "BZ1",  # 策略标签：BZ1=涨停次日买入
-                    ]
+
+                    # 使用ATR计算止盈止损
+                    atr = cls.calculate_atr(hist)
+                    if atr > 0:
+                        zy = price_close + (atr * 4.0)
+                        zs = price_close - (atr * 2.0)
+                        rate_show = (atr * 2.0) / price_close
+
+                        selected.add(
+                            f"==={code[1]}===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                        )
+                        # 记录到持仓列表：[止盈, 止损, 股票名称, 日期, 策略标签]
+                        cls.alert_all["POSITIONS"][code[0]] = [
+                            zy,
+                            zs,
+                            code[1],  # 股票名称
+                            int(today.strftime("%Y%m%d")),  # 买入日期
+                            price_close,
+                            "BZ1",  # 策略标签：BZ1=涨停次日买入
+                        ]
             cls.zt_dates.clear()
             cls.hist_cache.clear()
             return selected
