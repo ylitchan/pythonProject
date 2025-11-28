@@ -1542,6 +1542,7 @@ class AUTOA:
                     stop_loss,
                     open_info[2],  # 股票名称
                     int(today.strftime("%Y%m%d")),  # 买入日期
+                    price_close,
                     "BZ2",  # 策略标签：BZ2=观察列表突破买入
                 ]
 
@@ -1613,6 +1614,7 @@ class AUTOA:
                         zs,
                         code[1],  # 股票名称
                         int(today.strftime("%Y%m%d")),  # 买入日期
+                        price_close,
                         "BZ1",  # 策略标签：BZ1=涨停次日买入
                     ]
             cls.zt_dates.clear()
