@@ -815,7 +815,7 @@ class AUTOBN:
                             price=current_price,
                             timestamp=current_timestamp,
                             side=OrderSide.SELL,
-                            position_side=PositionSide.SHORT.value,
+                            position_side=PositionSide.BZ2.value,
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
 
@@ -838,7 +838,7 @@ class AUTOBN:
                             price=current_price,
                             timestamp=current_timestamp,
                             side=OrderSide.SELL,
-                            position_side=PositionSide.SHORT.value,
+                            position_side=PositionSide.BZ2.value,
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                     else:
@@ -1341,12 +1341,19 @@ class AUTOA:
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Referer": "https://finance.sina.com.cn/",
                 }
-                return requests.get(
-                    url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}",
-                    headers=headers,
-                ).json()["result"]["data"]
+                dl = []
+                try:
+                    dl = requests.get(
+                        url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}",
+                        headers=headers,
+                    ).json()["result"]["data"]
+                except Exception:
+                    traceback.print_exc()
+                return dl
 
             res = await loop.run_in_executor(None, fetch_sina_data)
+            if not res:
+                return pd.DataFrame()
             hist_today = pd.DataFrame(res, columns=["m", "v", "p", "avg_p"])
             hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
             volume = hist_today["v"].sum()
@@ -1391,6 +1398,8 @@ class AUTOA:
             close_info: 持仓记录 [止盈, 止损, 股票名称, 日期, 策略标签]
             today: 当前日期时间
         """
+        if int(today.strftime("%Y%m%d")) <= close_info[3]:
+            return
         # 获取股票历史数据（前复权）
         hist = await cls.stock_zh_a_hist(
             code,
@@ -1409,9 +1418,7 @@ class AUTOA:
         price_close = float(hist.iloc[-1]["close"])
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
-        if int(today.strftime("%Y%m%d")) > close_info[3] and (
-            price_close <= close_info[1] or price_close >= close_info[0]
-        ):
+        if price_close <= close_info[1] or price_close >= close_info[0]:
             # 将股票移至观察列表（记录平仓价格和时间）
             cls.alert_all["OBSERVATIONS"][code] = [
                 price_close,
