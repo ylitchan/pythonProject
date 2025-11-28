@@ -1644,7 +1644,7 @@ class AUTOA:
         """
         try:
             # 设置超时时间为3分钟，防止任务卡住
-            await asyncio.wait_for(cls._monitor_stocks_impl(), timeout=180)
+            await asyncio.wait_for(cls._monitor_stocks_impl(), timeout=600)
         except asyncio.TimeoutError:
             error_msg = "A股监控任务超时(3分钟)，已强制中断"
             print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
