@@ -62,7 +62,6 @@ class Position:
     @classmethod
     def from_list(cls, data: List):
         """从列表创建对象"""
-        entry_price = data[4] if len(data) > 4 else 0.0
         return cls(
             take_profit=float(data[0]),
             stop_loss=float(data[1]),
@@ -1322,7 +1321,8 @@ class AUTOA:
                     return dl
 
                 data_list = await loop.run_in_executor(None, fetch_bs_data)
-                cls.hist_cache[code] = copy.deepcopy(data_list)
+                if data_list:
+                    cls.hist_cache[code] = copy.deepcopy(data_list)
 
             def fetch_sina_data():
                 headers = {
@@ -1333,7 +1333,8 @@ class AUTOA:
                     url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}",
                     headers=headers
                 ).json()["result"]["data"]
-
+            if not data_list:
+                return pd.DataFrame()
             res = await loop.run_in_executor(None, fetch_sina_data)
             hist_today = pd.DataFrame(res, columns=["m", "v", "p", "avg_p"])
             hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
