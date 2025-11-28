@@ -1316,9 +1316,9 @@ class AUTOA:
                 data_list = copy.deepcopy(cls.hist_cache[code])
             else:
 
-                def fetch_bs_data():
+                def fetch_bs_data(stock_code_pre, stock_code):
                     rs = bs.query_history_k_data_plus(
-                        f"{code_pre}.{code}",  # 股票代码
+                        f"{stock_code_pre}.{stock_code}",  # 股票代码
                         fields,
                         start_date=start_date,
                         end_date=end_date,
@@ -1330,13 +1330,15 @@ class AUTOA:
                         dl.append(rs.get_row_data())
                     return dl
 
-                data_list = await loop.run_in_executor(None, fetch_bs_data)
+                data_list = await loop.run_in_executor(
+                    None, fetch_bs_data, code_pre, code
+                )
                 if data_list:
                     cls.hist_cache[code] = copy.deepcopy(data_list)
             if not data_list:
                 return pd.DataFrame()
 
-            def fetch_sina_data():
+            def fetch_sina_data(stock_code_pre, stock_code):
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Referer": "https://finance.sina.com.cn/",
@@ -1344,14 +1346,14 @@ class AUTOA:
                 dl = []
                 try:
                     dl = requests.get(
-                        url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}",
+                        url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={stock_code_pre}{stock_code}",
                         headers=headers,
                     ).json()["result"]["data"]
                 except Exception:
                     pass
                 return dl
 
-            res = await loop.run_in_executor(None, fetch_sina_data)
+            res = await loop.run_in_executor(None, fetch_sina_data, code_pre, code)
             if not res:
                 return pd.DataFrame()
             hist_today = pd.DataFrame(res, columns=["m", "v", "p", "avg_p"])
@@ -1575,7 +1577,7 @@ class AUTOA:
         if (
             cls.zt_dates
             and today.strftime("%Y-%m-%d") not in cls.zt_dates
-            or today.hour == 15
+            or today.hour >= 15
             and today.minute >= 1
         ):
             return []
@@ -1691,7 +1693,6 @@ async def main():
     任务1：A股监控（交易时段执行）
     任务2：币安市场分析（每分钟执行）
     """
-    await AUTOA.monitor_stocks()
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     # 从环境变量或配置文件加载密钥
