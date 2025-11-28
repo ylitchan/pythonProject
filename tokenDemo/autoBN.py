@@ -852,11 +852,18 @@ class AUTOBN:
                         self.alert_all["POSITIONS"].pop(symbol)
                 else:
                     # 更新动态止盈止损
-                    if current_price > close_info.entry_price:
+                    if (
+                        close_info.position_side == PositionSide.LONG.value
+                        and current_price > close_info.entry_price
+                    ):
                         close_info.stop_loss = current_price * (1 - zf_half)
-                    else:
+                        close_info.entry_price = current_price
+                    elif (
+                        close_info.position_side == PositionSide.SHORT.value
+                        and current_price < close_info.entry_price
+                    ):
                         close_info.take_profit = current_price * (1 + zf_half)
-                    close_info.entry_price = current_price
+                        close_info.entry_price = current_price
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
