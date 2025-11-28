@@ -977,7 +977,7 @@ class AUTOBN:
                                 take_profit=zy,
                                 stop_loss=zs,
                                 close_side=OrderSide.SELL,
-                                position_side=PositionSide.BZ2.value,
+                                position_side=PositionSide.LONG.value,
                                 entry_price=current_price,
                             )
                             self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
