@@ -93,7 +93,6 @@ class Observation:
     @classmethod
     def from_list(cls, data: List):
         """从列表创建对象"""
-        pos_side = str(data[3])  # 始终保持为字符串，不转换为枚举
         return cls(
             price=float(data[0]),
             timestamp=float(data[1]),
@@ -1638,8 +1637,9 @@ class AUTOA:
     @classmethod
     async def _monitor_stocks_impl(cls):
         """A股监控的实际实现"""
-        # 登录系统
-        bs.login()
+        # 登录系统（使用异步执行，避免阻塞事件循环）
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, bs.login)
         try:
             # 筛选符合量能条件的股票
             filtered = await cls.filter_stocks()
@@ -1658,8 +1658,8 @@ class AUTOA:
                 with open(cls.alert_all_file, "w", encoding="utf-8") as f:
                     json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
         finally:
-            # 确保总是登出，即使发生异常
-            bs.logout()
+            # 确保总是登出，即使发生异常（使用异步执行）
+            await loop.run_in_executor(None, bs.logout)
 
 
 async def main():
@@ -1685,13 +1685,10 @@ async def main():
         alert_all_file=os.path.join(current_dir, "alert_all.json"),
         qy_key=qy_key,
     )
-    """
-    主函数：设置定时任务并启动调度器
-
-    功能：配置并启动所有定时任务
-    任务1：A股监控（交易时段执行）
-    任务2：币安市场分析（每分钟执行）
-    """
+    
+    # 初始化任务调度器
+    scheduler = AsyncIOScheduler()
+    
     print("配置A股监控任务...", flush=True)
     # 设置A股监控定时任务
     scheduler.add_job(
@@ -1704,7 +1701,7 @@ async def main():
         timezone="Asia/Shanghai",  # 上海时区
         misfire_grace_time=60,  # 错过执行的宽限时间（秒）
         max_instances=1,  # 同一时间只允许1个实例运行
-        coalesce=True,  # 合并错过的执行（避免积压）
+        coalesce=False,  # 改为False，避免合并错过的执行导致任务堆积和卡住
         name="股票监控任务",  # 任务名称
     )
 
@@ -1720,7 +1717,7 @@ async def main():
         args=("BN",),  # 传递参数
         misfire_grace_time=10,  # 错过执行的宽限时间（秒）
         max_instances=1,  # 同一时间只允许1个实例运行
-        coalesce=True,  # 合并错过的执行（避免积压）
+        coalesce=False,  # 改为False，避免合并错过的执行导致任务堆积和卡住
         name="币安市场分析任务",  # 任务名称
     )
 
@@ -1741,8 +1738,5 @@ if __name__ == "__main__":
     功能：初始化所有必要的配置和客户端，然后启动主程序
     """
     print("autoBN启动", flush=True)
-    # 初始化任务调度器
-    scheduler = AsyncIOScheduler()
-
-    # 启动主程序
+    # 启动主程序（调度器在main函数中初始化）
     asyncio.run(main())
