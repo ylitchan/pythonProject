@@ -10,7 +10,7 @@ import traceback
 from decimal import Decimal, ROUND_DOWN
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Union, Optional
+from typing import List, Optional
 
 # ==================== 第三方库导入 ====================
 import akshare as ak
@@ -83,7 +83,9 @@ class Observation:
     price: float  # 触发价格 [0]
     timestamp: float  # 触发时间（Unix时间戳）[1]
     side: OrderSide  # 信号方向 [2] (BUY/SELL)
-    position_side: str  # [3] 关联信息：持仓方向(LONG/SHORT)、策略标签(BZ1/BZ2)或空字符串
+    position_side: (
+        str  # [3] 关联信息：持仓方向(LONG/SHORT)、策略标签(BZ1/BZ2)或空字符串
+    )
 
     def to_list(self) -> List:
         """转换为列表格式"""
@@ -1306,6 +1308,7 @@ class AUTOA:
             if code in cls.hist_cache:
                 data_list = copy.deepcopy(cls.hist_cache[code])
             else:
+
                 def fetch_bs_data():
                     rs = bs.query_history_k_data_plus(
                         f"{code_pre}.{code}",  # 股票代码
@@ -1323,18 +1326,19 @@ class AUTOA:
                 data_list = await loop.run_in_executor(None, fetch_bs_data)
                 if data_list:
                     cls.hist_cache[code] = copy.deepcopy(data_list)
+            if not data_list:
+                return pd.DataFrame()
 
             def fetch_sina_data():
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Referer": "https://finance.sina.com.cn/"
+                    "Referer": "https://finance.sina.com.cn/",
                 }
                 return requests.get(
                     url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}",
-                    headers=headers
+                    headers=headers,
                 ).json()["result"]["data"]
-            if not data_list:
-                return pd.DataFrame()
+
             res = await loop.run_in_executor(None, fetch_sina_data)
             hist_today = pd.DataFrame(res, columns=["m", "v", "p", "avg_p"])
             hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
@@ -1686,10 +1690,10 @@ async def main():
         alert_all_file=os.path.join(current_dir, "alert_all.json"),
         qy_key=qy_key,
     )
-    
+
     # 初始化任务调度器
     scheduler = AsyncIOScheduler()
-    
+
     print("配置A股监控任务...", flush=True)
     # 设置A股监控定时任务
     scheduler.add_job(
