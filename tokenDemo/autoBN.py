@@ -1348,7 +1348,7 @@ class AUTOA:
                         headers=headers,
                     ).json()["result"]["data"]
                 except Exception:
-                    traceback.print_exc()
+                    pass
                 return dl
 
             res = await loop.run_in_executor(None, fetch_sina_data)
@@ -1691,6 +1691,7 @@ async def main():
     任务1：A股监控（交易时段执行）
     任务2：币安市场分析（每分钟执行）
     """
+    await AUTOA.monitor_stocks()
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     # 从环境变量或配置文件加载密钥
