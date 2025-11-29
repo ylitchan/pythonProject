@@ -777,18 +777,18 @@ class AUTOBN:
         tr = []
 
         for i in range(1, len(kline_data)):
-            h = highs[i]
+            high_price = highs[i]
             low_price = lows[i]
             prev_h = highs[i - 1]
             prev_l = lows[i - 1]
             prev_c = closes[i - 1]
 
             # 计算TR
-            current_tr = max(h - low_price, abs(h - prev_c), abs(low_price - prev_c))
+            current_tr = max(high_price - low_price, abs(high_price - prev_c), abs(low_price - prev_c))
             tr.append(current_tr)
 
             # 计算DM
-            up_move = h - prev_h
+            up_move = high_price - prev_h
             down_move = prev_l - low_price
 
             if up_move > down_move and up_move > 0:
@@ -1172,7 +1172,7 @@ class AUTOBN:
                         and adx_value > self.ADX_THRESHOLD
                         and kline_close_15[-1] > max(kline_close_15[-2], avg_close_15)
                         and self.is_volume_anomaly(
-                            kline_volume_15, period=2
+                            kline_volume_15, period=2, multiplier=1
                         )  # 使用前2根K线判断短期放量
                         and current_timestamp - open_info.timestamp
                         >= self.FIFTEEN_MIN_SECONDS
@@ -1532,11 +1532,11 @@ class AUTOA:
         closes = hist_data["close"].values
 
         for i in range(1, len(hist_data)):
-            h = float(highs[i])
+            high_price = float(highs[i])
             low_price = float(lows[i])
             pc = float(closes[i - 1])
 
-            tr = max(h - low_price, abs(h - pc), abs(low_price - pc))
+            tr = max(high_price - low_price, abs(high_price - pc), abs(low_price - pc))
             tr_list.append(tr)
 
         if not tr_list:
@@ -1940,7 +1940,7 @@ class AUTOA:
             # 判断是否满足买入条件
             price_breakout = price_close > resistance_price
             volume_breakout = cls.is_volume_anomaly(
-                hist, period=2
+                hist, period=2, multiplier=1
             )  # 使用前2根K线判断短期放量（与BZ2逻辑一致）
 
             if price_breakout and volume_breakout:
