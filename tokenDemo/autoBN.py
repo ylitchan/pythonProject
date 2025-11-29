@@ -148,14 +148,6 @@ class AUTOBN:
     ATR_TAKE_PROFIT_MULTIPLIER = 4.0  # ATR止盈倍数 (盈亏比1:2)
     ATR_TRAILING_STOP_MULTIPLIER = 1.5  # ATR移动止损倍数
 
-    # ==================== ADX趋势常量 ====================
-    ADX_PERIOD = 10  # ADX计算周期 (与ATR保持一致)
-    ADX_THRESHOLD = 20  # ADX趋势强度阈值 (大于此值才允许开仓)
-
-    # ==================== 成交量风控常量 ====================
-    VOL_BB_PERIOD = 30  # 成交量布林带周期
-    VOL_BB_STD_MULTIPLIER = 3.0  # 成交量异常阈值 (标准差倍数，替代硬编码的9倍)
-
     @classmethod
     def from_cfg(cls, **kwargs):
         obj = cls.__new__(cls)
@@ -599,6 +591,10 @@ class AUTOBN:
         semaphore,
         symbol,
         positionSide,
+        kline_close=None,
+        kline_volume=None,
+        time_target=None,
+        dtn=None,
     ):
         async with semaphore:
             try:
@@ -755,154 +751,6 @@ class AUTOBN:
             return 0.0
         # 简单移动平均计算ATR
         return sum(tr_list[-period:]) / min(len(tr_list), period)
-
-    def calculate_adx(self, kline_data, period=None):
-        """
-        计算ADX (平均趋向指标)
-        """
-        if period is None:
-            period = self.ADX_PERIOD
-
-        if not kline_data or len(kline_data) < period * 2:
-            return 0.0
-
-        # 提取数据
-        highs = [k[2] for k in kline_data]
-        lows = [k[3] for k in kline_data]
-        closes = [k[4] for k in kline_data]
-
-        # 初始化
-        plus_dm = []
-        minus_dm = []
-        tr = []
-
-        for i in range(1, len(kline_data)):
-            high_price = highs[i]
-            low_price = lows[i]
-            prev_h = highs[i - 1]
-            prev_l = lows[i - 1]
-            prev_c = closes[i - 1]
-
-            # 计算TR
-            current_tr = max(high_price - low_price, abs(high_price - prev_c), abs(low_price - prev_c))
-            tr.append(current_tr)
-
-            # 计算DM
-            up_move = high_price - prev_h
-            down_move = prev_l - low_price
-
-            if up_move > down_move and up_move > 0:
-                plus_dm.append(up_move)
-            else:
-                plus_dm.append(0.0)
-
-            if down_move > up_move and down_move > 0:
-                minus_dm.append(down_move)
-            else:
-                minus_dm.append(0.0)
-
-        # 使用EMA平滑 (alpha = 1/period)
-        alpha = 1.0 / period
-
-        def smooth(data, period):
-            result = []
-            # 初始化第一个值为简单平均
-            if len(data) < period:
-                return []
-            val = sum(data[:period]) / period
-            result.append(val)
-            for i in range(period, len(data)):
-                val = val * (1 - alpha) + data[i] * alpha
-                result.append(val)
-            return result
-
-        tr_smooth = smooth(tr, period)
-        plus_dm_smooth = smooth(plus_dm, period)
-        minus_dm_smooth = smooth(minus_dm, period)
-
-        if not tr_smooth:
-            return 0.0
-
-        # 计算DX
-        dx = []
-        for i in range(len(tr_smooth)):
-            if tr_smooth[i] == 0:
-                dx.append(0.0)
-                continue
-
-            p_di = (plus_dm_smooth[i] / tr_smooth[i]) * 100
-            m_di = (minus_dm_smooth[i] / tr_smooth[i]) * 100
-
-            if p_di + m_di == 0:
-                dx_val = 0.0
-            else:
-                dx_val = abs(p_di - m_di) / (p_di + m_di) * 100
-            dx.append(dx_val)
-
-        # 计算ADX (DX的平滑)
-        adx = smooth(dx, period)
-
-        return adx[-1] if adx else 0.0
-
-    def is_volume_anomaly(self, kline_volume, period=None, multiplier=None):
-        """
-        判断当前成交量是否异常放量 (基于布林带逻辑，完全自适应)
-
-        原理：使用统计学方法替代硬编码的"9倍量"
-        - 默认使用前 2/3 的数据作为历史基准期（完全自适应数据长度）
-        - 计算历史成交量的均值和标准差
-        - 判断当前成交量是否超过 均值 + N倍标准差
-
-        参数:
-            kline_volume: 成交量列表
-            period: 计算周期，None=自适应（使用数据长度2/3），可手动指定固定周期
-            multiplier: 标准差倍数，默认使用 VOL_BB_STD_MULTIPLIER
-
-        返回:
-            bool: True表示异常放量，False表示正常
-        """
-        if multiplier is None:
-            multiplier = self.VOL_BB_STD_MULTIPLIER
-
-        # 自适应周期
-        if period is None:
-            # 使用前 2/3 数据作为历史基准
-            # 至少需要 3 个数据点（2个历史 + 1个当前）
-            if len(kline_volume) < 3:
-                return False
-            cutoff = int(len(kline_volume) * 2 / 3)
-            # 确保至少有2个历史数据点用于计算标准差
-            cutoff = max(2, cutoff)
-            history_vol = kline_volume[:cutoff]
-        else:
-            # 手动指定周期
-            # 需要 period 个历史数据 + 1 个当前数据
-            if len(kline_volume) < period + 1:
-                return False
-            history_vol = kline_volume[-(period + 1) : -1]
-
-        current_vol = kline_volume[-1]
-
-        # 至少需要2个历史数据点才能计算有意义的标准差
-        if len(history_vol) < 2:
-            return False
-
-        # 计算均值
-        mean_vol = sum(history_vol) / len(history_vol)
-
-        # 计算标准差
-        variance = sum((x - mean_vol) ** 2 for x in history_vol) / len(history_vol)
-        std_dev = variance**0.5
-
-        # 边界情况：如果标准差为0（所有历史值完全相同），则判断当前值是否大于均值
-        if std_dev == 0:
-            return current_vol > mean_vol
-
-        # 布林带上轨
-        upper_band = mean_vol + (std_dev * multiplier)
-
-        # 判断当前成交量是否突破上轨
-        return current_vol > upper_band
 
     async def rzq_token(self, semaphore, symbol, success, dtn):
         """
@@ -1100,41 +948,37 @@ class AUTOBN:
                 else:
                     if not open_info.position_side:
                         return
-
+                    has_open = False
                     await get_kline_15_data()
-                    atr_value = self.calculate_atr(kline_15)
-                    adx_value = self.calculate_adx(kline_15)
 
                     avg_close_15 = sum(kline_close_15[-10:]) / len(kline_close_15[-10:])
+                    volume_cutoff = -int(len(kline_volume_15) * 2 / 3)
+                    early_volume_slice = kline_volume_15[:volume_cutoff]
+                    early_volume_avg = sum(early_volume_slice) / len(early_volume_slice)
 
                     if (
                         open_info.position_side == PositionSide.BZ1.value
-                        and adx_value > self.ADX_THRESHOLD
                         and max(kline_close[-2], avg_close_15) < current_price
                         and open_info.price < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
-                        and self.is_volume_anomaly(
-                            kline_volume_15
-                        )  # 动态成交量异常检测
+                        and early_volume_avg * 9 < max(kline_volume_15[-2:])
                         and await self.check_bz(
                             semaphore,
                             symbol,
                             open_info.position_side,
+                            kline_close_15,
                         )
                     ):
-                        # 检测历史上是否存在过异常放量（防止在拉升末端接盘）
-                        # 遍历从 -3 到前 1/3 位置的所有周期
-                        has_historical_anomaly = False
-                        for index in range(-3, int(-len(kline_15) / 3), -1):
-                            # 判断该历史周期的成交量是否异常
-                            if index >= -len(
-                                kline_volume_15
-                            ) and self.is_volume_anomaly(kline_volume_15[: index + 1]):
-                                has_historical_anomaly = True
-                                break
-
-                        if has_historical_anomaly:
+                        if any(
+                            (
+                                sum(kline_volume_15[:index][:volume_cutoff])
+                                / len(kline_volume_15[:index][:volume_cutoff])
+                                * 9
+                                < max(kline_volume_15[index - 1 : index + 1])
+                            )
+                            for index in range(-3, int(-len(kline_15) / 3), -1)
+                        ):
                             new_obs = Observation(
                                 price=current_price,
                                 timestamp=current_timestamp,
@@ -1143,69 +987,50 @@ class AUTOBN:
                             )
                             self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                             return
-                        zy, zs = calc_stop_profit_loss(
-                            current_price, is_long=True, atr=atr_value
-                        )
-                        if zy == 0 and zs == 0:
-                            return
-                        rate_show = (
-                            atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
-                        )
-                        self.send_msg(
-                            f"==={symbol}**BZ1**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
-                        )
-                        if self.open_bn_position(
-                            symbol, OrderSide.BUY.value, PositionSide.LONG.value, 0.1
-                        ):
-                            new_pos = Position(
-                                take_profit=zy,
-                                stop_loss=zs,
-                                close_side=OrderSide.SELL,
-                                position_side=PositionSide.LONG.value,
-                                entry_price=current_price,
-                            )
-                            self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
-                            self.alert_all["OBSERVATIONS"].pop(symbol)
-                            return
+                        has_open = True
                     elif (
                         open_info.position_side == PositionSide.BZ2.value
-                        and adx_value > self.ADX_THRESHOLD
-                        and kline_close_15[-1] > max(kline_close_15[-2], avg_close_15)
-                        and self.is_volume_anomaly(
-                            kline_volume_15, period=2, multiplier=1
-                        )  # 使用前2根K线判断短期放量
+                        and current_price > max(kline_close_15[-2], avg_close_15)
+                        and max(kline_volume_15[-3], kline_volume_15[-2] * 1.5)
+                        < kline_volume_15[-1]
                         and current_timestamp - open_info.timestamp
                         >= self.FIFTEEN_MIN_SECONDS
                         and await self.check_bz(
                             semaphore,
                             symbol,
                             open_info.position_side,
+                            kline_close_15,
+                            kline_volume_15,
+                            open_info.timestamp,
+                            dtn,
                         )
                     ):
-                        # 检测在加入观察列表后，是否已经发生过类似的突破
-                        # 如果已经发生过，说明我们错过了最佳时机，直接移除观察
-                        has_historical_breakout = False
-                        for index in range(
-                            -3,
-                            int(
-                                (open_info.timestamp - current_timestamp)
-                                / self.FIFTEEN_MIN_SECONDS
-                            ),
-                            -1,
+                        if any(
+                            (
+                                kline_close_15[index] > kline_close_15[index - 1]
+                                and max(
+                                    kline_volume_15[index - 2],
+                                    kline_volume_15[index - 1] * 1.5,
+                                )
+                                < kline_volume_15[index]
+                            )
+                            for index in range(
+                                -3,
+                                max(
+                                    int(
+                                        (open_info.timestamp - current_timestamp)
+                                        / self.FIFTEEN_MIN_SECONDS
+                                    ),
+                                    -len(kline_close_15),
+                                ),
+                                -1,
+                            )
                         ):
-                            if index >= -len(kline_close_15):
-                                # 判断该历史点是否出现过价格突破 + 异常放量
-                                if kline_close_15[index] > kline_close_15[
-                                    index - 1
-                                ] and self.is_volume_anomaly(
-                                    kline_volume_15[: index + 1], period=2
-                                ):
-                                    has_historical_breakout = True
-                                    break
-
-                        if has_historical_breakout:
                             self.alert_all["OBSERVATIONS"].pop(symbol)
                             return
+                        has_open = True
+                    if has_open:
+                        atr_value = self.calculate_atr(kline_15)
                         zy, zs = calc_stop_profit_loss(
                             current_price, is_long=True, atr=atr_value
                         )
@@ -1215,7 +1040,7 @@ class AUTOBN:
                             atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
                         )
                         self.send_msg(
-                            f"==={symbol}**BZ2**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                            f"==={symbol}**{open_info.position_side}**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                         )
                         if self.open_bn_position(
                             symbol, OrderSide.BUY.value, PositionSide.LONG.value, 0.1
@@ -1230,6 +1055,7 @@ class AUTOBN:
                             self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
                             self.alert_all["OBSERVATIONS"].pop(symbol)
                             return
+
             else:
                 # 做多信号判断
                 if (
@@ -1499,14 +1325,6 @@ class AUTOA:
     ATR_TAKE_PROFIT_MULTIPLIER = 4.0  # ATR止盈倍数 (盈亏比1:2)
     ATR_TRAILING_STOP_MULTIPLIER = 1.5  # ATR移动止损倍数
 
-    # ==================== ADX趋势常量 ====================
-    ADX_PERIOD = 10  # ADX计算周期 (与ATR保持一致)
-    ADX_THRESHOLD = 20  # ADX趋势强度阈值 (大于此值才允许开仓)
-
-    # ==================== 成交量风控常量 ====================
-    VOL_BB_PERIOD = 30  # 成交量布林带周期
-    VOL_BB_STD_MULTIPLIER = 3.0  # 成交量异常阈值 (标准差倍数)
-
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = "alert_all_A.json"
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
@@ -1532,133 +1350,16 @@ class AUTOA:
         closes = hist_data["close"].values
 
         for i in range(1, len(hist_data)):
-            high_price = float(highs[i])
+            h = float(highs[i])
             low_price = float(lows[i])
             pc = float(closes[i - 1])
 
-            tr = max(high_price - low_price, abs(high_price - pc), abs(low_price - pc))
+            tr = max(h - low_price, abs(h - pc), abs(low_price - pc))
             tr_list.append(tr)
 
         if not tr_list:
             return 0.0
         return sum(tr_list[-period:]) / min(len(tr_list), period)
-
-    @classmethod
-    def calculate_adx(cls, hist_data, period=None):
-        """
-        计算ADX (平均趋向指标)
-        """
-        if period is None:
-            period = cls.ADX_PERIOD
-
-        if hist_data.empty or len(hist_data) < period * 2:
-            return 0.0
-
-        # 复制数据避免修改原DataFrame
-        df = hist_data.copy()
-
-        # 计算TR
-        df["h-l"] = df["high"] - df["low"]
-        df["h-pc"] = abs(df["high"] - df["close"].shift(1))
-        df["l-pc"] = abs(df["low"] - df["close"].shift(1))
-        df["tr"] = df[["h-l", "h-pc", "l-pc"]].max(axis=1)
-
-        # 计算DM
-        df["up_move"] = df["high"] - df["high"].shift(1)
-        df["down_move"] = df["low"].shift(1) - df["low"]
-
-        df["plus_dm"] = 0.0
-        df.loc[(df["up_move"] > df["down_move"]) & (df["up_move"] > 0), "plus_dm"] = df[
-            "up_move"
-        ]
-
-        df["minus_dm"] = 0.0
-        df.loc[
-            (df["down_move"] > df["up_move"]) & (df["down_move"] > 0), "minus_dm"
-        ] = df["down_move"]
-
-        # 平滑 (Wilder's Smoothing)
-        # alpha = 1/period
-        df["tr_smooth"] = df["tr"].ewm(alpha=1 / period, adjust=False).mean()
-        df["plus_dm_smooth"] = df["plus_dm"].ewm(alpha=1 / period, adjust=False).mean()
-        df["minus_dm_smooth"] = (
-            df["minus_dm"].ewm(alpha=1 / period, adjust=False).mean()
-        )
-
-        # 计算DI
-        df["plus_di"] = 100 * (df["plus_dm_smooth"] / df["tr_smooth"])
-        df["minus_di"] = 100 * (df["minus_dm_smooth"] / df["tr_smooth"])
-
-        # 计算DX
-        df["dx"] = (
-            100 * abs(df["plus_di"] - df["minus_di"]) / (df["plus_di"] + df["minus_di"])
-        )
-
-        # 计算ADX
-        df["adx"] = df["dx"].ewm(alpha=1 / period, adjust=False).mean()
-
-        return df["adx"].iloc[-1]
-
-    @classmethod
-    def is_volume_anomaly(cls, hist_data, period=None, multiplier=None):
-        """
-        判断当前成交量是否异常放量 (基于布林带逻辑，完全自适应)
-
-        使用 Pandas 实现的版本，适用于 DataFrame 格式的历史数据
-        - 默认使用前 2/3 的数据作为历史基准期（完全自适应数据长度）
-
-        参数:
-            hist_data: DataFrame, 包含 volume 列
-            period: 计算周期，None=自适应（使用数据长度2/3），可手动指定固定周期
-            multiplier: 标准差倍数，默认使用 VOL_BB_STD_MULTIPLIER
-
-        返回:
-            bool: True表示异常放量，False表示正常
-        """
-        if multiplier is None:
-            multiplier = cls.VOL_BB_STD_MULTIPLIER
-
-        # 获取成交量序列
-        if hist_data.empty:
-            return False
-        volumes = hist_data["volume"].values
-
-        # 自适应周期
-        if period is None:
-            # 使用前 2/3 数据作为历史基准
-            # 至少需要 3 个数据点（2个历史 + 1个当前）
-            if len(volumes) < 3:
-                return False
-            cutoff = int(len(volumes) * 2 / 3)
-            # 确保至少有2个历史数据点用于计算标准差
-            cutoff = max(2, cutoff)
-            history_vol = volumes[:cutoff]
-        else:
-            # 手动指定周期
-            # 需要 period 个历史数据 + 1 个当前数据
-            if len(volumes) < period + 1:
-                return False
-            history_vol = volumes[-(period + 1) : -1]
-
-        current_vol = volumes[-1]
-
-        # 至少需要2个历史数据点才能计算有意义的标准差
-        if len(history_vol) < 2:
-            return False
-
-        # 计算均值和标准差
-        mean_vol = history_vol.mean()
-        std_dev = history_vol.std()
-
-        # 边界情况：如果标准差为0（所有历史值完全相同），则判断当前值是否大于均值
-        if std_dev == 0:
-            return float(current_vol) > mean_vol
-
-        # 布林带上轨
-        upper_band = mean_vol + (std_dev * multiplier)
-
-        # 判断当前成交量是否突破上轨
-        return float(current_vol) > upper_band
 
     @classmethod
     def send_msg(cls, msg):
@@ -1869,8 +1570,8 @@ class AUTOA:
             # 未触及止盈止损，执行移动止损逻辑 (吊灯止损)
             atr = cls.calculate_atr(hist)
             if atr > 0:
-                # 移动止损:使用ATR动态调整
-                trailing_sl = price_close - (atr * cls.ATR_TRAILING_STOP_MULTIPLIER)
+                # 移动止损：价格 - 1.5 * ATR
+                trailing_sl = price_close - (atr * 1.5)
                 # 只有当新止损位高于旧止损位时才更新 (只上不下)
                 if trailing_sl > close_info[1]:
                     close_info[1] = trailing_sl
@@ -1937,25 +1638,25 @@ class AUTOA:
                 float(hist.iloc[-10:]["close"].mean()),  # 10日均价
             )
 
+            # 计算成交量基准（取前2日较大值的1.5倍）
+            volume_threshold = max(
+                float(hist.iloc[-3]["volume"]), float(hist.iloc[-2]["volume"]) * 1.5
+            )
+            current_volume = float(hist.iloc[-1]["volume"])
+
             # 判断是否满足买入条件
             price_breakout = price_close > resistance_price
-            volume_breakout = cls.is_volume_anomaly(
-                hist, period=2, multiplier=1
-            )  # 使用前2根K线判断短期放量（与BZ2逻辑一致）
+            volume_breakout = current_volume > volume_threshold
 
             if price_breakout and volume_breakout:
                 # ========== 计算止盈止损（ATR动态方法） ==========
 
                 # 1. 计算ATR（平均真实波幅）
                 atr = cls.calculate_atr(hist)
-                # 2. 计算ADX (趋势强度)
-                adx = cls.calculate_adx(hist)
-
                 atr_percent = (atr / price_close) if price_close > 0 else 0
 
                 # 3. 动态止盈止损：ATR模式 (止损2x, 止盈4x)
-                # 新增ADX过滤: 只有趋势强度足够才开仓
-                if atr > 0 and adx > cls.ADX_THRESHOLD:
+                if atr > 0:
                     stop_loss_dist = atr * cls.ATR_STOP_LOSS_MULTIPLIER
                     take_profit_dist = atr * cls.ATR_TAKE_PROFIT_MULTIPLIER
 
