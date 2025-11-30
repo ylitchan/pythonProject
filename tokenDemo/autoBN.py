@@ -952,7 +952,6 @@ class AUTOBN:
 
             # 检查现有持仓是否需要平仓
             if close_info:
-                await get_kline_15_data()
                 atr_value = self.calculate_atr(kline)
 
                 # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
@@ -1179,7 +1178,7 @@ class AUTOBN:
                             return
                         should_open = True
                     if should_open:
-                        atr_value = self.calculate_atr(kline_15)
+                        atr_value = self.calculate_atr(kline)
                         zy, zs = calc_stop_profit_loss(
                             current_price, is_long=True, atr=atr_value
                         )
