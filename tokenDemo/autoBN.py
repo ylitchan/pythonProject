@@ -133,7 +133,7 @@ class AUTOBN:
     BASIS_ALERT_COOLDOWN = 180  # 基差异常冷却时间（秒）
 
     # ==================== 时间常量 ====================
-    ONE_DAY_SECONDS = 24 * 60 * 60  # 一天的秒数
+    ONE_DAY_SECONDS = 30 * 15 * 60  # 一天的秒数
     FIFTEEN_MIN_SECONDS = 15 * 60  # 15分钟的秒数
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
@@ -147,6 +147,10 @@ class AUTOBN:
     ATR_STOP_LOSS_MULTIPLIER = 2.0  # ATR止损倍数
     ATR_TAKE_PROFIT_MULTIPLIER = 4.0  # ATR止盈倍数 (盈亏比1:2)
     ATR_TRAILING_STOP_MULTIPLIER = 1.5  # ATR移动止损倍数
+
+    # ==================== 切比雪夫概率阈值常量 ====================
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_SIGNIFICANT_THRESHOLD = 0.25  # 显著异常阈值（25%），用于检测显著的异常
 
     @classmethod
     def from_cfg(cls, **kwargs):
@@ -625,9 +629,9 @@ class AUTOBN:
                     float(i["sumOpenInterest"]) for i in oi_1d
                 ]  # 持仓数量（合约数）
 
-                if sumOpenInterest_5m[-1] <= max(
+                if sumOpenInterest_5m[-1] <= min(
                     sumOpenInterest_1d[-2:]
-                ) or sumOpenInterestValue_5m[-1] <= max(sumOpenInterestValue_1d[-2:]):
+                ) or sumOpenInterestValue_5m[-1] <= min(sumOpenInterestValue_1d[-2:]):
                     return False
                 return True
             except Exception:
@@ -751,6 +755,111 @@ class AUTOBN:
             return 0.0
         # 简单移动平均计算ATR
         return sum(tr_list[-period:]) / min(len(tr_list), period)
+
+    def calculate_chebyshev_probability(self, data_list, value):
+        """
+        计算给定数值对应的切比雪夫概率
+
+        功能：根据切比雪夫不等式计算给定数值在数据分布中的概率特征
+
+        切比雪夫不等式：P(|X - μ| >= kσ) <= 1/k²
+        换言之：至少有 (1 - 1/k²) 的数据落在 [μ - kσ, μ + kσ] 区间内
+
+        参数：
+            data_list: 数据列表（如价格列表、收益率列表等）
+            value: 给定的数值，用于计算其在分布中的位置
+
+        返回：
+            字典，包含以下信息：
+            - mean: 数据均值
+            - std: 数据标准差
+            - k: 给定数值距离均值的标准差倍数
+            - chebyshev_upper_bound: 切比雪夫不等式的上界概率 (1/k²)
+            - min_probability_in_range: 至少有该比例的数据在 k 个标准差范围内 (1 - 1/k²)
+            - deviation: 给定数值与均值的偏差
+
+        示例：
+            >>> prices = [100, 102, 98, 101, 99, 103, 97]
+            >>> result = calculate_chebyshev_probability(prices, 110)
+            >>> print(f"均值: {result['mean']}, 标准差: {result['std']}")
+            >>> print(f"数值 110 距离均值 {result['k']:.2f} 个标准差")
+            >>> print(f"根据切比雪夫不等式，至少有 {result['min_probability_in_range']:.2%} 的数据")
+            >>> print(f"落在均值 ± {result['k']:.2f} 个标准差范围内")
+        """
+        # 输入验证
+        if not data_list or len(data_list) == 0:
+            raise ValueError("数据列表不能为空")
+
+        if len(data_list) == 1:
+            return {
+                "mean": data_list[0],
+                "std": 0.0,
+                "k": float("inf") if data_list[0] != value else 0.0,
+                "chebyshev_upper_bound": 0.0,
+                "min_probability_in_range": 1.0,
+                "deviation": value - data_list[0],
+                "message": "数据只有一个元素，标准差为0",
+            }
+
+        # 计算均值
+        mean = sum(data_list) / len(data_list)
+
+        # 计算标准差（样本标准差，使用 n-1 作为分母）
+        variance = sum((x - mean) ** 2 for x in data_list) / (len(data_list) - 1)
+        std = variance**0.5
+
+        # 计算给定数值与均值的偏差
+        deviation = value - mean
+
+        # 如果标准差为0（所有数据相同）
+        if std == 0:
+            return {
+                "mean": mean,
+                "std": 0.0,
+                "k": float("inf") if deviation != 0 else 0.0,
+                "chebyshev_upper_bound": 0.0,
+                "min_probability_in_range": 1.0,
+                "deviation": deviation,
+                "message": "所有数据相同，标准差为0",
+            }
+
+        # 计算 k 值（给定数值距离均值有多少个标准差）
+        k = abs(deviation) / std
+
+        # 切比雪夫不等式的上界：P(|X - μ| >= kσ) <= 1/k²
+        # 只有当 k > 1 时，切比雪夫不等式才有意义
+        if k <= 1:
+            chebyshev_upper_bound = 1.0  # k <= 1 时，不等式给出的上界为 1（无信息）
+            min_probability_in_range = 0.0
+        else:
+            chebyshev_upper_bound = 1 / (k**2)
+            # 至少有 (1 - 1/k²) 的数据落在 [μ - kσ, μ + kσ] 区间内
+            min_probability_in_range = 1 - chebyshev_upper_bound
+
+        result = {
+            "mean": mean,
+            "std": std,
+            "k": k,
+            "chebyshev_upper_bound": chebyshev_upper_bound,
+            "min_probability_in_range": min_probability_in_range,
+            "deviation": deviation,
+        }
+
+        # 添加人类可读的解释
+        if k <= 1:
+            result["message"] = (
+                f"数值 {value:.4f} 距离均值 {mean:.4f} 只有 {k:.4f} 个标准差（在 1σ 范围内），切比雪夫不等式不提供有用信息"
+            )
+        else:
+            result["message"] = (
+                f"数值 {value:.4f} 距离均值 {mean:.4f} 约 {k:.4f} 个标准差。"
+                f"根据切比雪夫不等式，至少有 {min_probability_in_range:.2%} 的数据"
+                f"落在 [μ - {k:.4f}σ, μ + {k:.4f}σ] 范围内，"
+                f"即 [{mean - k * std:.4f}, {mean + k * std:.4f}] 区间。"
+                f"超出此范围的数据比例不超过 {chebyshev_upper_bound:.2%}。"
+            )
+
+        return result
 
     async def rzq_token(self, semaphore, symbol, success, dtn):
         """
@@ -950,11 +1059,7 @@ class AUTOBN:
                         return
                     has_open = False
                     await get_kline_15_data()
-
                     avg_close_15 = sum(kline_close_15[-10:]) / len(kline_close_15[-10:])
-                    volume_cutoff = -int(len(kline_volume_15) * 2 / 3)
-                    early_volume_slice = kline_volume_15[:volume_cutoff]
-                    early_volume_avg = sum(early_volume_slice) / len(early_volume_slice)
 
                     if (
                         open_info.position_side == PositionSide.BZ1.value
@@ -962,7 +1067,10 @@ class AUTOBN:
                         and open_info.price < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
-                        and early_volume_avg * 9 < max(kline_volume_15[-2:])
+                        and self.calculate_chebyshev_probability(
+                            kline_volume_15[:-2], max(kline_volume_15[-2:])
+                        )["chebyshev_upper_bound"]
+                        < self.CHEBYSHEV_EXTREME_THRESHOLD
                         and await self.check_bz(
                             semaphore,
                             symbol,
@@ -971,12 +1079,11 @@ class AUTOBN:
                         )
                     ):
                         if any(
-                            (
-                                sum(kline_volume_15[:index][:volume_cutoff])
-                                / len(kline_volume_15[:index][:volume_cutoff])
-                                * 9
-                                < max(kline_volume_15[index - 1 : index + 1])
-                            )
+                            self.calculate_chebyshev_probability(
+                                kline_volume_15[: index - 1],
+                                max(kline_volume_15[index - 1 : index + 1]),
+                            )["chebyshev_upper_bound"]
+                            < self.CHEBYSHEV_EXTREME_THRESHOLD
                             for index in range(-3, int(-len(kline_15) / 3), -1)
                         ):
                             new_obs = Observation(
@@ -991,8 +1098,10 @@ class AUTOBN:
                     elif (
                         open_info.position_side == PositionSide.BZ2.value
                         and current_price > max(kline_close_15[-2], avg_close_15)
-                        and max(kline_volume_15[-3], kline_volume_15[-2] * 1.5)
-                        < kline_volume_15[-1]
+                        and self.calculate_chebyshev_probability(
+                            kline_volume_15[-3:-1], kline_volume_15[-1]
+                        )["chebyshev_upper_bound"]
+                        < self.CHEBYSHEV_SIGNIFICANT_THRESHOLD
                         and current_timestamp - open_info.timestamp
                         >= self.FIFTEEN_MIN_SECONDS
                         and await self.check_bz(
@@ -1008,20 +1117,17 @@ class AUTOBN:
                         if any(
                             (
                                 kline_close_15[index] > kline_close_15[index - 1]
-                                and max(
-                                    kline_volume_15[index - 2],
-                                    kline_volume_15[index - 1] * 1.5,
-                                )
-                                < kline_volume_15[index]
+                                and self.calculate_chebyshev_probability(
+                                    kline_volume_15[index - 2 : index],
+                                    kline_volume_15[index],
+                                )["chebyshev_upper_bound"]
+                                < self.CHEBYSHEV_SIGNIFICANT_THRESHOLD
                             )
                             for index in range(
                                 -3,
-                                max(
-                                    int(
-                                        (open_info.timestamp - current_timestamp)
-                                        / self.FIFTEEN_MIN_SECONDS
-                                    ),
-                                    -len(kline_close_15),
+                                int(
+                                    (open_info.timestamp - current_timestamp)
+                                    / self.FIFTEEN_MIN_SECONDS
                                 ),
                                 -1,
                             )
@@ -1325,6 +1431,14 @@ class AUTOA:
     ATR_TAKE_PROFIT_MULTIPLIER = 4.0  # ATR止盈倍数 (盈亏比1:2)
     ATR_TRAILING_STOP_MULTIPLIER = 1.5  # ATR移动止损倍数
 
+    # ==================== 切比雪夫概率阈值常量 ====================
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_SIGNIFICANT_THRESHOLD = 0.25  # 显著异常阈值（25%），用于检测显著的异常
+
+    # ==================== 时间常量 ====================
+    ONE_DAY_SECONDS = 24 * 60 * 60  # 一天的秒数
+    OBSERVATION_TIMEOUT_DAYS = 10  # 观察超时天数
+
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = "alert_all_A.json"
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
@@ -1360,6 +1474,124 @@ class AUTOA:
         if not tr_list:
             return 0.0
         return sum(tr_list[-period:]) / min(len(tr_list), period)
+
+    @classmethod
+    def calculate_chebyshev_probability(cls, data, value):
+        """
+        计算给定数值对应的切比雪夫概率 (支持 pandas Series/DataFrame 和 list)
+
+        功能：根据切比雪夫不等式计算给定数值在数据分布中的概率特征
+
+        切比雪夫不等式：P(|X - μ| >= kσ) <= 1/k²
+        换言之：至少有 (1 - 1/k²) 的数据落在 [μ - kσ, μ + kσ] 区间内
+
+        参数：
+            data: 数据集合，可以是 pandas.Series, pandas.DataFrame (单列) 或 list
+            value: 给定的数值，用于计算其在分布中的位置
+
+        返回：
+            字典，包含以下信息：
+            - mean: 数据均值
+            - std: 数据标准差
+            - k: 给定数值距离均值的标准差倍数
+            - chebyshev_upper_bound: 切比雪夫不等式的上界概率 (1/k²)
+            - min_probability_in_range: 至少有该比例的数据在 k 个标准差范围内 (1 - 1/k²)
+            - deviation: 给定数值与均值的偏差
+        """
+        # 统一转换为 pandas Series 处理
+        if isinstance(data, list):
+            series = pd.Series(data)
+        elif isinstance(data, pd.DataFrame):
+            if data.shape[1] != 1:
+                # 如果是多列 DataFrame，尝试取第一列，或者抛出异常
+                # 这里假设用户传入的是单列数据
+                series = data.iloc[:, 0]
+            else:
+                series = data.iloc[:, 0]
+        elif isinstance(data, pd.Series):
+            series = data
+        else:
+            # 尝试转换其他可迭代对象
+            try:
+                series = pd.Series(data)
+            except Exception:
+                raise ValueError(
+                    "不支持的数据类型，请提供 list, pandas.Series 或 pandas.DataFrame"
+                )
+
+        # 输入验证
+        if series.empty:
+            raise ValueError("数据不能为空")
+
+        # 处理单元素情况
+        if len(series) == 1:
+            item = float(series.iloc[0])
+            return {
+                "mean": item,
+                "std": 0.0,
+                "k": float("inf") if item != value else 0.0,
+                "chebyshev_upper_bound": 0.0,
+                "min_probability_in_range": 1.0,
+                "deviation": value - item,
+                "message": "数据只有一个元素，标准差为0",
+            }
+
+        # 利用 pandas 向量化计算均值和标准差
+        mean = float(series.mean())
+        std = float(series.std(ddof=1))  # 样本标准差
+
+        # 计算给定数值与均值的偏差
+        deviation = value - mean
+
+        # 如果标准差为0（所有数据相同）
+        if std == 0:
+            return {
+                "mean": mean,
+                "std": 0.0,
+                "k": float("inf") if deviation != 0 else 0.0,
+                "chebyshev_upper_bound": 0.0,
+                "min_probability_in_range": 1.0,
+                "deviation": deviation,
+                "message": "所有数据相同，标准差为0",
+            }
+
+        # 计算 k 值（给定数值距离均值有多少个标准差）
+        k = abs(deviation) / std
+
+        # 切比雪夫不等式的上界：P(|X - μ| >= kσ) <= 1/k²
+        # 只有当 k > 1 时，切比雪夫不等式才有意义
+        if k <= 1:
+            chebyshev_upper_bound = 1.0  # k <= 1 时，不等式给出的上界为 1（无信息）
+            min_probability_in_range = 0.0
+        else:
+            chebyshev_upper_bound = 1 / (k**2)
+            # 至少有 (1 - 1/k²) 的数据落在 [μ - kσ, μ + kσ] 区间内
+            min_probability_in_range = 1 - chebyshev_upper_bound
+
+        result = {
+            "mean": mean,
+            "std": std,
+            "k": k,
+            "chebyshev_upper_bound": chebyshev_upper_bound,
+            "min_probability_in_range": min_probability_in_range,
+            "deviation": deviation,
+        }
+
+        # 添加人类可读的解释
+        if k <= 1:
+            result["message"] = (
+                f"数值 {value:.4f} 距离均值 {mean:.4f} 只有 {k:.4f} 个标准差（在 1σ 范围内），切比雪夫不等式不提供有用信息"
+            )
+        else:
+            result["message"] = (
+                f"数值 {value:.4f} 距离均值 {mean:.4f} 约 {k:.4f} 个标准差。"
+                f"根据切比雪夫不等式，至少有 {min_probability_in_range:.2%} 的数据"
+                f"落在 [μ - {k:.4f}σ, μ + {k:.4f}σ] 范围内，"
+                f"即 [{mean - k * std:.4f}, {mean + k * std:.4f}] 区间。"
+                f"超出此范围的数据比例不超过 {chebyshev_upper_bound:.2%}。"
+            )
+
+        return result
 
     @classmethod
     def send_msg(cls, msg):
@@ -1622,7 +1854,7 @@ class AUTOA:
 
         # 超时清理：观察超过10天的股票移出观察列表
         observation_duration = today.timestamp() - open_info[1]
-        if observation_duration > 10 * 24 * 60 * 60:
+        if observation_duration > cls.OBSERVATION_TIMEOUT_DAYS * cls.ONE_DAY_SECONDS:
             cls.alert_all["OBSERVATIONS"].pop(code)
             return
 
@@ -1630,7 +1862,7 @@ class AUTOA:
         # 条件1：观察至少24小时（避免当天冲动）
         # 条件2：价格突破关键阻力位（10日均价、昨收、今开）
         # 条件3：成交量显著放大（确认突破有效性）
-        if observation_duration >= 24 * 60 * 60:
+        if observation_duration >= cls.ONE_DAY_SECONDS:
             # 计算关键价格阻力位
             resistance_price = max(
                 float(hist.iloc[-2]["close"]),  # 昨日收盘价
@@ -1638,15 +1870,14 @@ class AUTOA:
                 float(hist.iloc[-10:]["close"].mean()),  # 10日均价
             )
 
-            # 计算成交量基准（取前2日较大值的1.5倍）
-            volume_threshold = max(
-                float(hist.iloc[-3]["volume"]), float(hist.iloc[-2]["volume"]) * 1.5
-            )
-            current_volume = float(hist.iloc[-1]["volume"])
-
             # 判断是否满足买入条件
             price_breakout = price_close > resistance_price
-            volume_breakout = current_volume > volume_threshold
+            volume_breakout = (
+                cls.calculate_chebyshev_probability(
+                    hist["volume"].iloc[-3:-1], hist.iloc[-1]["volume"]
+                )["chebyshev_upper_bound"]
+                < cls.CHEBYSHEV_SIGNIFICANT_THRESHOLD
+            )
 
             if price_breakout and volume_breakout:
                 # ========== 计算止盈止损（ATR动态方法） ==========
