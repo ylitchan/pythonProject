@@ -145,8 +145,8 @@ class AUTOBN:
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
-    ATR_STOP_LOSS_MULTIPLIER = 1.0  # ATR止损倍数
-    ATR_TAKE_PROFIT_MULTIPLIER = 2.0  # ATR止盈倍数 (盈亏比1:2)
+    ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
+    ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
     ATR_TRAILING_STOP_MULTIPLIER = 0.5  # ATR移动止损倍数
 
     # ==================== 切比雪夫概率阈值常量 ====================
