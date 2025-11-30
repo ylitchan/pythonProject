@@ -133,7 +133,8 @@ class AUTOBN:
     BASIS_ALERT_COOLDOWN = 180  # 基差异常冷却时间（秒）
 
     # ==================== 时间常量 ====================
-    ONE_DAY_SECONDS = 30 * 15 * 60  # 一天的秒数
+    ONE_DAY_SECONDS = 24 * 60 * 60  # 一天的秒数
+    TEN_DAY_SECONDS = 10 * 24 * 60 * 60  # 十天的秒数
     FIFTEEN_MIN_SECONDS = 15 * 60  # 15分钟的秒数
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
@@ -144,9 +145,9 @@ class AUTOBN:
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
-    ATR_STOP_LOSS_MULTIPLIER = 2.0  # ATR止损倍数
-    ATR_TAKE_PROFIT_MULTIPLIER = 4.0  # ATR止盈倍数 (盈亏比1:2)
-    ATR_TRAILING_STOP_MULTIPLIER = 1.5  # ATR移动止损倍数
+    ATR_STOP_LOSS_MULTIPLIER = 1.0  # ATR止损倍数
+    ATR_TAKE_PROFIT_MULTIPLIER = 2.0  # ATR止盈倍数 (盈亏比1:2)
+    ATR_TRAILING_STOP_MULTIPLIER = 0.5  # ATR移动止损倍数
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -554,6 +555,29 @@ class AUTOBN:
         """
         async with semaphore:
             try:
+                # 获取多空人数比数据
+                long_short_ratio_data = await asyncio.to_thread(
+                    self.um_futures_client.long_short_account_ratio,
+                    symbol=symbol,
+                    period="5m",
+                    limit=self.KLINE_LIMIT,
+                )
+                # 提取最新的多空人数比
+                if not long_short_ratio_data:
+                    return False
+                lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
+
+                # 根据持仓方向判断多空比条件
+                if positionSide == PositionSide.LONG.value:
+                    # 做多：要求多空比大于1（多头占优）
+                    if lsrd <= 4 / 6:
+                        return True
+                    return False
+                elif positionSide == PositionSide.SHORT.value:
+                    # 做空：要求多空比小于1（空头占优）
+                    if lsrd <= 1:
+                        return False
+
                 # 获取持仓量历史数据
                 oi_1d = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
@@ -594,14 +618,23 @@ class AUTOBN:
         self,
         semaphore,
         symbol,
-        positionSide,
-        kline_close=None,
-        kline_volume=None,
-        time_target=None,
-        dtn=None,
     ):
         async with semaphore:
             try:
+                # 获取多空人数比数据
+                long_short_ratio_data = await asyncio.to_thread(
+                    self.um_futures_client.long_short_account_ratio,
+                    symbol=symbol,
+                    period="5m",
+                    limit=self.KLINE_LIMIT,
+                )
+                # 提取最新的多空人数比
+                if not long_short_ratio_data:
+                    return False
+                lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
+                # 做多：要求多空比大于1（多头占优）
+                if lsrd >= 1:
+                    return False
                 # 获取持仓量历史数据
                 oi_5m = await asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
@@ -920,7 +953,7 @@ class AUTOBN:
             # 检查现有持仓是否需要平仓
             if close_info:
                 await get_kline_15_data()
-                atr_value = self.calculate_atr(kline_15)
+                atr_value = self.calculate_atr(kline)
 
                 # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
                 if (
@@ -1052,21 +1085,27 @@ class AUTOBN:
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
             elif open_info:
-                if current_timestamp - open_info.timestamp > self.ONE_DAY_SECONDS:
+                if (
+                    open_info.position_side == PositionSide.BZ1.value
+                    and current_timestamp - open_info.timestamp > self.ONE_DAY_SECONDS
+                ):
+                    self.alert_all["OBSERVATIONS"].pop(symbol)
+                elif (
+                    open_info.position_side == PositionSide.BZ2.value
+                    and current_timestamp - open_info.timestamp > self.TEN_DAY_SECONDS
+                ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
                     if not open_info.position_side:
                         return
-                    has_open = False
+                    should_open = False
                     await get_kline_15_data()
-                    avg_close_15 = sum(kline_close_15[-10:]) / len(kline_close_15[-10:])
+                    avg_close = sum(kline_close[-10:]) / len(kline_close[-10:])
 
                     if (
                         open_info.position_side == PositionSide.BZ1.value
-                        and max(kline_close[-2], avg_close_15) < current_price
                         and open_info.price < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
-                        and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
                         and kline_volume_15[-1]
                         > sum(kline_volume_15[:-2]) / len(kline_volume_15[:-2])
                         and self.calculate_chebyshev_probability(
@@ -1076,12 +1115,11 @@ class AUTOBN:
                         and await self.check_bz(
                             semaphore,
                             symbol,
-                            open_info.position_side,
-                            kline_close_15,
                         )
                     ):
                         if any(
-                            kline_volume_15[index]
+                            kline_close_15[index] > max(kline_close_15[:index])
+                            and kline_volume_15[index]
                             > sum(kline_volume_15[: index - 1])
                             / len(kline_volume_15[: index - 1])
                             and self.calculate_chebyshev_probability(
@@ -1099,37 +1137,32 @@ class AUTOBN:
                             )
                             self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                             return
-                        has_open = True
+                        should_open = True
                     elif (
                         open_info.position_side == PositionSide.BZ2.value
-                        and current_price > max(kline_close_15[-2], avg_close_15)
-                        and kline_volume_15[-1]
-                        > sum(kline_volume_15[-3:-1]) / len(kline_volume_15[-3:-1])
+                        and current_price > max(kline_close[-2], avg_close)
+                        and kline_volume[-1]
+                        > sum(kline_volume[-3:-1]) / len(kline_volume[-3:-1])
                         and self.calculate_chebyshev_probability(
-                            kline_volume_15[-3:-1], kline_volume_15[-1]
+                            kline_volume[-3:-1], kline_volume[-1]
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_SIGNIFICANT_THRESHOLD
                         and current_timestamp - open_info.timestamp
-                        >= self.FIFTEEN_MIN_SECONDS
+                        >= self.ONE_DAY_SECONDS
                         and await self.check_bz(
                             semaphore,
                             symbol,
-                            open_info.position_side,
-                            kline_close_15,
-                            kline_volume_15,
-                            open_info.timestamp,
-                            dtn,
                         )
                     ):
                         if any(
                             (
-                                kline_close_15[index] > kline_close_15[index - 1]
-                                and kline_volume_15[index]
-                                > sum(kline_volume_15[index - 2 : index])
-                                / len(kline_volume_15[index - 2 : index])
+                                kline_close[index] > kline_close[index - 1]
+                                and kline_volume[index]
+                                > sum(kline_volume[index - 2 : index])
+                                / len(kline_volume[index - 2 : index])
                                 and self.calculate_chebyshev_probability(
-                                    kline_volume_15[index - 2 : index],
-                                    kline_volume_15[index],
+                                    kline_volume[index - 2 : index],
+                                    kline_volume[index],
                                 )["chebyshev_upper_bound"]
                                 < self.CHEBYSHEV_SIGNIFICANT_THRESHOLD
                             )
@@ -1137,15 +1170,15 @@ class AUTOBN:
                                 -3,
                                 int(
                                     (open_info.timestamp - current_timestamp)
-                                    / self.FIFTEEN_MIN_SECONDS
+                                    / self.ONE_DAY_SECONDS
                                 ),
                                 -1,
                             )
                         ):
                             self.alert_all["OBSERVATIONS"].pop(symbol)
                             return
-                        has_open = True
-                    if has_open:
+                        should_open = True
+                    if should_open:
                         atr_value = self.calculate_atr(kline_15)
                         zy, zs = calc_stop_profit_loss(
                             current_price, is_long=True, atr=atr_value
@@ -1187,7 +1220,14 @@ class AUTOBN:
                         )
                     )
                     and kline_close[-2] < current_price
-                    and min(kline_volume[-3], kline_volume[-2]) < kline_volume[-1]
+                    and await self.check_bd(
+                        semaphore,
+                        symbol,
+                        PositionSide.LONG.value,
+                        kline_close,
+                        kline_volume,
+                        dtn,
+                    )
                 ):
                     if (
                         close_info
@@ -1200,8 +1240,7 @@ class AUTOBN:
                             current_price,
                             1,
                         )
-                    await get_kline_15_data()
-                    atr_value = self.calculate_atr(kline_15)
+                    atr_value = self.calculate_atr(kline)
                     zy, zs = calc_stop_profit_loss(
                         current_price, is_long=True, atr=atr_value
                     )
@@ -1254,8 +1293,7 @@ class AUTOBN:
                             current_price,
                             1,
                         )
-                    await get_kline_15_data()
-                    atr_value = self.calculate_atr(kline_15)
+                    atr_value = self.calculate_atr(kline)
                     zy, zs = calc_stop_profit_loss(
                         current_price, is_long=False, atr=atr_value
                     )
