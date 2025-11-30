@@ -1067,6 +1067,8 @@ class AUTOBN:
                         and open_info.price < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and max(kline_volume_15[:-2]) < max(kline_volume_15[-2:])
+                        and kline_volume_15[-1]
+                        > sum(kline_volume_15[:-2]) / len(kline_volume_15[:-2])
                         and self.calculate_chebyshev_probability(
                             kline_volume_15[:-2], max(kline_volume_15[-2:])
                         )["chebyshev_upper_bound"]
@@ -1079,7 +1081,10 @@ class AUTOBN:
                         )
                     ):
                         if any(
-                            self.calculate_chebyshev_probability(
+                            kline_volume_15[index]
+                            > sum(kline_volume_15[: index - 1])
+                            / len(kline_volume_15[: index - 1])
+                            and self.calculate_chebyshev_probability(
                                 kline_volume_15[: index - 1],
                                 max(kline_volume_15[index - 1 : index + 1]),
                             )["chebyshev_upper_bound"]
@@ -1098,6 +1103,8 @@ class AUTOBN:
                     elif (
                         open_info.position_side == PositionSide.BZ2.value
                         and current_price > max(kline_close_15[-2], avg_close_15)
+                        and kline_volume_15[-1]
+                        > sum(kline_volume_15[-3:-1]) / len(kline_volume_15[-3:-1])
                         and self.calculate_chebyshev_probability(
                             kline_volume_15[-3:-1], kline_volume_15[-1]
                         )["chebyshev_upper_bound"]
@@ -1117,6 +1124,9 @@ class AUTOBN:
                         if any(
                             (
                                 kline_close_15[index] > kline_close_15[index - 1]
+                                and kline_volume_15[index]
+                                > sum(kline_volume_15[index - 2 : index])
+                                / len(kline_volume_15[index - 2 : index])
                                 and self.calculate_chebyshev_probability(
                                     kline_volume_15[index - 2 : index],
                                     kline_volume_15[index],
@@ -1873,7 +1883,8 @@ class AUTOA:
             # 判断是否满足买入条件
             price_breakout = price_close > resistance_price
             volume_breakout = (
-                cls.calculate_chebyshev_probability(
+                hist.iloc[-1]["volume"] > hist["volume"].iloc[-3:-1].mean()
+                and cls.calculate_chebyshev_probability(
                     hist["volume"].iloc[-3:-1], hist.iloc[-1]["volume"]
                 )["chebyshev_upper_bound"]
                 < cls.CHEBYSHEV_SIGNIFICANT_THRESHOLD
