@@ -148,7 +148,7 @@ class AUTOBN:
     ATR_PERIOD = 10  # ATR计算周期
     ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
     ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
-    STOP_LOSS_DECAY_PER_MINUTE = 0.03  # 止盈止损每分钟衰减比例(3%)
+    STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 止盈止损每分钟衰减比例(1%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
