@@ -5,6 +5,7 @@ import datetime
 import gc
 import json
 import os
+import threading
 import time
 import traceback
 from decimal import Decimal, ROUND_DOWN
@@ -1406,6 +1407,7 @@ class AUTOBN:
         """
         try:
             # 设置超时时间为5分钟，防止任务卡住
+            print(f"[{datetime.datetime.now()}] {market} 市场分析任务开始", flush=True)
             await asyncio.wait_for(self._rzq_market_impl(market), timeout=300)
         except asyncio.TimeoutError:
             error_msg = f"{market} 市场分析任务超时(5分钟)，已强制中断"
@@ -1475,9 +1477,9 @@ class AUTOBN:
 class AUTOA:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
-    ATR_STOP_LOSS_MULTIPLIER = 2.0  # ATR止损倍数
-    ATR_TAKE_PROFIT_MULTIPLIER = 4.0  # ATR止盈倍数 (盈亏比1:2)
-    ATR_TRAILING_STOP_MULTIPLIER = 1.5  # ATR移动止损倍数
+    ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
+    ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
+    ATR_TRAILING_STOP_MULTIPLIER = 0.5  # ATR移动止损倍数
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -1493,6 +1495,8 @@ class AUTOA:
     alert_all_old = copy.deepcopy(alert_all)
     zt_dates = []
     hist_cache = {}
+    # 添加线程锁以保护 baostock 查询操作（baostock 不是线程安全的）
+    _bs_lock = threading.Lock()
 
     @classmethod
     def calculate_atr(cls, hist_data, period=None):
@@ -1719,28 +1723,85 @@ class AUTOA:
         try:
             loop = asyncio.get_running_loop()
             code_pre = "sh" if code[0] == "6" else "sz"
+            print(
+                f"[DEBUG] stock_zh_a_hist 调用: code={code}, code_pre={code_pre}",
+                flush=True,
+            )
             if code in cls.hist_cache:
                 data_list = copy.deepcopy(cls.hist_cache[code])
+                print(
+                    f"[DEBUG] 从缓存读取 code={code}, data_list前3行={data_list[:3] if data_list else 'empty'}",
+                    flush=True,
+                )
             else:
 
-                def fetch_bs_data(stock_code_pre, stock_code):
-                    rs = bs.query_history_k_data_plus(
-                        f"{stock_code_pre}.{stock_code}",  # 股票代码
-                        fields,
-                        start_date=start_date,
-                        end_date=end_date,
-                        frequency=frequency,  # 日K
-                        adjustflag=adjustflag,  # 3：前复权；1：不复权；2：后复权
+                def fetch_bs_data(
+                    stock_code_pre,
+                    stock_code,
+                    flds,
+                    s_date,
+                    e_date,
+                    freq,
+                    adj_flag,
+                    lock,
+                ):
+                    print(
+                        f"[DEBUG] fetch_bs_data 开始获取: {stock_code_pre}.{stock_code}",
+                        flush=True,
                     )
-                    dl = []
-                    while (rs.error_code == "0") & rs.next():
-                        dl.append(rs.get_row_data())
+                    # 使用线程锁保护 baostock 查询（baostock 不是线程安全的）
+                    with lock:
+                        rs = bs.query_history_k_data_plus(
+                            f"{stock_code_pre}.{stock_code}",  # 股票代码
+                            flds,
+                            start_date=s_date,
+                            end_date=e_date,
+                            frequency=freq,  # 日K
+                            adjustflag=adj_flag,  # 3：前复权；1：不复权；2：后复权
+                        )
+                        dl = []
+                        while (rs.error_code == "0") & rs.next():
+                            dl.append(rs.get_row_data())
+
+                    # 验证返回的数据
+                    if dl and len(dl[0]) > 1:
+                        actual_code = dl[0][1]
+                        expected_code = f"{stock_code_pre}.{stock_code}"
+                        if actual_code != expected_code:
+                            print(
+                                f"[ERROR] 数据错误! 请求={expected_code}, 实际={actual_code}",
+                                flush=True,
+                            )
+
+                    print(
+                        f"[DEBUG] fetch_bs_data 完成获取: {stock_code_pre}.{stock_code}, 数据行数={len(dl)}",
+                        flush=True,
+                    )
                     return dl
 
                 data_list = await loop.run_in_executor(
-                    None, fetch_bs_data, code_pre, code
+                    None,
+                    fetch_bs_data,
+                    code_pre,
+                    code,
+                    fields,
+                    start_date,
+                    end_date,
+                    frequency,
+                    adjustflag,
+                    cls._bs_lock,
                 )
                 if data_list:
+                    # 检查data_list中的股票代码
+                    actual_code_in_data = (
+                        data_list[0][1]
+                        if data_list and len(data_list[0]) > 1
+                        else "unknown"
+                    )
+                    print(
+                        f"[DEBUG] 准备写入缓存 code={code}, data_list中的股票代码={actual_code_in_data}, 数据行数={len(data_list)}",
+                        flush=True,
+                    )
                     cls.hist_cache[code] = copy.deepcopy(data_list)
             if not data_list:
                 return pd.DataFrame()
@@ -2055,6 +2116,7 @@ class AUTOA:
         """
         try:
             # 设置超时时间为3分钟，防止任务卡住
+            print(f"[{datetime.datetime.now()}] A股监控任务开始", flush=True)
             await asyncio.wait_for(cls._monitor_stocks_impl(), timeout=600)
         except asyncio.TimeoutError:
             error_msg = "A股监控任务超时(3分钟)，已强制中断"
