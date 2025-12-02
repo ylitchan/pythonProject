@@ -1068,18 +1068,19 @@ class AUTOBN:
                         if close_info.position_side == PositionSide.LONG.value:
                             # 移动止损：只上不下
                             new_sl = current_price - trailing_dist
+                            new_tp = current_price + trailing_dist * 2
                             if new_sl > close_info.stop_loss:
                                 close_info.stop_loss = new_sl
-                                # 只有当价格创新高时才更新entry_price作为参考
-                                if current_price > close_info.entry_price:
-                                    close_info.entry_price = current_price
+                            elif new_tp < close_info.take_profit:
+                                close_info.take_profit = new_tp
                         elif close_info.position_side == PositionSide.SHORT.value:
                             # 移动止损：只下不上 (做空止损是上界/take_profit变量)
                             new_sl = current_price + trailing_dist
+                            new_tp = current_price - trailing_dist * 2
                             if new_sl < close_info.take_profit:
                                 close_info.take_profit = new_sl
-                                if current_price < close_info.entry_price:
-                                    close_info.entry_price = current_price
+                            elif new_tp > close_info.stop_loss:
+                                close_info.stop_loss = new_tp
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
 
