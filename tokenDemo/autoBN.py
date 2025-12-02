@@ -6,6 +6,8 @@ import datetime
 import gc
 import json
 import os
+import signal
+import sys
 import threading
 import time
 import traceback
@@ -2203,6 +2205,22 @@ class AUTOA:
 
 # 注册AUTOA的退出处理函数,在脚本退出时保存A股数据
 atexit.register(AUTOA._save_alert_all_on_exit)
+
+
+def handle_exit_signal(signum, frame):
+    """处理系统退出信号，确保触发atexit"""
+    signal_name = "SIGINT (Ctrl+C)" if signum == signal.SIGINT else "SIGTERM"
+    print(
+        f"\n[{datetime.datetime.now()}] 接收到退出信号 {signal_name}, 准备退出...",
+        flush=True,
+    )
+    # 调用 sys.exit(0) 会触发 atexit 注册的函数
+    sys.exit(0)
+
+
+# 注册信号处理
+signal.signal(signal.SIGINT, handle_exit_signal)
+signal.signal(signal.SIGTERM, handle_exit_signal)
 
 
 async def main():
