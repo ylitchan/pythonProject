@@ -1,5 +1,6 @@
 # ==================== 标准库导入 ====================
 import asyncio
+import atexit
 import copy
 import datetime
 import gc
@@ -237,11 +238,29 @@ class AUTOBN:
             obj.alert_all = json.load(f)
         obj.alert_all_old = copy.deepcopy(obj.alert_all)
 
-        # 初始化资金槽位（用于资金管理）（可覆盖）
-        # 含义：用于控制单次下单的资金使用上限（与 open_ratio 一起作用）
+        # 初始化资金槽位(用于资金管理)(可覆盖)
+        # 含义:用于控制单次下单的资金使用上限(与 open_ratio 一起作用)
         obj.slot_balance = kwargs.get("slot_balance", [0.0])
         obj.symbols_info = {}
         obj.is_early_morning = False
+
+        # 注册退出处理函数,在脚本退出时保存数据
+        def save_on_exit():
+            """脚本退出时保存alert_all数据到文件"""
+            try:
+                print(
+                    f"[{datetime.datetime.now()}] 脚本退出,正在保存数据到 {obj.alert_all_file}...",
+                    flush=True,
+                )
+                with open(obj.alert_all_file, "w") as f:
+                    json.dump(obj.alert_all, f, ensure_ascii=False, indent=4)
+                print(f"[{datetime.datetime.now()}] 数据保存完成", flush=True)
+            except Exception as e:
+                print(f"[{datetime.datetime.now()}] 保存数据失败: {str(e)}", flush=True)
+                traceback.print_exc()
+
+        atexit.register(save_on_exit)
+
         return obj
 
     def send_msg(self, msg: str, wx: bool = False) -> None:
@@ -1483,9 +1502,7 @@ class AUTOBN:
         if self.alert_all != self.alert_all_old:
             self.get_position_risk()
             self.alert_all_old = copy.deepcopy(self.alert_all)
-            # 保存分析结果到文件
-            with open(self.alert_all_file, "w") as f:
-                json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
+            # 数据已更新,将在脚本退出时由atexit自动保存到文件
 
 
 class AUTOA:
@@ -1509,8 +1526,24 @@ class AUTOA:
     alert_all_old = copy.deepcopy(alert_all)
     zt_dates = []
     hist_cache = {}
-    # 添加线程锁以保护 baostock 查询操作（baostock 不是线程安全的）
+    # 添加线程锁以保护 baostock 查询操作(baostock 不是线程安全的)
     _bs_lock = threading.Lock()
+
+    # 退出处理函数,在脚本退出时保存A股数据
+    @staticmethod
+    def _save_alert_all_on_exit():
+        """脚本退出时保存AUTOA的alert_all数据到文件"""
+        try:
+            print(
+                f"[{datetime.datetime.now()}] 脚本退出,正在保存A股数据到 {AUTOA.alert_all_file}...",
+                flush=True,
+            )
+            with open(AUTOA.alert_all_file, "w", encoding="utf-8") as f:
+                json.dump(AUTOA.alert_all, f, ensure_ascii=False, indent=4)
+            print(f"[{datetime.datetime.now()}] A股数据保存完成", flush=True)
+        except Exception as e:
+            print(f"[{datetime.datetime.now()}] 保存A股数据失败: {str(e)}", flush=True)
+            traceback.print_exc()
 
     @classmethod
     def calculate_atr(cls, hist_data, period=None):
@@ -2162,12 +2195,14 @@ class AUTOA:
 
             if cls.alert_all != cls.alert_all_old:
                 cls.alert_all_old = copy.deepcopy(cls.alert_all)
-                # 保存分析结果到文件
-                with open(cls.alert_all_file, "w", encoding="utf-8") as f:
-                    json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
+                # 数据已更新,将在脚本退出时由atexit自动保存到文件
         finally:
             # 确保总是登出，即使发生异常（使用异步执行）
             await loop.run_in_executor(None, bs.logout)
+
+
+# 注册AUTOA的退出处理函数,在脚本退出时保存A股数据
+atexit.register(AUTOA._save_alert_all_on_exit)
 
 
 async def main():
