@@ -148,7 +148,7 @@ class AUTOBN:
     ATR_PERIOD = 10  # ATR计算周期
     ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
     ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
-    ATR_TRAILING_STOP_MULTIPLIER = 0.5  # ATR移动止损倍数
+    STOP_LOSS_DECAY_PER_MINUTE = 0.001  # 止盈止损每分钟衰减比例(0.1%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -1063,24 +1063,52 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                 else:
-                    # 更新动态止盈止损 (吊灯止损逻辑)
-                    if atr_value > 0:
-                        trailing_dist = atr_value * self.ATR_TRAILING_STOP_MULTIPLIER
-                        if close_info.position_side == PositionSide.LONG.value:
-                            # 移动止损：只上不下
-                            new_sl = current_price - trailing_dist
-                            new_tp = current_price + trailing_dist * 2
+                    # 时间衰减机制: 每分钟让止盈止损向当前价格收紧
+                    # 优势: 持仓时间越长,越容易触发止盈,避免利润回吐
+                    if close_info.position_side == PositionSide.LONG.value:
+                        # 做多: 计算当前止盈止损与当前价的距离
+                        stop_loss_gap = current_price - close_info.stop_loss
+                        take_profit_gap = close_info.take_profit - current_price
+
+                        # 止损上移(只能向有利方向移动,保护利润)
+                        if stop_loss_gap > 0:  # 确保止损在当前价下方
+                            new_sl = current_price - stop_loss_gap * (
+                                1 - self.STOP_LOSS_DECAY_PER_MINUTE
+                            )
                             if new_sl > close_info.stop_loss:
                                 close_info.stop_loss = new_sl
-                            elif new_tp < close_info.take_profit:
+
+                        # 止盈下移(更容易触发止盈)
+                        if take_profit_gap > 0:  # 确保止盈在当前价上方
+                            new_tp = current_price + take_profit_gap * (
+                                1 - self.STOP_LOSS_DECAY_PER_MINUTE
+                            )
+                            if new_tp < close_info.take_profit:
                                 close_info.take_profit = new_tp
-                        elif close_info.position_side == PositionSide.SHORT.value:
-                            # 移动止损：只下不上 (做空止损是上界/take_profit变量)
-                            new_sl = current_price + trailing_dist
-                            new_tp = current_price - trailing_dist * 2
+
+                    elif close_info.position_side == PositionSide.SHORT.value:
+                        # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
+                        stop_loss_gap = (
+                            close_info.take_profit - current_price
+                        )  # 止损距离
+                        take_profit_gap = (
+                            current_price - close_info.stop_loss
+                        )  # 止盈距离
+
+                        # 止损下移(只能向有利方向移动)
+                        if stop_loss_gap > 0:  # 确保止损在当前价上方
+                            new_sl = current_price + stop_loss_gap * (
+                                1 - self.STOP_LOSS_DECAY_PER_MINUTE
+                            )
                             if new_sl < close_info.take_profit:
                                 close_info.take_profit = new_sl
-                            elif new_tp > close_info.stop_loss:
+
+                        # 止盈上移(更容易触发止盈)
+                        if take_profit_gap > 0:  # 确保止盈在当前价下方
+                            new_tp = current_price - take_profit_gap * (
+                                1 - self.STOP_LOSS_DECAY_PER_MINUTE
+                            )
+                            if new_tp > close_info.stop_loss:
                                 close_info.stop_loss = new_tp
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
