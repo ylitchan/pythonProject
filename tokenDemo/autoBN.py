@@ -1305,6 +1305,12 @@ class AUTOBN:
                     elif (
                         open_info.position_side.value == PositionSide.BZ2.value
                         and current_price > max(kline_close[-2], avg_close)
+                        and datetime.datetime.fromtimestamp(
+                            current_timestamp, datetime.timezone.utc
+                        ).date()
+                        != datetime.datetime.fromtimestamp(
+                            open_info.timestamp, datetime.timezone.utc
+                        ).date()
                         and kline_volume[-1]
                         > sum(kline_volume[-3:-1]) / len(kline_volume[-3:-1])
                         and self.calculate_chebyshev_probability(
@@ -2158,6 +2164,15 @@ class AUTOA:
         """
         if today.timestamp() - open_info[1] > cls.TEN_DAY_SECONDS:
             cls.alert_all["OBSERVATIONS"].pop(code)
+            return
+        if (
+            datetime.datetime.fromtimestamp(
+                today.timestamp(), datetime.timezone.utc
+            ).date()
+            == datetime.datetime.fromtimestamp(
+                open_info[1], datetime.timezone.utc
+            ).date()
+        ):
             return
         # 获取股票历史数据（前复权，确保价格连续性）
         hist = await cls.stock_zh_a_hist(

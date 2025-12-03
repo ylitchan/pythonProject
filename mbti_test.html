@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MBTI 性格测试 - 发现真实的自己</title>
+    <meta name="description" content="专业的MBTI性格测试，帮助你深入了解自己的性格类型">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #6366f1;
+            --primary-dark: #4f46e5;
+            --primary-light: #818cf8;
+            --secondary-color: #ec4899;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --success-color: #10b981;
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.2);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 80%, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-light), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+            letter-spacing: -0.02em;
+        }
+
+        .subtitle {
+            font-size: 1.25rem;
+            color: var(--text-secondary);
+            font-weight: 300;
+        }
+
+        .card {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 2.5rem;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--border-color);
+            transition: all 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+        }
+
+        .start-section {
+            text-align: center;
+            animation: fadeIn 1s ease-out;
+        }
+
+        .start-section h2 {
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+        }
+
+        .start-section p {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            line-height: 1.8;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 1rem 2.5rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-decoration: none;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px rgba(99, 102, 241, 0.6);
+        }
+
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s ease;
+        }
+
+        .btn-primary:hover::before {
+            left: 100%;
+        }
+
+        .question-section {
+            display: none;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-card);
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            border-radius: 10px;
+            transition: width 0.4s ease;
+            box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+        }
+
+        .question-header {
+            margin-bottom: 2rem;
+        }
+
+        .question-number {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .question-text {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+
+        .options {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .option {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .option::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(180deg, var(--primary-color), var(--secondary-color));
+            transform: scaleY(0);
+            transition: transform 0.3s ease;
+        }
+
+        .option:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--primary-light);
+            transform: translateX(4px);
+        }
+
+        .option:hover::before {
+            transform: scaleY(1);
+        }
+
+        .option.selected {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(236, 72, 153, 0.2));
+            border-color: var(--primary-color);
+        }
+
+        .option.selected::before {
+            transform: scaleY(1);
+        }
+
+        .option-label {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .option-radio {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-radius: 50%;
+            position: relative;
+            flex-shrink: 0;
+            transition: all 0.3s ease;
+        }
+
+        .option.selected .option-radio {
+            border-color: var(--primary-color);
+            background: var(--primary-color);
+        }
+
+        .option.selected .option-radio::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+        }
+
+        .option-text {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            flex: 1;
+        }
+
+        .option.selected .option-text {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+
+        .navigation {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border: 2px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--primary-light);
+        }
+
+        .result-section {
+            display: none;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        .result-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .result-type {
+            font-size: 4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-light), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 1rem;
+            letter-spacing: 0.05em;
+        }
+
+        .result-title {
+            font-size: 2rem;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .result-subtitle {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+        }
+
+        .result-content h3 {
+            font-size: 1.5rem;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            margin-top: 2rem;
+        }
+
+        .result-content p {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            line-height: 1.8;
+            margin-bottom: 1rem;
+        }
+
+        .result-content ul {
+            list-style: none;
+            margin-bottom: 1.5rem;
+        }
+
+        .result-content li {
+            font-size: 1.05rem;
+            color: var(--text-secondary);
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        .result-content li::before {
+            content: '✦';
+            position: absolute;
+            left: 0;
+            color: var(--primary-color);
+        }
+
+        .dimensions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .dimension {
+            background: var(--bg-card);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .dimension:hover {
+            transform: translateY(-4px);
+            border-color: var(--primary-color);
+            box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .dimension-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .dimension-value {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary-light), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+
+            .subtitle {
+                font-size: 1rem;
+            }
+
+            .card {
+                padding: 1.5rem;
+            }
+
+            .question-text {
+                font-size: 1.2rem;
+            }
+
+            .result-type {
+                font-size: 3rem;
+            }
+
+            .dimensions {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MBTI 性格测试</h1>
+            <p class="subtitle">探索你的性格类型，发现真实的自己</p>
+        </header>
+
+        <!-- 开始页面 -->
+        <div id="startSection" class="card start-section">
+            <h2>欢迎参加 MBTI 性格测试</h2>
+            <p>
+                MBTI（Myers-Briggs Type Indicator）是一种广泛使用的性格分类工具，
+                它将人的性格分为16种类型。通过回答一系列问题，你将了解自己在四个维度上的偏好：
+            </p>
+            <div class="dimensions">
+                <div class="dimension">
+                    <div class="dimension-label">能量来源</div>
+                    <div class="dimension-value">E / I</div>
+                </div>
+                <div class="dimension">
+                    <div class="dimension-label">信息获取</div>
+                    <div class="dimension-value">S / N</div>
+                </div>
+                <div class="dimension">
+                    <div class="dimension-label">决策方式</div>
+                    <div class="dimension-value">T / F</div>
+                </div>
+                <div class="dimension">
+                    <div class="dimension-label">生活态度</div>
+                    <div class="dimension-value">J / P</div>
+                </div>
+            </div>
+            <p>
+                本测试共有 <strong>20 道题</strong>，请根据你的真实感受选择最符合你的选项。
+                没有对错之分，请诚实作答以获得最准确的结果。
+            </p>
+            <button class="btn btn-primary" onclick="startTest()">开始测试</button>
+        </div>
+
+        <!-- 问题页面 -->
+        <div id="questionSection" class="card question-section">
+            <div class="progress-bar">
+                <div id="progressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            
+            <div class="question-header">
+                <div class="question-number" id="questionNumber">问题 1 / 20</div>
+                <div class="question-text" id="questionText"></div>
+            </div>
+
+            <div class="options" id="optionsContainer"></div>
+
+            <div class="navigation">
+                <button class="btn btn-secondary" onclick="previousQuestion()" id="prevBtn">上一题</button>
+                <button class="btn btn-primary" onclick="nextQuestion()" id="nextBtn">下一题</button>
+            </div>
+        </div>
+
+        <!-- 结果页面 -->
+        <div id="resultSection" class="card result-section">
+            <div class="result-header">
+                <div class="result-type" id="resultType"></div>
+                <div class="result-title" id="resultTitle"></div>
+                <div class="result-subtitle" id="resultSubtitle"></div>
+            </div>
+
+            <div class="dimensions" id="resultDimensions"></div>
+
+            <div class="result-content" id="resultContent"></div>
+
+            <div style="text-align: center; margin-top: 3rem;">
+                <button class="btn btn-primary" onclick="restartTest()">重新测试</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // MBTI 测试题目
+        const questions = [
+            // E vs I (外向 vs 内向)
+            {
+                text: "在社交聚会中，你通常：",
+                dimension: "EI",
+                options: [
+                    { text: "主动与很多人交谈，感到精力充沛", value: "E" },
+                    { text: "更喜欢与少数几个人深入交谈", value: "I" }
+                ]
+            },
+            {
+                text: "当你感到疲惫时，你更倾向于：",
+                dimension: "EI",
+                options: [
+                    { text: "与朋友出去放松，通过社交恢复精力", value: "E" },
+                    { text: "独自待着，通过安静的活动恢复精力", value: "I" }
+                ]
+            },
+            {
+                text: "在团队项目中，你更喜欢：",
+                dimension: "EI",
+                options: [
+                    { text: "通过讨论和头脑风暴来产生想法", value: "E" },
+                    { text: "先独立思考，再分享自己的想法", value: "I" }
+                ]
+            },
+            {
+                text: "关于你的朋友圈，你认为：",
+                dimension: "EI",
+                options: [
+                    { text: "我有很多朋友和熟人", value: "E" },
+                    { text: "我有少数几个非常亲密的朋友", value: "I" }
+                ]
+            },
+            {
+                text: "在陌生环境中，你通常：",
+                dimension: "EI",
+                options: [
+                    { text: "很快就能适应并主动认识新朋友", value: "E" },
+                    { text: "需要时间观察和适应环境", value: "I" }
+                ]
+            },
+
+            // S vs N (实感 vs 直觉)
+            {
+                text: "在学习新事物时，你更喜欢：",
+                dimension: "SN",
+                options: [
+                    { text: "关注具体的事实和细节", value: "S" },
+                    { text: "理解整体概念和可能性", value: "N" }
+                ]
+            },
+            {
+                text: "当别人向你描述事情时，你更注意：",
+                dimension: "SN",
+                options: [
+                    { text: "实际发生了什么，具体的细节", value: "S" },
+                    { text: "事情背后的含义和可能的影响", value: "N" }
+                ]
+            },
+            {
+                text: "你更倾向于相信：",
+                dimension: "SN",
+                options: [
+                    { text: "实际经验和已被证实的方法", value: "S" },
+                    { text: "直觉和未来的可能性", value: "N" }
+                ]
+            },
+            {
+                text: "在解决问题时，你更喜欢：",
+                dimension: "SN",
+                options: [
+                    { text: "使用已知的、实用的解决方案", value: "S" },
+                    { text: "探索新的、创新的方法", value: "N" }
+                ]
+            },
+            {
+                text: "你更喜欢的工作是：",
+                dimension: "SN",
+                options: [
+                    { text: "有明确步骤和实际应用的工作", value: "S" },
+                    { text: "需要想象力和创造性思维的工作", value: "N" }
+                ]
+            },
+
+            // T vs F (思考 vs 情感)
+            {
+                text: "在做决定时，你更看重：",
+                dimension: "TF",
+                options: [
+                    { text: "逻辑分析和客观标准", value: "T" },
+                    { text: "对他人的影响和人际和谐", value: "F" }
+                ]
+            },
+            {
+                text: "当朋友遇到问题时，你更倾向于：",
+                dimension: "TF",
+                options: [
+                    { text: "帮助分析问题并提供解决方案", value: "T" },
+                    { text: "倾听和提供情感支持", value: "F" }
+                ]
+            },
+            {
+                text: "你认为更重要的是：",
+                dimension: "TF",
+                options: [
+                    { text: "公平和正义", value: "T" },
+                    { text: "同情和理解", value: "F" }
+                ]
+            },
+            {
+                text: "在评价一个想法时，你首先考虑：",
+                dimension: "TF",
+                options: [
+                    { text: "这个想法是否合理和有效", value: "T" },
+                    { text: "这个想法对人们的影响", value: "F" }
+                ]
+            },
+            {
+                text: "别人可能会说你：",
+                dimension: "TF",
+                options: [
+                    { text: "理性、客观、善于分析", value: "T" },
+                    { text: "善解人意、富有同情心", value: "F" }
+                ]
+            },
+
+            // J vs P (判断 vs 知觉)
+            {
+                text: "对于日常生活，你更喜欢：",
+                dimension: "JP",
+                options: [
+                    { text: "有计划和组织，按部就班", value: "J" },
+                    { text: "保持灵活，随机应变", value: "P" }
+                ]
+            },
+            {
+                text: "在完成任务时，你倾向于：",
+                dimension: "JP",
+                options: [
+                    { text: "尽早开始，按计划完成", value: "J" },
+                    { text: "在截止日期前完成，享受压力", value: "P" }
+                ]
+            },
+            {
+                text: "你的工作空间通常是：",
+                dimension: "JP",
+                options: [
+                    { text: "整洁有序，物品摆放有规律", value: "J" },
+                    { text: "相对混乱，但你知道东西在哪", value: "P" }
+                ]
+            },
+            {
+                text: "对于周末计划，你更喜欢：",
+                dimension: "JP",
+                options: [
+                    { text: "提前安排好活动", value: "J" },
+                    { text: "看当时的心情和情况决定", value: "P" }
+                ]
+            },
+            {
+                text: "在项目进行中，你更倾向于：",
+                dimension: "JP",
+                options: [
+                    { text: "尽快做出决定并执行", value: "J" },
+                    { text: "保持开放，收集更多信息", value: "P" }
+                ]
+            }
+        ];
+
+        // MBTI 类型描述
+        const mbtiTypes = {
+            "INTJ": {
+                title: "建筑师",
+                subtitle: "富有想象力和战略性的思想家",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>INTJ 是天生的战略家，拥有罕见的想象力和坚定的意志。他们独立、果断，对自己和他人都有很高的标准。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>战略思维能力强，善于长远规划</li>
+                        <li>独立自主，不依赖他人</li>
+                        <li>逻辑清晰，分析能力出众</li>
+                        <li>意志坚定，能够坚持自己的想法</li>
+                        <li>追求知识，持续学习和改进</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于自信，不易接受批评</li>
+                        <li>有时显得冷漠，缺乏情感表达</li>
+                        <li>对不符合标准的人缺乏耐心</li>
+                        <li>可能过度分析，导致行动迟缓</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>科学家、工程师、战略规划师、系统分析师、建筑师、教授、研究员</p>
+                `
+            },
+            "INTP": {
+                title: "逻辑学家",
+                subtitle: "创新的发明家，对知识有着不可遏制的渴望",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>INTP 是富有创造力的思想家，对理论和抽象概念充满热情。他们追求理解世界的运作原理，喜欢探索新想法。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>分析能力强，善于发现模式和联系</li>
+                        <li>创新思维，能提出独特的解决方案</li>
+                        <li>客观公正，不受情感影响</li>
+                        <li>好奇心强，热爱学习新知识</li>
+                        <li>灵活适应，能够快速调整思路</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于理论化，忽视实际应用</li>
+                        <li>难以表达情感，社交技能较弱</li>
+                        <li>容易分心，难以完成日常任务</li>
+                        <li>可能显得冷漠或不关心他人</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>程序员、数学家、物理学家、哲学家、研究员、分析师、发明家</p>
+                `
+            },
+            "ENTJ": {
+                title: "指挥官",
+                subtitle: "大胆、富有想象力且意志强大的领导者",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ENTJ 是天生的领导者，具有强大的组织能力和决策力。他们果断、自信，善于制定和执行长期战略。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>领导能力强，善于激励和组织团队</li>
+                        <li>战略眼光，能够看到大局</li>
+                        <li>果断高效，快速做出决策</li>
+                        <li>自信坚定，不畏惧挑战</li>
+                        <li>善于沟通，能够清晰表达想法</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于强势，不够体谅他人感受</li>
+                        <li>缺乏耐心，对效率低下的人不够宽容</li>
+                        <li>可能过于关注目标，忽视过程</li>
+                        <li>有时显得傲慢或独断</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>企业高管、创业者、律师、管理顾问、项目经理、投资银行家</p>
+                `
+            },
+            "ENTP": {
+                title: "辩论家",
+                subtitle: "聪明好奇的思想家，无法抗拒智力上的挑战",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ENTP 是充满活力的创新者，喜欢挑战传统观念。他们机智、聪明，善于辩论和探索新想法。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>创新能力强，善于提出新想法</li>
+                        <li>思维敏捷，能够快速理解复杂概念</li>
+                        <li>适应力强，能够应对变化</li>
+                        <li>善于辩论，逻辑清晰</li>
+                        <li>充满热情，能够激发他人</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于争辩，忽视他人感受</li>
+                        <li>难以专注，容易对新事物分心</li>
+                        <li>可能缺乏执行力，想法多于行动</li>
+                        <li>有时显得不够认真或不可靠</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>创业者、发明家、营销专家、律师、顾问、记者、设计师</p>
+                `
+            },
+            "INFJ": {
+                title: "提倡者",
+                subtitle: "安静而神秘，鼓舞人心的理想主义者",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>INFJ 是最稀有的性格类型之一，他们富有洞察力和同情心，致力于帮助他人实现潜能。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>洞察力强，能够理解他人的动机和感受</li>
+                        <li>理想主义，追求有意义的目标</li>
+                        <li>富有创造力，善于表达想法</li>
+                        <li>坚定执着，能够为信念而奋斗</li>
+                        <li>善解人意，能够建立深厚的关系</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于理想化，对现实失望</li>
+                        <li>容易感到疲惫，需要独处时间</li>
+                        <li>可能过于敏感，容易受伤</li>
+                        <li>有时过于完美主义</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>心理咨询师、作家、教师、社会工作者、人力资源、艺术家</p>
+                `
+            },
+            "INFP": {
+                title: "调停者",
+                subtitle: "诗意、善良的利他主义者，总是热心帮助他人",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>INFP 是理想主义者和忠诚者，总是寻找生活中的美好和意义。他们富有创造力，深思熟虑。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>富有同情心，真诚关心他人</li>
+                        <li>创造力强，善于艺术表达</li>
+                        <li>开放包容，尊重不同观点</li>
+                        <li>忠诚可靠，重视深厚的关系</li>
+                        <li>适应力强，能够灵活应对变化</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于理想化，难以接受现实</li>
+                        <li>容易情绪化，对批评敏感</li>
+                        <li>可能缺乏实际性，难以做决定</li>
+                        <li>有时过于自我批评</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>作家、艺术家、心理咨询师、社会工作者、教师、图书管理员</p>
+                `
+            },
+            "ENFJ": {
+                title: "主人公",
+                subtitle: "有魅力、鼓舞人心的领导者，能够吸引听众",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ENFJ 是天生的领导者，充满激情和魅力。他们善于激励他人，致力于帮助他人成长。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>领导能力强，善于激励和组织</li>
+                        <li>富有同情心，能够理解他人</li>
+                        <li>沟通能力出色，善于表达</li>
+                        <li>热情洋溢，能够感染他人</li>
+                        <li>负责任，值得信赖</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于理想化，对他人期望过高</li>
+                        <li>容易忽视自己的需求</li>
+                        <li>可能过于敏感，对批评反应强烈</li>
+                        <li>有时难以做出艰难的决定</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>教师、人力资源经理、销售经理、公关专家、咨询师、培训师</p>
+                `
+            },
+            "ENFP": {
+                title: "竞选者",
+                subtitle: "热情、有创造力、社交能力强的自由精神",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ENFP 是充满热情和创造力的自由精神，他们善于社交，总是寻找新的可能性和体验。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>创造力强，善于产生新想法</li>
+                        <li>热情洋溢，能够激励他人</li>
+                        <li>社交能力强，善于建立关系</li>
+                        <li>适应力强，能够应对变化</li>
+                        <li>开放包容，尊重多样性</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能缺乏专注，容易分心</li>
+                        <li>难以完成日常任务和细节工作</li>
+                        <li>可能过于情绪化</li>
+                        <li>有时缺乏实际性和计划性</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>记者、演员、咨询师、营销专家、企业家、教师、艺术家</p>
+                `
+            },
+            "ISTJ": {
+                title: "物流师",
+                subtitle: "实际、注重事实的个人，可靠性不容怀疑",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ISTJ 是最可靠和负责任的性格类型之一。他们注重细节，遵守规则，是社会的中流砥柱。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>可靠负责，说到做到</li>
+                        <li>注重细节，工作严谨</li>
+                        <li>逻辑清晰，善于分析</li>
+                        <li>有条理，善于组织和规划</li>
+                        <li>忠诚可靠，值得信赖</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于固执，难以接受变化</li>
+                        <li>缺乏灵活性，过于遵守规则</li>
+                        <li>可能忽视情感因素</li>
+                        <li>有时显得过于严肃或刻板</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>会计师、审计师、律师、军官、工程师、医生、管理员</p>
+                `
+            },
+            "ISFJ": {
+                title: "守卫者",
+                subtitle: "非常专注、温暖的守护者，随时准备保护爱的人",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ISFJ 是温暖、体贴的守护者，他们忠诚可靠，总是愿意帮助他人，注重细节和传统。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>可靠负责，值得信赖</li>
+                        <li>富有同情心，关心他人</li>
+                        <li>注重细节，工作细致</li>
+                        <li>忠诚专一，重视关系</li>
+                        <li>实际务实，脚踏实地</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于谦虚，不善于表达需求</li>
+                        <li>容易承担过多责任</li>
+                        <li>可能过于敏感，对批评反应强烈</li>
+                        <li>有时难以应对变化</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>护士、教师、社会工作者、图书管理员、行政助理、客户服务</p>
+                `
+            },
+            "ESTJ": {
+                title: "总经理",
+                subtitle: "出色的管理者，在管理事务或人员方面无与伦比",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ESTJ 是天生的组织者和管理者，他们注重秩序和效率，善于制定和执行计划。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>组织能力强，善于管理</li>
+                        <li>果断高效，快速做决定</li>
+                        <li>负责任，说到做到</li>
+                        <li>实际务实，注重结果</li>
+                        <li>诚实直接，沟通清晰</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于固执，难以接受新想法</li>
+                        <li>缺乏灵活性，过于遵守规则</li>
+                        <li>可能忽视他人感受</li>
+                        <li>有时显得过于强势或控制欲强</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>企业管理者、项目经理、警察、法官、军官、银行家、行政主管</p>
+                `
+            },
+            "ESFJ": {
+                title: "执政官",
+                subtitle: "极有同情心、受欢迎、总是热心帮助他人",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ESFJ 是温暖、友好的照顾者，他们重视和谐，善于建立和维护关系，总是愿意帮助他人。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>富有同情心，关心他人</li>
+                        <li>社交能力强，善于建立关系</li>
+                        <li>负责任，可靠值得信赖</li>
+                        <li>组织能力强，注重细节</li>
+                        <li>忠诚专一，重视传统</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于在意他人看法</li>
+                        <li>难以应对批评和冲突</li>
+                        <li>可能忽视自己的需求</li>
+                        <li>有时过于传统，难以接受变化</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>护士、教师、社会工作者、人力资源、销售、活动策划、客户服务</p>
+                `
+            },
+            "ISTP": {
+                title: "鉴赏家",
+                subtitle: "大胆而实际的实验家，擅长使用各种工具",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ISTP 是实际的问题解决者，他们善于分析和理解事物的运作原理，喜欢动手实践。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>实践能力强，善于动手</li>
+                        <li>逻辑清晰，善于分析</li>
+                        <li>适应力强，能够应对危机</li>
+                        <li>独立自主，不依赖他人</li>
+                        <li>冷静客观，不受情感影响</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于冷漠，缺乏情感表达</li>
+                        <li>难以做出长期承诺</li>
+                        <li>可能显得不够负责或可靠</li>
+                        <li>有时过于冒险，忽视风险</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>机械师、工程师、飞行员、运动员、技术人员、侦探、外科医生</p>
+                `
+            },
+            "ISFP": {
+                title: "探险家",
+                subtitle: "灵活、有魅力的艺术家，随时准备探索和体验新事物",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ISFP 是温和、友好的艺术家，他们热爱美和和谐，活在当下，享受生活的每一刻。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>富有创造力，艺术天赋强</li>
+                        <li>敏感细腻，能够感受美</li>
+                        <li>适应力强，能够灵活应对</li>
+                        <li>温和友善，尊重他人</li>
+                        <li>活在当下，享受生活</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于敏感，容易受伤</li>
+                        <li>难以应对冲突和批评</li>
+                        <li>可能缺乏长期规划</li>
+                        <li>有时过于独立，不善于寻求帮助</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>艺术家、设计师、音乐家、摄影师、厨师、美容师、兽医</p>
+                `
+            },
+            "ESTP": {
+                title: "企业家",
+                subtitle: "聪明、精力充沛、善于感知的人，真心享受生活在边缘",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ESTP 是充满活力的行动派，他们善于抓住机会，喜欢冒险和刺激，活在当下。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>行动力强，快速做出决定</li>
+                        <li>适应力强，能够应对变化</li>
+                        <li>社交能力强，善于交际</li>
+                        <li>实际务实，注重结果</li>
+                        <li>充满活力，富有魅力</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于冲动，缺乏深思熟虑</li>
+                        <li>难以专注于长期目标</li>
+                        <li>可能忽视他人感受</li>
+                        <li>有时过于冒险，忽视风险</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>企业家、销售、营销、警察、消防员、运动员、急救人员</p>
+                `
+            },
+            "ESFP": {
+                title: "表演者",
+                subtitle: "自发的、精力充沛、热情的表演者，生活永远不会无聊",
+                description: `
+                    <h3>性格特点</h3>
+                    <p>ESFP 是天生的表演者，他们热爱生活，享受与人相处，总是能够为周围的人带来欢乐。</p>
+                    
+                    <h3>优势</h3>
+                    <ul>
+                        <li>热情洋溢，充满活力</li>
+                        <li>社交能力强，善于娱乐他人</li>
+                        <li>适应力强，能够应对变化</li>
+                        <li>实际务实，注重当下</li>
+                        <li>乐观积极，富有感染力</li>
+                    </ul>
+                    
+                    <h3>挑战</h3>
+                    <ul>
+                        <li>可能过于关注当下，缺乏长期规划</li>
+                        <li>难以应对批评和冲突</li>
+                        <li>可能过于敏感，容易受伤</li>
+                        <li>有时缺乏专注，容易分心</li>
+                    </ul>
+                    
+                    <h3>适合的职业</h3>
+                    <p>演员、音乐家、活动策划、销售、导游、教师、社会工作者</p>
+                `
+            }
+        };
+
+        // 测试状态
+        let currentQuestion = 0;
+        let answers = {
+            EI: 0, // E为正，I为负
+            SN: 0, // S为正，N为负
+            TF: 0, // T为正，F为负
+            JP: 0  // J为正，P为负
+        };
+        let selectedAnswers = new Array(questions.length).fill(null);
+
+        // 开始测试
+        function startTest() {
+            document.getElementById('startSection').style.display = 'none';
+            document.getElementById('questionSection').style.display = 'block';
+            showQuestion(0);
+        }
+
+        // 显示问题
+        function showQuestion(index) {
+            currentQuestion = index;
+            const question = questions[index];
+            
+            // 更新进度条
+            const progress = ((index + 1) / questions.length) * 100;
+            document.getElementById('progressFill').style.width = progress + '%';
+            
+            // 更新问题编号和文本
+            document.getElementById('questionNumber').textContent = `问题 ${index + 1} / ${questions.length}`;
+            document.getElementById('questionText').textContent = question.text;
+            
+            // 创建选项
+            const optionsContainer = document.getElementById('optionsContainer');
+            optionsContainer.innerHTML = '';
+            
+            question.options.forEach((option, optionIndex) => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'option';
+                if (selectedAnswers[index] === optionIndex) {
+                    optionDiv.classList.add('selected');
+                }
+                
+                optionDiv.innerHTML = `
+                    <div class="option-label">
+                        <div class="option-radio"></div>
+                        <div class="option-text">${option.text}</div>
+                    </div>
+                `;
+                
+                optionDiv.onclick = () => selectOption(index, optionIndex);
+                optionsContainer.appendChild(optionDiv);
+            });
+            
+            // 更新按钮状态
+            document.getElementById('prevBtn').disabled = index === 0;
+            document.getElementById('nextBtn').textContent = index === questions.length - 1 ? '查看结果' : '下一题';
+        }
+
+        // 选择选项
+        function selectOption(questionIndex, optionIndex) {
+            selectedAnswers[questionIndex] = optionIndex;
+            
+            // 更新UI
+            const options = document.querySelectorAll('.option');
+            options.forEach((opt, idx) => {
+                if (idx === optionIndex) {
+                    opt.classList.add('selected');
+                } else {
+                    opt.classList.remove('selected');
+                }
+            });
+        }
+
+        // 上一题
+        function previousQuestion() {
+            if (currentQuestion > 0) {
+                showQuestion(currentQuestion - 1);
+            }
+        }
+
+        // 下一题
+        function nextQuestion() {
+            if (selectedAnswers[currentQuestion] === null) {
+                alert('请选择一个选项后再继续');
+                return;
+            }
+            
+            if (currentQuestion < questions.length - 1) {
+                showQuestion(currentQuestion + 1);
+            } else {
+                calculateResult();
+            }
+        }
+
+        // 计算结果
+        function calculateResult() {
+            // 重置分数
+            answers = { EI: 0, SN: 0, TF: 0, JP: 0 };
+            
+            // 计算每个维度的分数
+            questions.forEach((question, index) => {
+                const selectedOption = selectedAnswers[index];
+                if (selectedOption !== null) {
+                    const option = question.options[selectedOption];
+                    const dimension = question.dimension;
+                    
+                    if (option.value === dimension[0]) {
+                        answers[dimension] += 1;
+                    } else {
+                        answers[dimension] -= 1;
+                    }
+                }
+            });
+            
+            // 确定MBTI类型
+            const type = 
+                (answers.EI > 0 ? 'E' : 'I') +
+                (answers.SN > 0 ? 'S' : 'N') +
+                (answers.TF > 0 ? 'T' : 'F') +
+                (answers.JP > 0 ? 'J' : 'P');
+            
+            showResult(type);
+        }
+
+        // 显示结果
+        function showResult(type) {
+            const typeInfo = mbtiTypes[type];
+            
+            document.getElementById('questionSection').style.display = 'none';
+            document.getElementById('resultSection').style.display = 'block';
+            
+            document.getElementById('resultType').textContent = type;
+            document.getElementById('resultTitle').textContent = typeInfo.title;
+            document.getElementById('resultSubtitle').textContent = typeInfo.subtitle;
+            
+            // 显示各维度倾向
+            const dimensionsHtml = `
+                <div class="dimension">
+                    <div class="dimension-label">${answers.EI > 0 ? '外向 (E)' : '内向 (I)'}</div>
+                    <div class="dimension-value">${Math.abs(answers.EI)}</div>
+                </div>
+                <div class="dimension">
+                    <div class="dimension-label">${answers.SN > 0 ? '实感 (S)' : '直觉 (N)'}</div>
+                    <div class="dimension-value">${Math.abs(answers.SN)}</div>
+                </div>
+                <div class="dimension">
+                    <div class="dimension-label">${answers.TF > 0 ? '思考 (T)' : '情感 (F)'}</div>
+                    <div class="dimension-value">${Math.abs(answers.TF)}</div>
+                </div>
+                <div class="dimension">
+                    <div class="dimension-label">${answers.JP > 0 ? '判断 (J)' : '知觉 (P)'}</div>
+                    <div class="dimension-value">${Math.abs(answers.JP)}</div>
+                </div>
+            `;
+            document.getElementById('resultDimensions').innerHTML = dimensionsHtml;
+            
+            document.getElementById('resultContent').innerHTML = typeInfo.description;
+        }
+
+        // 重新测试
+        function restartTest() {
+            currentQuestion = 0;
+            answers = { EI: 0, SN: 0, TF: 0, JP: 0 };
+            selectedAnswers = new Array(questions.length).fill(null);
+            
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('startSection').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
