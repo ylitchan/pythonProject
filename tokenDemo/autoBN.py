@@ -1260,7 +1260,7 @@ class AUTOBN:
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
-                    if not open_info.position_side.value == PositionSide.BD.value:
+                    if open_info.position_side.value == PositionSide.BD.value:
                         return
                     should_open = False
                     await get_kline_15_data()
