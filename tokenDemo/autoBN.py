@@ -50,7 +50,7 @@ class Position:
     take_profit: float  # 止盈价 [0]
     stop_loss: float  # 止损价 [1]
     close_side: OrderSide  # 平仓方向 [2] (BUY/SELL)
-    position_side: str  # 持仓方向/策略标签 [3] (LONG/SHORT/BZ1/BZ2)
+    position_side: PositionSide  # 持仓方向/策略标签 [3] (LONG/SHORT/BZ1/BZ2)
     entry_price: float = 0.0  # 开仓均价 [4]
 
     def to_list(self) -> List:
@@ -59,7 +59,7 @@ class Position:
             self.take_profit,
             self.stop_loss,
             self.close_side.value,
-            self.position_side,  # 已经是字符串
+            self.position_side.value,  # 已经是字符串
             self.entry_price,
         ]
 
@@ -70,7 +70,7 @@ class Position:
             take_profit=float(data[0]),
             stop_loss=float(data[1]),
             close_side=OrderSide(data[2]),
-            position_side=data[3],  # 类型注解已声明为str，无需显式转换
+            position_side=PositionSide(data[3]),
             entry_price=float(data[4]) if len(data) > 4 else 0.0,
         )
 
@@ -88,12 +88,12 @@ class Observation:
     timestamp: float  # 触发时间（Unix时间戳）[1]
     side: OrderSide  # 信号方向 [2] (BUY/SELL)
     position_side: (
-        str  # [3] 关联信息：持仓方向(LONG/SHORT)、策略标签(BZ1/BZ2)或空字符串
+        PositionSide  # [3] 关联信息：持仓方向(LONG/SHORT)、策略标签(BZ1/BZ2)或空字符串
     )
 
     def to_list(self) -> List:
         """转换为列表格式"""
-        return [self.price, self.timestamp, self.side.value, self.position_side]
+        return [self.price, self.timestamp, self.side.value, self.position_side.value]
 
     @classmethod
     def from_list(cls, data: List):
@@ -102,7 +102,7 @@ class Observation:
             price=float(data[0]),
             timestamp=float(data[1]),
             side=OrderSide(data[2]),
-            position_side=data[3],  # 类型注解已声明为str，无需显式转换
+            position_side=PositionSide(data[3]),
         )
 
 
@@ -563,6 +563,134 @@ class AUTOBN:
                 )
         return None
 
+    async def check_trend(
+        self,
+        semaphore,
+        symbol,
+        kline_data=None,
+    ):
+        """
+        检查趋势信号 - 基于 Supertrend 指标
+
+        功能: 使用 Supertrend 指标判断市场趋势方向
+        参数:
+            semaphore: 异步信号量
+            symbol: 交易对符号
+            positionSide: 持仓方向
+            kline_close: K线收盘价列表(可选,如果不提供则获取)
+            kline_volume: K线成交量列表(可选)
+            dtn: 时间戳
+        返回:
+            1: 上升趋势(做多)
+            -1: 下降趋势(做空)
+            0: 无明确趋势或数据不足
+        """
+        async with semaphore:
+            try:
+                # Supertrend 参数
+                atr_period = 10
+                factor = 3.0
+
+                # 获取 4 小时 K 线数据(如果未提供)
+                if kline_data is None:
+                    kline_data = await self.get_kline(semaphore, symbol, "4h")
+                    if len(kline_data) < atr_period + 1:  # 至少需要 ATR周期+1 根K线
+                        return 0
+
+                # 计算 ATR
+                atr = self.calculate_atr(kline_data, period=atr_period)
+                if atr <= 0:
+                    return 0
+
+                # 计算 Supertrend
+                # Supertrend 完整逻辑:
+                # 基础上轨 = HL2 + factor * ATR
+                # 基础下轨 = HL2 - factor * ATR
+                # 上升趋势时使用下轨,下降趋势时使用上轨
+                supertrend_values = []
+                directions = []
+
+                for i in range(len(kline_data)):
+                    kline = kline_data[i]
+                    hl2 = (kline[2] + kline[3]) / 2  # (high + low) / 2
+                    close = kline[4]
+
+                    # 计算基础上下轨
+                    basic_upper = hl2 + factor * atr
+                    basic_lower = hl2 - factor * atr
+
+                    # 初始化第一根K线的方向
+                    if i == 0:
+                        # 第一根K线:根据收盘价与上轨的关系判断初始方向
+                        # 标准 Supertrend 算法:close > upper → 上升趋势
+                        if close > basic_upper:
+                            # 收盘价突破上轨 → 上升趋势
+                            direction = -1
+                            supertrend = basic_lower
+                        else:
+                            # 收盘价在上轨或以下 → 下降趋势(默认)
+                            direction = 1
+                            supertrend = basic_upper
+                    else:
+                        prev_direction = directions[-1]
+                        prev_supertrend = supertrend_values[-1]
+
+                        # Supertrend 核心逻辑
+                        if prev_direction == -1:  # 之前是上升趋势
+                            # 上升趋势中,使用下轨
+                            # 下轨只能上移或持平,不能下降
+                            final_lower = max(basic_lower, prev_supertrend)
+
+                            # 判断是否继续上升趋势
+                            if close <= final_lower:
+                                # 收盘价跌破下轨,趋势反转为下降
+                                direction = 1
+                                supertrend = basic_upper
+                            else:
+                                # 继续上升趋势
+                                direction = -1
+                                supertrend = final_lower
+                        else:  # 之前是下降趋势 (direction == 1)
+                            # 下降趋势中,使用上轨
+                            # 上轨只能下移或持平,不能上升
+                            final_upper = min(basic_upper, prev_supertrend)
+
+                            # 判断是否继续下降趋势
+                            if close >= final_upper:
+                                # 收盘价突破上轨,趋势反转为上升
+                                direction = -1
+                                supertrend = basic_lower
+                            else:
+                                # 继续下降趋势
+                                direction = 1
+                                supertrend = final_upper
+
+                    supertrend_values.append(supertrend)
+                    directions.append(direction)
+
+                # 获取最近两根K线的方向
+                if len(directions) < 2:
+                    return 0
+
+                prev_direction = directions[-2]
+                curr_direction = directions[-1]
+
+                # 检测趋势变化
+                # 从下降趋势转为上升趋势: prev_direction=1, curr_direction=-1
+                if prev_direction == 1 and curr_direction == -1:
+                    return PositionSide.LONG.value  # 做多信号
+                # 从上升趋势转为下降趋势: prev_direction=-1, curr_direction=1
+                elif prev_direction == -1 and curr_direction == 1:
+                    return PositionSide.SHORT.value  # 做空信号
+                else:
+                    # 趋势未变化,返回当前趋势方向
+                    # direction=-1表示上升趋势,返回1; direction=1表示下降趋势,返回-1
+                    return
+
+            except Exception:
+                traceback.print_exc()
+                return 0
+
     async def check_bd(
         self,
         semaphore,
@@ -980,14 +1108,14 @@ class AUTOBN:
                 if (
                     close_info.take_profit == 0 or close_info.stop_loss == 0
                 ) and atr_value > 0:
-                    if close_info.position_side == PositionSide.LONG.value:
+                    if close_info.position_side.value == PositionSide.LONG.value:
                         close_info.take_profit = close_info.entry_price + (
                             atr_value * self.ATR_TAKE_PROFIT_MULTIPLIER
                         )
                         close_info.stop_loss = close_info.entry_price - (
                             atr_value * self.ATR_STOP_LOSS_MULTIPLIER
                         )
-                    elif close_info.position_side == PositionSide.SHORT.value:
+                    elif close_info.position_side.value == PositionSide.SHORT.value:
                         close_info.take_profit = close_info.entry_price - (
                             atr_value * self.ATR_TAKE_PROFIT_MULTIPLIER
                         )
@@ -1002,11 +1130,11 @@ class AUTOBN:
                     )
 
                 if current_price <= close_info.stop_loss:  # 触及止损
-                    if close_info.position_side == PositionSide.SHORT.value:
+                    if close_info.position_side.value == PositionSide.SHORT.value:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side,  # 已经是字符串，不需要 .value
+                            close_info.position_side.value,  # 已经是字符串，不需要 .value
                             current_price,
                             0.5,
                         )
@@ -1025,7 +1153,7 @@ class AUTOBN:
                         new_obs = Observation(
                             price=current_price,
                             timestamp=current_timestamp,
-                            side=OrderSide.SELL,
+                            side=OrderSide.SELL.value,
                             position_side="",
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
@@ -1033,7 +1161,7 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side,  # 已经是字符串，不需要 .value
+                            close_info.position_side.value,  # 已经是字符串，不需要 .value
                             current_price,
                             1,
                         )
@@ -1042,17 +1170,17 @@ class AUTOBN:
                         new_obs = Observation(
                             price=current_price,
                             timestamp=current_timestamp,
-                            side=OrderSide.SELL,
+                            side=OrderSide.SELL.value,
                             position_side=PositionSide.BZ2.value,
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
 
                 elif current_price >= close_info.take_profit:  # 触及止盈
-                    if close_info.position_side == PositionSide.LONG.value:
+                    if close_info.position_side.value == PositionSide.LONG.value:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side,  # 已经是字符串，不需要 .value
+                            close_info.position_side.value,  # 已经是字符串，不需要 .value
                             current_price,
                             0.5,
                         )
@@ -1070,7 +1198,7 @@ class AUTOBN:
                         new_obs = Observation(
                             price=current_price,
                             timestamp=current_timestamp,
-                            side=OrderSide.SELL,
+                            side=OrderSide.SELL.value,
                             position_side=PositionSide.BZ2.value,
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
@@ -1078,13 +1206,13 @@ class AUTOBN:
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side,  # 已经是字符串，不需要 .value
+                            close_info.position_side.value,  # 已经是字符串，不需要 .value
                             current_price,
                             1,
                         )
                         self.alert_all["POSITIONS"].pop(symbol)
                 else:
-                    if close_info.position_side == PositionSide.LONG.value:
+                    if close_info.position_side.value == PositionSide.LONG.value:
                         # 做多: 计算当前止盈止损与当前价的距离
                         stop_loss_gap = current_price - close_info.stop_loss
                         take_profit_gap = close_info.take_profit - current_price
@@ -1099,7 +1227,7 @@ class AUTOBN:
                             1 - self.STOP_LOSS_DECAY_PER_MINUTE
                         )
 
-                    elif close_info.position_side == PositionSide.SHORT.value:
+                    elif close_info.position_side.value == PositionSide.SHORT.value:
                         # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
                         stop_loss_gap = (
                             close_info.take_profit - current_price
@@ -1119,27 +1247,26 @@ class AUTOBN:
                         )
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
-
             elif open_info:
                 if (
-                    open_info.position_side == PositionSide.BZ1.value
+                    open_info.position_side.value == PositionSide.BZ1.value
                     and current_timestamp - open_info.timestamp > self.ONE_DAY_SECONDS
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 elif (
-                    open_info.position_side == PositionSide.BZ2.value
+                    open_info.position_side.value == PositionSide.BZ2.value
                     and current_timestamp - open_info.timestamp > self.TEN_DAY_SECONDS
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
-                    if not open_info.position_side:
+                    if not open_info.position_side.value:
                         return
                     should_open = False
                     await get_kline_15_data()
                     avg_close = sum(kline_close[-10:]) / len(kline_close[-10:])
 
                     if (
-                        open_info.position_side == PositionSide.BZ1.value
+                        open_info.position_side.value == PositionSide.BZ1.value
                         and open_info.price < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and kline_volume_15[-1]
@@ -1168,14 +1295,14 @@ class AUTOBN:
                             new_obs = Observation(
                                 price=current_price,
                                 timestamp=current_timestamp,
-                                side=OrderSide.SELL,
+                                side=OrderSide.SELL.value,
                                 position_side=PositionSide.BZ2.value,
                             )
                             self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                             return
                         should_open = True
                     elif (
-                        open_info.position_side == PositionSide.BZ2.value
+                        open_info.position_side.value == PositionSide.BZ2.value
                         and current_price > max(kline_close[-2], avg_close)
                         and kline_volume[-1]
                         > sum(kline_volume[-3:-1]) / len(kline_volume[-3:-1])
@@ -1225,7 +1352,7 @@ class AUTOBN:
                             atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
                         )
                         self.send_msg(
-                            f"==={symbol}**{open_info.position_side}**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                            f"==={symbol}**{open_info.position_side.value}**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                         )
                         if self.open_bn_position(
                             symbol, OrderSide.BUY.value, PositionSide.LONG.value, 0.1
@@ -1233,7 +1360,7 @@ class AUTOBN:
                             new_pos = Position(
                                 take_profit=zy,
                                 stop_loss=zs,
-                                close_side=OrderSide.SELL,
+                                close_side=OrderSide.SELL.value,
                                 position_side=PositionSide.LONG.value,
                                 entry_price=current_price,
                             )
@@ -1242,8 +1369,52 @@ class AUTOBN:
                             return
 
             else:
+                if symbol == "BTCUSDT" and (
+                    open_side := await self.check_trend(semaphore, symbol)
+                ):
+                    if close_info and close_info.position_side.value != open_side:
+                        self.close_bn_position(
+                            symbol,
+                            close_info.close_side.value,
+                            close_info.position_side.value,  # 已经是字符串，不需要 .value
+                            current_price,
+                            1,
+                        )
+                    atr_value = self.calculate_atr(kline)
+                    is_long = open_side == PositionSide.LONG.value
+                    zy, zs = calc_stop_profit_loss(
+                        current_price, is_long=is_long, atr=atr_value
+                    )
+                    if zy == 0 and zs == 0:
+                        return
+                    rate_show = (
+                        atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
+                    )
+                    self.send_msg(
+                        f"==={symbol}**Supertrend**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                    )
+                    position_side = (
+                        PositionSide.LONG.value if is_long else PositionSide.SHORT.value
+                    )
+                    if self.open_bn_position(
+                        symbol,
+                        OrderSide.BUY.value if is_long else OrderSide.SELL.value,
+                        position_side,
+                        0.05,
+                    ):
+                        new_pos = Position(
+                            take_profit=zs,  # 做空止损是上界
+                            stop_loss=zy,  # 做空止盈是下界
+                            close_side=OrderSide.SELL.value
+                            if is_long
+                            else OrderSide.BUY.value,
+                            position_side=position_side,
+                            entry_price=current_price,
+                        )
+                        self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
+
                 # 做多信号判断
-                if (
+                elif (
                     (
                         self.is_early_morning
                         or (
@@ -1320,12 +1491,12 @@ class AUTOBN:
                 ):
                     if (
                         close_info
-                        and close_info.position_side == PositionSide.LONG.value
+                        and close_info.position_side.value == PositionSide.LONG.value
                     ):
                         self.close_bn_position(
                             symbol,
                             close_info.close_side.value,
-                            close_info.position_side,  # 已经是字符串，不需要 .value
+                            close_info.position_side.value,  # 已经是字符串，不需要 .value
                             current_price,
                             1,
                         )
@@ -1347,7 +1518,7 @@ class AUTOBN:
                         new_pos = Position(
                             take_profit=zs,  # 做空止损是上界
                             stop_loss=zy,  # 做空止盈是下界
-                            close_side=OrderSide.BUY,
+                            close_side=OrderSide.BUY.value,
                             position_side=PositionSide.SHORT.value,
                             entry_price=current_price,
                         )
@@ -1402,7 +1573,7 @@ class AUTOBN:
                     new_pos = Position(
                         take_profit=0,  # 标记:需要ATR更新
                         stop_loss=0,  # 标记:需要ATR更新
-                        close_side=OrderSide.SELL,
+                        close_side=OrderSide.SELL.value,
                         position_side=PositionSide.LONG.value,
                         entry_price=entryPrice,
                     )
@@ -1411,7 +1582,7 @@ class AUTOBN:
                     new_pos = Position(
                         take_profit=0,  # 标记:需要ATR更新
                         stop_loss=0,  # 标记:需要ATR更新
-                        close_side=OrderSide.BUY,
+                        close_side=OrderSide.BUY.value,
                         position_side=PositionSide.SHORT.value,
                         entry_price=entryPrice,
                     )
