@@ -32,6 +32,7 @@ class PositionSide(str, Enum):
     SHORT = "SHORT"
     BZ1 = "BZ1"
     BZ2 = "BZ2"
+    BD = "BD"
 
 
 class OrderSide(str, Enum):
@@ -1152,7 +1153,7 @@ class AUTOBN:
                             price=current_price,
                             timestamp=current_timestamp,
                             side=OrderSide.SELL,
-                            position_side=PositionSide.BZ1,
+                            position_side=PositionSide.BD,
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                     else:
@@ -1257,7 +1258,7 @@ class AUTOBN:
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
-                    if not open_info.position_side.value:
+                    if not open_info.position_side.value == PositionSide.BD.value:
                         return
                     should_open = False
                     await get_kline_15_data()
