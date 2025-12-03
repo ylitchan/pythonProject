@@ -1311,12 +1311,6 @@ class AUTOBN:
                             kline_volume[-3:-1], kline_volume[-1]
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_SIGNIFICANT_THRESHOLD
-                        and datetime.datetime.fromtimestamp(
-                            current_timestamp, datetime.timezone.utc
-                        ).date()
-                        != datetime.datetime.fromtimestamp(
-                            open_info.timestamp, datetime.timezone.utc
-                        ).date()
                         and await self.check_bz(
                             semaphore,
                             symbol,
