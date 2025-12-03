@@ -139,7 +139,6 @@ class AUTOBN:
     # ==================== 时间常量 ====================
     ONE_DAY_SECONDS = 24 * 60 * 60  # 一天的秒数
     TEN_DAY_SECONDS = 10 * 24 * 60 * 60  # 十天的秒数
-    FIFTEEN_MIN_SECONDS = 15 * 60  # 15分钟的秒数
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
 
@@ -1513,15 +1512,13 @@ class AUTOA:
     ATR_PERIOD = 10  # ATR计算周期
     ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
     ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
-    ATR_TRAILING_STOP_MULTIPLIER = 0.5  # ATR移动止损倍数
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
     CHEBYSHEV_SIGNIFICANT_THRESHOLD = 0.25  # 显著异常阈值（25%），用于检测显著的异常
 
     # ==================== 时间常量 ====================
-    ONE_DAY_SECONDS = 24 * 60 * 60  # 一天的秒数
-    OBSERVATION_TIMEOUT_DAYS = 10  # 观察超时天数
+    TEN_DAY_SECONDS = 10 * 24 * 60 * 60  # 十天的秒数
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = "alert_all_A.json"
@@ -1993,6 +1990,9 @@ class AUTOA:
             open_info: 观察记录 [价格, 时间戳, 股票名称, 仓位方向]
             today: 当前日期时间
         """
+        if today.timestamp() - open_info[1] > cls.TEN_DAY_SECONDS:
+            cls.alert_all["OBSERVATIONS"].pop(code)
+            return
         # 获取股票历史数据（前复权，确保价格连续性）
         hist = await cls.stock_zh_a_hist(
             code,
