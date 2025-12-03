@@ -1359,8 +1359,8 @@ class AUTOBN:
                             new_pos = Position(
                                 take_profit=zy,
                                 stop_loss=zs,
-                                close_side=OrderSide.SELL.value,
-                                position_side=PositionSide.LONG.value,
+                                close_side=OrderSide.SELL,
+                                position_side=PositionSide.LONG,
                                 entry_price=current_price,
                             )
                             self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
@@ -1392,21 +1392,17 @@ class AUTOBN:
                     self.send_msg(
                         f"==={symbol}**Supertrend**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                     )
-                    position_side = (
-                        PositionSide.LONG.value if is_long else PositionSide.SHORT.value
-                    )
+                    position_side = PositionSide.LONG if is_long else PositionSide.SHORT
                     if self.open_bn_position(
                         symbol,
                         OrderSide.BUY.value if is_long else OrderSide.SELL.value,
-                        position_side,
+                        position_side.value,
                         0.05,
                     ):
                         new_pos = Position(
                             take_profit=zs,  # 做空止损是上界
                             stop_loss=zy,  # 做空止盈是下界
-                            close_side=OrderSide.SELL.value
-                            if is_long
-                            else OrderSide.BUY.value,
+                            close_side=OrderSide.SELL if is_long else OrderSide.BUY,
                             position_side=position_side,
                             entry_price=current_price,
                         )
@@ -1517,8 +1513,8 @@ class AUTOBN:
                         new_pos = Position(
                             take_profit=zs,  # 做空止损是上界
                             stop_loss=zy,  # 做空止盈是下界
-                            close_side=OrderSide.BUY.value,
-                            position_side=PositionSide.SHORT.value,
+                            close_side=OrderSide.BUY,
+                            position_side=PositionSide.SHORT,
                             entry_price=current_price,
                         )
                         self.alert_all["POSITIONS"][symbol] = new_pos.to_list()
@@ -1572,8 +1568,8 @@ class AUTOBN:
                     new_pos = Position(
                         take_profit=0,  # 标记:需要ATR更新
                         stop_loss=0,  # 标记:需要ATR更新
-                        close_side=OrderSide.SELL.value,
-                        position_side=PositionSide.LONG.value,
+                        close_side=OrderSide.SELL,
+                        position_side=PositionSide.LONG,
                         entry_price=entryPrice,
                     )
                     self.alert_all["POSITIONS"][p["symbol"]] = new_pos.to_list()
@@ -1581,8 +1577,8 @@ class AUTOBN:
                     new_pos = Position(
                         take_profit=0,  # 标记:需要ATR更新
                         stop_loss=0,  # 标记:需要ATR更新
-                        close_side=OrderSide.BUY.value,
-                        position_side=PositionSide.SHORT.value,
+                        close_side=OrderSide.BUY,
+                        position_side=PositionSide.SHORT,
                         entry_price=entryPrice,
                     )
                     self.alert_all["POSITIONS"][p["symbol"]] = new_pos.to_list()
