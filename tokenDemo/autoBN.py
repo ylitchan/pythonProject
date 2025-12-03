@@ -238,7 +238,6 @@ class AUTOBN:
         # 加载持仓记录
         with open(obj.alert_all_file, "r") as f:
             obj.alert_all = json.load(f)
-        obj.alert_all_old = copy.deepcopy(obj.alert_all)
 
         # 初始化资金槽位(用于资金管理)(可覆盖)
         # 含义:用于控制单次下单的资金使用上限(与 open_ratio 一起作用)
@@ -1183,8 +1182,12 @@ class AUTOBN:
                             kline_volume[-3:-1], kline_volume[-1]
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_SIGNIFICANT_THRESHOLD
-                        and current_timestamp - open_info.timestamp
-                        >= self.ONE_DAY_SECONDS
+                        and datetime.datetime.fromtimestamp(
+                            current_timestamp, datetime.timezone.utc
+                        ).date()
+                        != datetime.datetime.fromtimestamp(
+                            open_info.timestamp, datetime.timezone.utc
+                        ).date()
                         and await self.check_bz(
                             semaphore,
                             symbol,
@@ -1475,6 +1478,8 @@ class AUTOBN:
             balance = self.um_futures_client.account()["totalWalletBalance"]
             self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
             print(f"[{datetime.datetime.now()}] 账户信息推送任务执行完成", flush=True)
+            with open(self.alert_all_file, "w") as f:
+                json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
         # 创建信号量，限制最大并发数，避免API限制
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
         print(now, f"{market}任务开始 - 总交易对数量: {len(self.symbols)}", flush=True)
@@ -1501,10 +1506,6 @@ class AUTOBN:
             self.alert_all,
             flush=True,
         )
-        if self.alert_all != self.alert_all_old:
-            self.get_position_risk()
-            self.alert_all_old = copy.deepcopy(self.alert_all)
-            # 数据已更新,将在脚本退出时由atexit自动保存到文件
 
 
 class AUTOA:
@@ -1525,7 +1526,6 @@ class AUTOA:
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = "alert_all_A.json"
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
-    alert_all_old = copy.deepcopy(alert_all)
     zt_dates = []
     hist_cache = {}
     # 添加线程锁以保护 baostock 查询操作(baostock 不是线程安全的)
@@ -2007,20 +2007,18 @@ class AUTOA:
         if hist.empty:
             return
 
-        # 获取最新价格
-        price_close = float(hist.iloc[-1]["close"])
-
-        # 超时清理：观察超过10天的股票移出观察列表
-        observation_duration = today.timestamp() - open_info[1]
-        if observation_duration > cls.OBSERVATION_TIMEOUT_DAYS * cls.ONE_DAY_SECONDS:
-            cls.alert_all["OBSERVATIONS"].pop(code)
-            return
-
-        # 信号检测：检查是否满足买入条件
-        # 条件1：观察至少24小时（避免当天冲动）
-        # 条件2：价格突破关键阻力位（10日均价、昨收、今开）
-        # 条件3：成交量显著放大（确认突破有效性）
-        if observation_duration >= cls.ONE_DAY_SECONDS:
+        # 条件1：价格突破关键阻力位（10日均价、昨收、今开）
+        # 条件2：成交量显著放大（确认突破有效性）
+        if (
+            datetime.datetime.fromtimestamp(
+                today.timestamp(), datetime.timezone.utc
+            ).date()
+            != datetime.datetime.fromtimestamp(
+                open_info[1], datetime.timezone.utc
+            ).date()
+        ):
+            # 获取最新价格
+            price_close = float(hist.iloc[-1]["close"])
             # 计算关键价格阻力位
             resistance_price = max(
                 float(hist.iloc[-2]["close"]),  # 昨日收盘价
@@ -2099,6 +2097,8 @@ class AUTOA:
             cls.zt_dates = cls.get_last_trading_days(today)
         selected = set()  # 存储符合条件的股票
         if today.hour == 15:
+            with open(cls.alert_all_file, "w", encoding="utf-8") as f:
+                json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
             zt_df = ak.stock_zt_pool_em(date=cls.zt_dates[0].replace("-", ""))
             stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
             for code in stock_codes:
@@ -2195,9 +2195,6 @@ class AUTOA:
                 # 发送到企业微信群
                 cls.send_msg(content)
 
-            if cls.alert_all != cls.alert_all_old:
-                cls.alert_all_old = copy.deepcopy(cls.alert_all)
-                # 数据已更新,将在脚本退出时由atexit自动保存到文件
         finally:
             # 确保总是登出，即使发生异常（使用异步执行）
             await loop.run_in_executor(None, bs.logout)
