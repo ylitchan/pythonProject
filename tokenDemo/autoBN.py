@@ -2180,70 +2180,62 @@ class AUTOA:
 
         # 条件1：价格突破关键阻力位（10日均价、昨收、今开）
         # 条件2：成交量显著放大（确认突破有效性）
-        if (
-            datetime.datetime.fromtimestamp(
-                today.timestamp(), datetime.timezone.utc
-            ).date()
-            != datetime.datetime.fromtimestamp(
-                open_info[1], datetime.timezone.utc
-            ).date()
-        ):
-            # 获取最新价格
-            price_close = float(hist.iloc[-1]["close"])
-            # 计算关键价格阻力位
-            resistance_price = max(
-                float(hist.iloc[-2]["close"]),  # 昨日收盘价
-                float(hist.iloc[-1]["open"]),  # 今日开盘价
-                float(hist.iloc[-10:]["close"].mean()),  # 10日均价
-            )
+        # 获取最新价格
+        price_close = float(hist.iloc[-1]["close"])
+        # 计算关键价格阻力位
+        resistance_price = max(
+            float(hist.iloc[-2]["close"]),  # 昨日收盘价
+            float(hist.iloc[-1]["open"]),  # 今日开盘价
+            float(hist.iloc[-10:]["close"].mean()),  # 10日均价
+        )
 
-            # 判断是否满足买入条件
-            price_breakout = price_close > resistance_price
-            volume_breakout = (
-                hist.iloc[-1]["volume"] > hist["volume"].iloc[-3:-1].mean()
-                and cls.calculate_chebyshev_probability(
-                    hist["volume"].iloc[-3:-1], hist.iloc[-1]["volume"]
-                )["chebyshev_upper_bound"]
-                < cls.CHEBYSHEV_SIGNIFICANT_THRESHOLD
-            )
+        # 判断是否满足买入条件
+        price_breakout = price_close > resistance_price
+        volume_breakout = (
+            hist.iloc[-1]["volume"] > hist["volume"].iloc[-3:-1].mean()
+            and cls.calculate_chebyshev_probability(
+                hist["volume"].iloc[-3:-1], hist.iloc[-1]["volume"]
+            )["chebyshev_upper_bound"]
+            < cls.CHEBYSHEV_SIGNIFICANT_THRESHOLD
+        )
 
-            if price_breakout and volume_breakout:
-                # ========== 计算止盈止损（ATR动态方法） ==========
+        if price_breakout and volume_breakout:
+            # ========== 计算止盈止损（ATR动态方法） ==========
 
-                # 1. 计算ATR（平均真实波幅）
-                atr = cls.calculate_atr(hist)
-                atr_percent = (atr / price_close) if price_close > 0 else 0
+            # 1. 计算ATR（平均真实波幅）
+            atr = cls.calculate_atr(hist)
+            atr_percent = (atr / price_close) if price_close > 0 else 0
 
-                # 3. 动态止盈止损：ATR模式 (止损2x, 止盈4x)
-                if atr > 0:
-                    stop_loss_dist = atr * cls.ATR_STOP_LOSS_MULTIPLIER
-                    take_profit_dist = atr * cls.ATR_TAKE_PROFIT_MULTIPLIER
+            # 3. 动态止盈止损：ATR模式 (止损2x, 止盈4x)
+            if atr > 0:
+                stop_loss_dist = atr * cls.ATR_STOP_LOSS_MULTIPLIER
+                take_profit_dist = atr * cls.ATR_TAKE_PROFIT_MULTIPLIER
 
-                    take_profit = price_close + take_profit_dist
-                    stop_loss = price_close - stop_loss_dist
+                take_profit = price_close + take_profit_dist
+                stop_loss = price_close - stop_loss_dist
 
-                    # 4. 记录到持仓列表
-                    cls.alert_all["POSITIONS"][code] = [
-                        take_profit,
-                        stop_loss,
-                        open_info[2],  # 股票名称
-                        int(today.strftime("%Y%m%d")),  # 买入日期
-                        price_close,
-                        "BZ2",  # 策略标签：BZ2=观察列表突破买入
-                    ]
+                # 4. 记录到持仓列表
+                cls.alert_all["POSITIONS"][code] = [
+                    take_profit,
+                    stop_loss,
+                    open_info[2],  # 股票名称
+                    int(today.strftime("%Y%m%d")),  # 买入日期
+                    price_close,
+                    "BZ2",  # 策略标签：BZ2=观察列表突破买入
+                ]
 
-                    # 5. 从观察列表移除
-                    cls.alert_all["OBSERVATIONS"].pop(code)
+                # 5. 从观察列表移除
+                cls.alert_all["OBSERVATIONS"].pop(code)
 
-                    # 6. 发送买入通知
-                    msg = (
-                        f"==={open_info[2]}**BZ2**===\n"
-                        f"价格:{price_close:.2f}\n"
-                        f"止盈:{take_profit:.2f}\n"
-                        f"止损:{stop_loss:.2f}\n"
-                        f"收益率:{atr_percent:.2%}\n"
-                    )
-                    cls.send_msg(msg)
+                # 6. 发送买入通知
+                msg = (
+                    f"==={open_info[2]}**BZ2**===\n"
+                    f"价格:{price_close:.2f}\n"
+                    f"止盈:{take_profit:.2f}\n"
+                    f"止损:{stop_loss:.2f}\n"
+                    f"收益率:{atr_percent:.2%}\n"
+                )
+                cls.send_msg(msg)
 
     @classmethod
     async def filter_stocks(cls):
