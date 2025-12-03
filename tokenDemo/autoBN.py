@@ -1151,8 +1151,8 @@ class AUTOBN:
                         new_obs = Observation(
                             price=current_price,
                             timestamp=current_timestamp,
-                            side=OrderSide.SELL.value,
-                            position_side="",
+                            side=OrderSide.SELL,
+                            position_side=PositionSide.BZ1,
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                     else:
@@ -1168,8 +1168,8 @@ class AUTOBN:
                         new_obs = Observation(
                             price=current_price,
                             timestamp=current_timestamp,
-                            side=OrderSide.SELL.value,
-                            position_side=PositionSide.BZ2.value,
+                            side=OrderSide.SELL,
+                            position_side=PositionSide.BZ2,
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
 
@@ -1196,8 +1196,8 @@ class AUTOBN:
                         new_obs = Observation(
                             price=current_price,
                             timestamp=current_timestamp,
-                            side=OrderSide.SELL.value,
-                            position_side=PositionSide.BZ2.value,
+                            side=OrderSide.SELL,
+                            position_side=PositionSide.BZ2,
                         )
                         self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                     else:
@@ -1293,8 +1293,8 @@ class AUTOBN:
                             new_obs = Observation(
                                 price=current_price,
                                 timestamp=current_timestamp,
-                                side=OrderSide.SELL.value,
-                                position_side=PositionSide.BZ2.value,
+                                side=OrderSide.SELL,
+                                position_side=PositionSide.BZ2,
                             )
                             self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
                             return
@@ -1465,7 +1465,7 @@ class AUTOBN:
                         price=current_price,
                         timestamp=current_timestamp,
                         side=OrderSide.SELL,
-                        position_side=PositionSide.BZ1.value,
+                        position_side=PositionSide.BZ1,
                     )
                     self.alert_all["OBSERVATIONS"][symbol] = new_obs.to_list()
 
