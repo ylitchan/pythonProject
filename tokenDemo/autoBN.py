@@ -250,14 +250,16 @@ class AUTOBN:
             """脚本退出时保存alert_all数据到文件"""
             try:
                 print(
-                    f"[{datetime.datetime.now()}] 脚本退出,正在保存数据到 {obj.alert_all_file}...",
+                    f"[{datetime.datetime.now()}] 脚本退出,正在保存BN数据到 {obj.alert_all_file}...",
                     flush=True,
                 )
                 with open(obj.alert_all_file, "w") as f:
                     json.dump(obj.alert_all, f, ensure_ascii=False, indent=4)
-                print(f"[{datetime.datetime.now()}] 数据保存完成", flush=True)
+                print(f"[{datetime.datetime.now()}] BN数据保存完成", flush=True)
             except Exception as e:
-                print(f"[{datetime.datetime.now()}] 保存数据失败: {str(e)}", flush=True)
+                print(
+                    f"[{datetime.datetime.now()}] 保存BN数据失败: {str(e)}", flush=True
+                )
                 traceback.print_exc()
 
         atexit.register(save_on_exit)
@@ -1693,7 +1695,9 @@ class AUTOA:
     TEN_DAY_SECONDS = 10 * 24 * 60 * 60  # 十天的秒数
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
-    alert_all_file = "alert_all_A.json"
+    alert_all_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "alert_all_A.json"
+    )
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
     zt_dates = []
     hist_cache = {}
