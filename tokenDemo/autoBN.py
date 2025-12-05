@@ -695,7 +695,7 @@ class AUTOBN:
                         and max(kline_volume[-3:-1]) == max(kline_volume)
                         and sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
                     )
-                    for index in range(-1, -self.ATR_PERIOD, -1)
+                    for index in range(-1, max(-self.ATR_PERIOD, -len(kline_close)), -1)
                 )
             except Exception:
                 traceback.print_exc()
