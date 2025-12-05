@@ -1393,11 +1393,6 @@ class AUTOBN:
                         is_long = open_side == PositionSide.LONG.value
                     if not should_observe:
                         return
-                    if open_info.position_side.value != PositionSide.Supertrend.value:
-                        # 触发信号之后更新状态
-                        open_info.position_side = PositionSide.Supertrend
-                        open_info.timestamp = current_timestamp
-                        self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
                     if should_open:
                         atr_value = self.calculate_atr(kline)
                         zy, zs = calc_stop_profit_loss(
@@ -1428,6 +1423,11 @@ class AUTOBN:
                                 entry_price=current_price,
                             )
                             self.alert_all["POSITIONS"][symbol] = close_info.to_list()
+                    if open_info.position_side.value != PositionSide.Supertrend.value:
+                        # 触发信号之后更新状态
+                        open_info.position_side = PositionSide.Supertrend
+                        open_info.timestamp = current_timestamp
+                        self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
                     return
 
             else:
