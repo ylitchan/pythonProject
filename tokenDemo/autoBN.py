@@ -608,7 +608,7 @@ class AUTOBN:
                 supertrend_values = []
                 directions = []
 
-                for i in range(len(kline_data)):
+                for i in range(self.ATR_PERIOD, len(kline_data)):
                     kline = kline_data[i]
                     close = kline[4]
 
