@@ -145,7 +145,7 @@ class AUTOBN:
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
 
     # ==================== K线相关常量 ====================
-    KLINE_LIMIT = 30  # K线数据条数
+    KLINE_LIMIT = 96  # K线数据条数
     MIN_KLINE_FOR_ANALYSIS = 4  # 分析所需最小K线数量
 
     # ==================== ATR风控常量 ====================
@@ -601,70 +601,9 @@ class AUTOBN:
                         return 0
 
                 # 计算 Supertrend
-                # Supertrend 完整逻辑:
-                # 基础上轨 = HL2 + factor * ATR
-                # 基础下轨 = HL2 - factor * ATR
-                # 上升趋势时使用下轨,下降趋势时使用上轨
-                supertrend_values = []
-                directions = []
-
-                for i in range(self.ATR_PERIOD, len(kline_data)):
-                    kline = kline_data[i]
-                    close = kline[4]
-
-                    # 使用 calculate_trend 计算基础上下轨（传入截止到当前的K线数据，ATR 动态计算）
-                    basic_upper, basic_lower = self.calculate_trend(
-                        kline_data[: i + 1], factor=factor
-                    )
-
-                    # 初始化第一根K线的方向
-                    if i == 0:
-                        # 第一根K线:根据收盘价与上轨的关系判断初始方向
-                        # 标准 Supertrend 算法:close > upper → 上升趋势
-                        if close > basic_upper:
-                            # 收盘价突破上轨 → 上升趋势
-                            direction = -1
-                            supertrend = basic_lower
-                        else:
-                            # 收盘价在上轨或以下 → 下降趋势(默认)
-                            direction = 1
-                            supertrend = basic_upper
-                    else:
-                        prev_direction = directions[-1]
-                        prev_supertrend = supertrend_values[-1]
-
-                        # Supertrend 核心逻辑
-                        if prev_direction == -1:  # 之前是上升趋势
-                            # 上升趋势中,使用下轨
-                            # 下轨只能上移或持平,不能下降
-                            final_lower = max(basic_lower, prev_supertrend)
-
-                            # 判断是否继续上升趋势
-                            if close <= final_lower:
-                                # 收盘价跌破下轨,趋势反转为下降
-                                direction = 1
-                                supertrend = basic_upper
-                            else:
-                                # 继续上升趋势
-                                direction = -1
-                                supertrend = final_lower
-                        else:  # 之前是下降趋势 (direction == 1)
-                            # 下降趋势中,使用上轨
-                            # 上轨只能下移或持平,不能上升
-                            final_upper = min(basic_upper, prev_supertrend)
-
-                            # 判断是否继续下降趋势
-                            if close >= final_upper:
-                                # 收盘价突破上轨,趋势反转为上升
-                                direction = -1
-                                supertrend = basic_lower
-                            else:
-                                # 继续下降趋势
-                                direction = 1
-                                supertrend = final_upper
-
-                    supertrend_values.append(supertrend)
-                    directions.append(direction)
+                supertrend_values, directions = self.calculate_trend(
+                    kline_data, factor=factor, atr_period=atr_period
+                )
 
                 # 获取最近两根K线的方向
                 if len(directions) < 2:
@@ -683,7 +622,7 @@ class AUTOBN:
                 else:
                     # 趋势未变化,返回当前趋势方向
                     # direction=-1表示上升趋势,返回1; direction=1表示下降趋势,返回-1
-                    return
+                    return 0
 
             except Exception:
                 traceback.print_exc()
@@ -756,7 +695,7 @@ class AUTOBN:
                         and max(kline_volume[-3:-1]) == max(kline_volume)
                         and sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
                     )
-                    for index in range(-1, int(-len(kline_close) / 3) - 2, -1)
+                    for index in range(-1, -self.ATR_PERIOD, -1)
                 )
             except Exception:
                 traceback.print_exc()
@@ -913,25 +852,79 @@ class AUTOBN:
                 # 每2秒检查一次
                 await asyncio.sleep(self.RETRY_DELAY_SECONDS)
 
-    def calculate_trend(self, kline_data, factor=3.0):
+    def calculate_trend(self, kline_data, factor=3.0, atr_period=10):
         """
-        计算上下轨
+        计算 Supertrend 指标
 
         参数:
             kline_data: K线数据列表
             factor: 因子，默认3.0
+            atr_period: ATR周期，默认10
 
         返回:
-            (basic_upper, basic_lower): 上轨和下轨
+            (supertrend_values, directions): supertrend值列表和方向列表
+            方向: -1 表示上升趋势, 1 表示下降趋势
         """
-        atr = self.calculate_atr(kline_data)
-        kline = kline_data[-1]
-        hl2 = (kline[2] + kline[3]) / 2  # (high + low) / 2
+        if not kline_data or len(kline_data) < atr_period + 1:
+            return [], []
 
-        # 计算基础上下轨
-        basic_upper = hl2 + factor * atr
-        basic_lower = hl2 - factor * atr
-        return basic_upper, basic_lower
+        supertrend_values = []
+        directions = []
+
+        for i in range(atr_period, len(kline_data)):
+            kline = kline_data[i]
+            close = kline[4]
+
+            # 计算截止到当前K线的ATR
+            atr = self.calculate_atr(kline_data[: i + 1], period=atr_period)
+            hl2 = (kline[2] + kline[3]) / 2  # (high + low) / 2
+
+            # 计算基础上下轨
+            basic_upper = hl2 + factor * atr
+            basic_lower = hl2 - factor * atr
+
+            # 初始化第一次迭代的方向
+            if len(directions) == 0:
+                if close > basic_upper:
+                    direction = -1  # 上升趋势
+                    supertrend = basic_lower
+                else:
+                    direction = 1  # 下降趋势
+                    supertrend = basic_upper
+            else:
+                prev_direction = directions[-1]
+                prev_supertrend = supertrend_values[-1]
+
+                # Supertrend 核心逻辑
+                if prev_direction == -1:  # 之前是上升趋势
+                    # 上升趋势中使用下轨，下轨只能上移或持平
+                    final_lower = max(basic_lower, prev_supertrend)
+
+                    if close <= final_lower:
+                        # 收盘价跌破下轨，趋势反转为下降
+                        direction = 1
+                        supertrend = basic_upper
+                    else:
+                        # 继续上升趋势
+                        direction = -1
+                        supertrend = final_lower
+                else:  # 之前是下降趋势 (direction == 1)
+                    # 下降趋势中使用上轨，上轨只能下移或持平
+                    final_upper = min(basic_upper, prev_supertrend)
+
+                    if close >= final_upper:
+                        # 收盘价突破上轨，趋势反转为上升
+                        direction = -1
+                        supertrend = basic_lower
+                    else:
+                        # 继续下降趋势
+                        direction = 1
+                        supertrend = final_upper
+
+            supertrend_values.append(supertrend)
+            directions.append(direction)
+
+        return supertrend_values, directions
 
     def calculate_atr(self, kline_data, period=None):
         """
@@ -1249,19 +1242,21 @@ class AUTOBN:
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
                 else:
                     await get_kline_15_data()
-                    basic_upper, basic_lower = self.calculate_trend(kline_15)
+                    # 计算 Supertrend
+                    supertrend_values, directions = self.calculate_trend(kline_15)
                     if close_info.position_side.value == PositionSide.LONG.value:
                         # 做多: 计算当前止盈止损与当前价的距离
-                        stop_loss_gap = max(
-                            current_price - close_info.stop_loss, basic_lower
-                        )
+                        stop_loss_gap = current_price - close_info.stop_loss
                         take_profit_gap = close_info.take_profit - current_price
 
                         # 止损上移(只能向有利方向移动,保护利润)
                         close_info.stop_loss = current_price - stop_loss_gap * (
                             1 - self.STOP_LOSS_DECAY_PER_MINUTE
                         )
-
+                        if directions[-1] == -1:
+                            close_info.stop_loss = max(
+                                close_info.stop_loss, supertrend_values[-1]
+                            )
                         # 止盈下移(更容易触发止盈)
                         close_info.take_profit = current_price + take_profit_gap * (
                             1 - self.STOP_LOSS_DECAY_PER_MINUTE
@@ -1269,8 +1264,8 @@ class AUTOBN:
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
-                        stop_loss_gap = min(
-                            (close_info.take_profit - current_price), basic_upper
+                        stop_loss_gap = (
+                            close_info.take_profit - current_price
                         )  # 止损距离
                         take_profit_gap = (
                             current_price - close_info.stop_loss
@@ -1280,7 +1275,10 @@ class AUTOBN:
                         close_info.take_profit = current_price + stop_loss_gap * (
                             1 - self.STOP_LOSS_DECAY_PER_MINUTE
                         )
-
+                        if directions[-1] == 1:
+                            close_info.take_profit = min(
+                                close_info.take_profit, supertrend_values[-1]
+                            )
                         # 止盈上移(更容易触发止盈)
                         close_info.stop_loss = current_price - take_profit_gap * (
                             1 - self.STOP_LOSS_DECAY_PER_MINUTE
@@ -1310,7 +1308,9 @@ class AUTOBN:
                     should_observe = False
                     should_open = False
                     await get_kline_15_data()
-                    avg_close = sum(kline_close[-10:]) / len(kline_close[-10:])
+                    avg_close = sum(kline_close[-self.ATR_PERIOD :]) / len(
+                        kline_close[-self.ATR_PERIOD :]
+                    )
 
                     if (
                         open_info.position_side.value == PositionSide.BZ1.value
@@ -1337,7 +1337,7 @@ class AUTOBN:
                                 max(kline_volume_15[index - 1 : index + 1]),
                             )["chebyshev_upper_bound"]
                             < self.CHEBYSHEV_EXTREME_THRESHOLD
-                            for index in range(-3, int(-len(kline_15) / 3), -1)
+                            for index in range(-3, -self.ATR_PERIOD, -1)
                         ):
                             should_open = True
                         should_observe = True
