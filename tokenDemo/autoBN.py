@@ -154,6 +154,10 @@ class AUTOBN:
     ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
     STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 止盈止损每分钟衰减比例(1%)
 
+    # ==================== 缓存相关常量 ====================
+    LONG_SHORT_RATIO_CACHE_TTL = 300  # 多空比缓存过期时间（秒），与5分钟周期匹配
+    LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
+
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
     CHEBYSHEV_SIGNIFICANT_THRESHOLD = 0.25  # 显著异常阈值（25%），用于检测显著的异常
@@ -245,6 +249,8 @@ class AUTOBN:
         obj.slot_balance = kwargs.get("slot_balance", [0.0])
         obj.symbols_info = {}
         obj.is_early_morning = False
+        # 初始化多空比缓存: {symbol: {"data": [...], "timestamp": float}}
+        obj._long_short_ratio_cache = {}
 
         # 注册退出处理函数,在脚本退出时保存数据
         def save_on_exit():
@@ -642,13 +648,8 @@ class AUTOBN:
         """
         async with semaphore:
             try:
-                # 获取多空人数比数据
-                long_short_ratio_data = await asyncio.to_thread(
-                    self.um_futures_client.long_short_account_ratio,
-                    symbol=symbol,
-                    period="5m",
-                    limit=self.KLINE_LIMIT,
-                )
+                # 获取多空人数比数据（使用缓存）
+                long_short_ratio_data = await self.get_long_short_ratio(symbol)
                 # 提取最新的多空人数比
                 if not long_short_ratio_data:
                     return False
@@ -708,13 +709,8 @@ class AUTOBN:
     ):
         async with semaphore:
             try:
-                # 获取多空人数比数据
-                long_short_ratio_data = await asyncio.to_thread(
-                    self.um_futures_client.long_short_account_ratio,
-                    symbol=symbol,
-                    period="5m",
-                    limit=self.KLINE_LIMIT,
-                )
+                # 获取多空人数比数据（使用缓存）
+                long_short_ratio_data = await self.get_long_short_ratio(symbol)
                 # 提取最新的多空人数比
                 if not long_short_ratio_data:
                     return False
@@ -787,6 +783,50 @@ class AUTOBN:
                 print(f"{symbol}获取K线数据失败", flush=True)
                 # 获取失败时返回空列表
                 return []
+
+    async def get_long_short_ratio(self, symbol: str, force_refresh: bool = False):
+        """
+        获取多空人数比数据（带缓存）
+
+        功能：从币安获取指定交易对的多空人数比数据，结果会被缓存
+        参数：
+            symbol: 交易对符号，如'BTCUSDT'
+            force_refresh: 是否强制刷新缓存，默认False
+        返回：
+            多空人数比数据列表，缓存失效或强制刷新时重新获取
+        """
+        current_time = time.time()
+        cache_entry = self._long_short_ratio_cache.get(symbol)
+
+        # 检查缓存是否有效
+        if (
+            not force_refresh
+            and cache_entry
+            and (current_time - cache_entry["timestamp"])
+            < self.LONG_SHORT_RATIO_CACHE_TTL
+        ):
+            return cache_entry["data"]
+
+        # 缓存无效或强制刷新，重新获取数据
+        try:
+            data = await asyncio.to_thread(
+                self.um_futures_client.long_short_account_ratio,
+                symbol=symbol,
+                period="5m",
+                limit=self.LONG_SHORT_RATIO_LIMIT,
+            )
+            # 更新缓存
+            self._long_short_ratio_cache[symbol] = {
+                "data": data,
+                "timestamp": current_time,
+            }
+            return data
+        except Exception:
+            print(f"{symbol}获取多空比数据失败", flush=True)
+            # 如果获取失败但有旧缓存，返回旧数据
+            if cache_entry:
+                return cache_entry["data"]
+            return []
 
     async def if_basis(self):
         """
