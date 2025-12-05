@@ -928,7 +928,7 @@ class AUTOBN:
 
     def calculate_atr(self, kline_data, period=None):
         """
-        计算ATR (平均真实波幅)
+        计算ATR (平均真实波幅) - 使用 Wilder's Smoothing (RMA)
         """
         if period is None:
             period = self.ATR_PERIOD
@@ -945,10 +945,17 @@ class AUTOBN:
             tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
             tr_list.append(tr)
 
-        if not tr_list:
+        if len(tr_list) < period:
             return 0.0
-        # 简单移动平均计算ATR
-        return sum(tr_list[-period:]) / min(len(tr_list), period)
+
+        # Wilder's Smoothing (RMA)
+        # 第一个 ATR 使用 SMA
+        atr = sum(tr_list[:period]) / period
+        # 之后使用指数平滑
+        for i in range(period, len(tr_list)):
+            atr = (atr * (period - 1) + tr_list[i]) / period
+
+        return atr
 
     def calculate_chebyshev_probability(self, data_list, value):
         """
