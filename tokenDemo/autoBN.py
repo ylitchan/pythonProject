@@ -5,6 +5,7 @@ import copy
 import datetime
 import gc
 import json
+import logging
 import os
 import signal
 import sys
@@ -138,6 +139,10 @@ class AUTOBN:
     BASIS_WARNING_COOLDOWN = 60  # 基差警告冷却时间（秒）
     BASIS_ALERT_COOLDOWN = 180  # 基差异常冷却时间（秒）
 
+    # ==================== 多空比阈值常量 ====================
+    LONG_SHORT_RATIO_LONG_THRESHOLD = 4 / 6  # 做多阈值（逆势逻辑：lsrd < 阈值时做多）
+    LONG_SHORT_RATIO_SHORT_THRESHOLD = 1.0  # 做空阈值（逆势逻辑：lsrd > 阈值时做空）
+
     # ==================== 时间常量 ====================
     ONE_DAY_SECONDS = 24 * 60 * 60  # 一天的秒数
     TEN_DAY_SECONDS = 10 * 24 * 60 * 60  # 十天的秒数
@@ -166,6 +171,18 @@ class AUTOBN:
     def from_cfg(cls, **kwargs):
         obj = cls.__new__(cls)
         obj.symbols = []
+        
+        # 初始化日志记录器
+        obj.logger = logging.getLogger(f"AUTOBN.{id(obj)}")
+        obj.logger.setLevel(logging.INFO)  # 默认级别
+        
+        # 如果没有处理器，则添加一个控制台处理器
+        if not obj.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            obj.logger.addHandler(handler)
+        
         # 基本配置：优先使用 kwargs，其次使用默认/环境
         # 支持键：qy_key, leverage, health4open, margin_mode/position_mode,
         #        session/session_verify/session_headers,
@@ -179,6 +196,14 @@ class AUTOBN:
         # 交易参数配置（可覆盖）
         obj.leverage = kwargs.get("leverage", cls.DEFAULT_LEVERAGE)
         obj.health4open = kwargs.get("health4open", cls.DEFAULT_HEALTH_THRESHOLD)
+        
+        # 多空比阈值配置（可覆盖）
+        obj.long_short_ratio_long_threshold = kwargs.get(
+            "long_short_ratio_long_threshold", cls.LONG_SHORT_RATIO_LONG_THRESHOLD
+        )
+        obj.long_short_ratio_short_threshold = kwargs.get(
+            "long_short_ratio_short_threshold", cls.LONG_SHORT_RATIO_SHORT_THRESHOLD
+        )
         # 仓位模式：'CROSSED' 全仓，'ISOLATED' 逐仓；支持大小写/中文/别名
         # 仅设置新开仓/下单前的目标模式；若该 symbol 已有仓位，交易所可能拒绝切换
         margin_mode_raw = (
@@ -256,18 +281,13 @@ class AUTOBN:
         def save_on_exit():
             """脚本退出时保存alert_all数据到文件"""
             try:
-                print(
-                    f"[{datetime.datetime.now()}] 脚本退出,正在保存BN数据到 {obj.alert_all_file}...",
-                    flush=True,
-                )
+                obj.logger.info(f"脚本退出,正在保存BN数据到 {obj.alert_all_file}...")
                 with open(obj.alert_all_file, "w") as f:
                     json.dump(obj.alert_all, f, ensure_ascii=False, indent=4)
-                print(f"[{datetime.datetime.now()}] BN数据保存完成", flush=True)
+                obj.logger.info("BN数据保存完成")
             except Exception as e:
-                print(
-                    f"[{datetime.datetime.now()}] 保存BN数据失败: {str(e)}", flush=True
-                )
-                traceback.print_exc()
+                obj.logger.error(f"保存BN数据失败: {str(e)}")
+                obj.logger.exception("保存BN数据时发生异常")
 
         atexit.register(save_on_exit)
 
@@ -289,7 +309,7 @@ class AUTOBN:
         try:
             # 记录发送时间，便于调试和追踪
             current_time = datetime.datetime.now()
-            print(f"{current_time} - 发送消息: {msg}", flush=True)
+            self.logger.info(f"发送消息: {msg}")
 
             if wx:
                 # 微信发送格式：使用微信API接口
@@ -318,10 +338,10 @@ class AUTOBN:
 
             # 检查发送结果，失败时记录状态码
             if response.status_code != 200:
-                print(f"消息发送失败，状态码: {response.status_code}", flush=True)
+                self.logger.error(f"消息发送失败，状态码: {response.status_code}")
         except Exception as e:
             # 异常处理：记录错误但不中断程序运行
-            print(f"消息发送异常: {str(e)}", flush=True)
+            self.logger.error(f"消息发送异常: {str(e)}")
 
     def calculate_health_bn(self, notional) -> int:
         """
@@ -490,7 +510,7 @@ class AUTOBN:
             # 异常处理：记录错误并发送通知
             error_msg = f"{symbol} 开仓失败：{str(e)}"
             self.send_msg(error_msg)
-            traceback.print_exc()  # 打印详细错误信息
+            self.logger.exception(f"{symbol} 开仓失败")
             return None
 
     def close_bn_position(
@@ -558,10 +578,10 @@ class AUTOBN:
                 if remaining_amount == 0 and symbol in self.alert_all["POSITIONS"]:
                     self.alert_all["POSITIONS"].pop(symbol)
                 return symbol  # 成功平仓，退出循环
-            except Exception:
+            except Exception as e:
                 # 平仓失败，等待后重试
                 time.sleep(self.CLOSE_RETRY_DELAY)
-                traceback.print_exc()  # 打印错误信息
+                self.logger.exception(f"平仓 {symbol} 失败，当前价格: {price_close}")
                 msg = f"bn平仓{symbol}失败，当前价格:{price_close}"
                 self.send_msg(msg)
                 # 重新获取持仓数量，可能部分平仓成功
@@ -590,8 +610,8 @@ class AUTOBN:
             symbol: 交易对符号
             kline_data: K线数据(可选,如果不提供则获取)
         返回:
-            1: 上升趋势(做多)
-            -1: 下降趋势(做空)
+            'LONG': 做多趋势
+            'SHORT': 做空趋势
             0: 无明确趋势或数据不足
         """
         async with semaphore:
@@ -627,11 +647,10 @@ class AUTOBN:
                     return PositionSide.SHORT.value  # 做空信号
                 else:
                     # 趋势未变化,返回当前趋势方向
-                    # direction=-1表示上升趋势,返回1; direction=1表示下降趋势,返回-1
                     return 0
 
-            except Exception:
-                traceback.print_exc()
+            except Exception as e:
+                self.logger.exception("检查趋势信号时发生错误")
                 return 0
 
     async def check_bd(
@@ -655,15 +674,15 @@ class AUTOBN:
                     return False
                 lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
 
-                # 根据持仓方向判断多空比条件
+                # 根据持仓方向判断多空比条件（逆势逻辑：LONG 在 lsrd<阈值，SHORT 在 lsrd>阈值）
                 if positionSide == PositionSide.LONG.value:
-                    # 做多：要求多空比大于1（多头占优）
-                    if lsrd <= 4 / 6:
+                    # 做多：要求多空比小于阈值（逆势做多）
+                    if lsrd <= self.long_short_ratio_long_threshold:
                         return True
                     return False
                 elif positionSide == PositionSide.SHORT.value:
-                    # 做空：要求多空比小于1（空头占优）
-                    if lsrd <= 1:
+                    # 做空：要求多空比大于阈值（逆势做空）
+                    if lsrd <= self.long_short_ratio_short_threshold:
                         return False
 
                 # 获取持仓量历史数据
@@ -698,8 +717,8 @@ class AUTOBN:
                     )
                     for index in range(-1, max(-self.ATR_PERIOD, -len(kline_close)), -1)
                 )
-            except Exception:
-                traceback.print_exc()
+            except Exception as e:
+                self.logger.exception("检查增仓信号时发生错误")
                 return False
 
     async def check_bz(
@@ -715,16 +734,26 @@ class AUTOBN:
                 if not long_short_ratio_data:
                     return False
                 lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
-                # 做多：要求多空比大于1（多头占优）
-                if lsrd >= 1:
+                # 做多：要求多空比小于阈值（逆势做多）
+                if lsrd >= self.long_short_ratio_long_threshold:
                     return False
-                # 获取持仓量历史数据
-                oi_5m = await asyncio.to_thread(
+
+                # 并行获取 5m 和 1d 的持仓量数据，减少 IO 等待时间
+                oi_5m_task = asyncio.to_thread(
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
                     period="5m",
                     limit=self.KLINE_LIMIT,
                 )
+                oi_1d_task = asyncio.to_thread(
+                    self.um_futures_client.open_interest_hist,
+                    symbol=symbol,
+                    period="1d",
+                    limit=2,
+                )
+
+                oi_5m, oi_1d = await asyncio.gather(oi_5m_task, oi_1d_task)
+
                 sumOpenInterestValue_5m = [
                     float(i["sumOpenInterestValue"]) for i in oi_5m
                 ]  # 持仓价值（美元）
@@ -732,12 +761,6 @@ class AUTOBN:
                     float(i["sumOpenInterest"]) for i in oi_5m
                 ]  # 持仓数量（合约数）
 
-                oi_1d = await asyncio.to_thread(
-                    self.um_futures_client.open_interest_hist,
-                    symbol=symbol,
-                    period="1d",
-                    limit=2,
-                )
                 sumOpenInterestValue_1d = [
                     float(i["sumOpenInterestValue"]) for i in oi_1d
                 ]  # 持仓价值（美元）
@@ -750,8 +773,8 @@ class AUTOBN:
                 ) or sumOpenInterestValue_5m[-1] <= min(sumOpenInterestValue_1d[-2:]):
                     return False
                 return True
-            except Exception:
-                traceback.print_exc()
+            except Exception as e:
+                self.logger.exception("检查爆仓信号时发生错误")
                 return False
 
     async def get_kline(self, semaphore, symbol, t: str):
@@ -779,8 +802,8 @@ class AUTOBN:
                 )
                 # 将所有数据转换为浮点数格式
                 return [list(map(float, sublist)) for sublist in kline]
-            except Exception:
-                print(f"{symbol}获取K线数据失败", flush=True)
+            except Exception as e:
+                self.logger.error(f"{symbol}获取K线数据失败: {str(e)}")
                 # 获取失败时返回空列表
                 return []
 
@@ -821,8 +844,8 @@ class AUTOBN:
                 "timestamp": current_time,
             }
             return data
-        except Exception:
-            print(f"{symbol}获取多空比数据失败", flush=True)
+        except Exception as e:
+            self.logger.error(f"{symbol}获取多空比数据失败: {str(e)}")
             # 如果获取失败但有旧缓存，返回旧数据
             if cache_entry:
                 return cache_entry["data"]
@@ -885,9 +908,9 @@ class AUTOBN:
                         self.send_msg(
                             f"{p['symbol']} 基差异常：{basis * 100 - 100:.2%}", True
                         )
-            except Exception:
-                # 异常处理：打印错误信息但不中断监控
-                traceback.print_exc()
+            except Exception as e:
+                # 异常处理：记录错误信息但不中断监控
+                self.logger.exception("监控基差异常时发生错误")
             finally:
                 # 每2秒检查一次
                 await asyncio.sleep(self.RETRY_DELAY_SECONDS)
@@ -1191,10 +1214,7 @@ class AUTOBN:
                     self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
                     # 更新到字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
-                    print(
-                        f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}",
-                        flush=True,
-                    )
+                    self.logger.info(f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}")
 
                 if open_info and open_info.position_side.value != PositionSide.BD.value:
                     is_today = (
@@ -1589,8 +1609,8 @@ class AUTOBN:
                             entry_price=current_price,
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.to_list()
-        except Exception:
-            traceback.print_exc()
+        except Exception as e:
+            self.logger.exception("处理持仓信息时发生异常")
             return
 
     def get_symbols_info(self):
@@ -1679,16 +1699,16 @@ class AUTOBN:
         """
         try:
             # 设置超时时间为5分钟，防止任务卡住
-            print(f"[{datetime.datetime.now()}] {market} 市场分析任务开始", flush=True)
+            self.logger.info(f"{market} 市场分析任务开始")
             await asyncio.wait_for(self._rzq_market_impl(market), timeout=300)
         except asyncio.TimeoutError:
             error_msg = f"{market} 市场分析任务超时(5分钟)，已强制中断"
-            print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
+            self.logger.error(error_msg)
             self.send_msg(error_msg)
         except Exception as e:
             error_msg = f"{market} 市场分析任务异常: {str(e)}"
-            print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
-            traceback.print_exc()
+            self.logger.error(error_msg)
+            self.logger.exception("市场分析任务发生异常")
             self.send_msg(error_msg)
 
     async def _rzq_market_impl(self, market):
@@ -1706,40 +1726,33 @@ class AUTOBN:
                     break  # 成功获取，退出重试循环
                 except Exception:
                     # 获取失败，等待后重试
-                    traceback.print_exc()
+                    self.logger.exception("获取交易对信息时发生异常")
                     await asyncio.sleep(self.RETRY_DELAY_SECONDS)
         if self.is_early_morning:
             balance = self.um_futures_client.account()["totalWalletBalance"]
             self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
-            print(f"[{datetime.datetime.now()}] 账户信息推送任务执行完成", flush=True)
+            self.logger.info("账户信息推送任务执行完成")
             with open(self.alert_all_file, "w") as f:
                 json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
         # 创建信号量，限制最大并发数，避免API限制
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
-        print(now, f"{market}任务开始 - 总交易对数量: {len(self.symbols)}", flush=True)
+        self.logger.info(f"{market}任务开始 - 总交易对数量: {len(self.symbols)}")
 
         success = set()  # 记录成功处理的交易对
-        chunk_size = self.CHUNK_SIZE  # 分批处理，避免内存占用过高
-        # symbols = ["OGUSDT"]
-        # 分批处理所有交易对
-        for i in range(0, len(self.symbols), chunk_size):
-            symbol_chunk = self.symbols[i : i + chunk_size]  # 当前批次的交易对
-            # 创建异步任务列表
-            tasks = [
-                self.rzq_token(semaphore, symbol, success, now)
-                for symbol in symbol_chunk
-            ]
-            # 等待当前批次所有任务完成
+
+        # 优化：移除 chunk 分批逻辑，改用全量任务提交 + Semaphore 控制并发
+        # 这样可以避免"最慢任务拖慢整批进度"的问题，大幅提高整体吞吐量
+        tasks = [
+            self.rzq_token(semaphore, symbol, success, now)
+            for symbol in self.symbols
+        ]
+
+        # 等待所有任务完成
+        if tasks:
             await asyncio.gather(*tasks)
-            gc.collect()  # 垃圾回收，释放内存
 
         # 打印任务完成信息
-        print(
-            datetime.datetime.now(),
-            f"{market}任务结束 - 总交易对数量: {len(success)}",
-            self.alert_all,
-            flush=True,
-        )
+        self.logger.info(f"{market}任务结束 - 总交易对数量: {len(success)}")
 
 
 class AUTOA:
@@ -1770,16 +1783,14 @@ class AUTOA:
     def _save_alert_all_on_exit():
         """脚本退出时保存AUTOA的alert_all数据到文件"""
         try:
-            print(
-                f"[{datetime.datetime.now()}] 脚本退出,正在保存A股数据到 {AUTOA.alert_all_file}...",
-                flush=True,
-            )
+            logger = logging.getLogger("AUTOA")
+            logger.info(f"脚本退出,正在保存A股数据到 {AUTOA.alert_all_file}...")
             with open(AUTOA.alert_all_file, "w", encoding="utf-8") as f:
                 json.dump(AUTOA.alert_all, f, ensure_ascii=False, indent=4)
-            print(f"[{datetime.datetime.now()}] A股数据保存完成", flush=True)
+            self.logger.info("A股数据保存完成")
         except Exception as e:
-            print(f"[{datetime.datetime.now()}] 保存A股数据失败: {str(e)}", flush=True)
-            traceback.print_exc()
+            self.logger.error(f"保存A股数据失败: {str(e)}")
+            self.logger.exception("保存A股数据时发生异常")
 
     @classmethod
     def calculate_atr(cls, hist_data, period=None):
@@ -1941,7 +1952,8 @@ class AUTOA:
         try:
             # 记录发送时间，便于调试和追踪
             current_time = datetime.datetime.now()
-            print(f"{current_time} - 发送消息: {msg}", flush=True)
+            logger = logging.getLogger("AUTOA")
+            logger.info(f"发送消息: {msg}")
             # 企业微信发送格式：使用企业微信机器人webhook
             json_msg = {"msgtype": "text", "text": {"content": msg}}
             response = session.post(
@@ -1951,10 +1963,10 @@ class AUTOA:
 
             # 检查发送结果，失败时记录状态码
             if response.status_code != 200:
-                print(f"消息发送失败，状态码: {response.status_code}", flush=True)
+                self.logger.error(f"消息发送失败，状态码: {response.status_code}")
         except Exception as e:
             # 异常处理：记录错误但不中断程序运行
-            print(f"消息发送异常: {str(e)}", flush=True)
+            self.logger.error(f"消息发送异常: {str(e)}")
 
     @staticmethod
     def get_last_trading_days(today=None, days=30):
@@ -1981,7 +1993,8 @@ class AUTOA:
             valid_dates = trade_dates[trade_dates <= today]
 
             if valid_dates.empty:
-                print(f"警告: 未找到 {today} 之前的交易日", flush=True)
+                logger = logging.getLogger("AUTOA")
+                logger.warning(f"未找到 {today} 之前的交易日")
                 return None, None, []
 
             # 获取指定日期前的最近n个交易日，按时间降序排列
@@ -1990,7 +2003,7 @@ class AUTOA:
             # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
             return [i.strftime("%Y-%m-%d") for i in recent_trading_days.iloc]
         except Exception as e:
-            print(f"获取交易日历失败: {str(e)}", flush=True)
+            self.logger.error(f"获取交易日历失败: {str(e)}")
             return None, None, []
 
     @classmethod
@@ -2006,16 +2019,10 @@ class AUTOA:
         try:
             loop = asyncio.get_running_loop()
             code_pre = "sh" if code[0] == "6" else "sz"
-            print(
-                f"[DEBUG] stock_zh_a_hist 调用: code={code}, code_pre={code_pre}",
-                flush=True,
-            )
+            self.logger.debug(f"stock_zh_a_hist 调用: code={code}, code_pre={code_pre}")
             if code in cls.hist_cache:
                 data_list = copy.deepcopy(cls.hist_cache[code])
-                print(
-                    f"[DEBUG] 从缓存读取 code={code}, data_list前3行={data_list[:3] if data_list else 'empty'}",
-                    flush=True,
-                )
+                self.logger.debug(f"从缓存读取 code={code}, data_list前3行={data_list[:3] if data_list else 'empty'}")
             else:
 
                 def fetch_bs_data(
@@ -2028,10 +2035,7 @@ class AUTOA:
                     adj_flag,
                     lock,
                 ):
-                    print(
-                        f"[DEBUG] fetch_bs_data 开始获取: {stock_code_pre}.{stock_code}",
-                        flush=True,
-                    )
+                    self.logger.debug(f"fetch_bs_data 开始获取: {stock_code_pre}.{stock_code}")
                     # 使用线程锁保护 baostock 查询（baostock 不是线程安全的）
                     with lock:
                         rs = bs.query_history_k_data_plus(
@@ -2051,15 +2055,9 @@ class AUTOA:
                         actual_code = dl[0][1]
                         expected_code = f"{stock_code_pre}.{stock_code}"
                         if actual_code != expected_code:
-                            print(
-                                f"[ERROR] 数据错误! 请求={expected_code}, 实际={actual_code}",
-                                flush=True,
-                            )
+                            self.logger.error(f"数据错误! 请求={expected_code}, 实际={actual_code}")
 
-                    print(
-                        f"[DEBUG] fetch_bs_data 完成获取: {stock_code_pre}.{stock_code}, 数据行数={len(dl)}",
-                        flush=True,
-                    )
+                    self.logger.debug(f"fetch_bs_data 完成获取: {stock_code_pre}.{stock_code}, 数据行数={len(dl)}")
                     return dl
 
                 data_list = await loop.run_in_executor(
@@ -2081,10 +2079,7 @@ class AUTOA:
                         if data_list and len(data_list[0]) > 1
                         else "unknown"
                     )
-                    print(
-                        f"[DEBUG] 准备写入缓存 code={code}, data_list中的股票代码={actual_code_in_data}, 数据行数={len(data_list)}",
-                        flush=True,
-                    )
+                    self.logger.debug(f"准备写入缓存 code={code}, data_list中的股票代码={actual_code_in_data}, 数据行数={len(data_list)}")
                     cls.hist_cache[code] = copy.deepcopy(data_list)
             if not data_list:
                 return pd.DataFrame()
@@ -2130,8 +2125,9 @@ class AUTOA:
             hist["preclose"] = pd.to_numeric(hist["preclose"], errors="coerce")
             hist["涨跌幅"] = (hist["close"] - hist["preclose"]) / hist["preclose"]
             return hist
-        except Exception:
-            traceback.print_exc()
+        except Exception as e:
+            logger = logging.getLogger("AUTOA")
+            logger.exception("获取股票历史数据时发生异常")
             return pd.DataFrame()
 
     @classmethod
@@ -2403,16 +2399,19 @@ class AUTOA:
         """
         try:
             # 设置超时时间为3分钟，防止任务卡住
-            print(f"[{datetime.datetime.now()}] A股监控任务开始", flush=True)
+            logger = logging.getLogger("AUTOA")
+            logger.info("A股监控任务开始")
             await asyncio.wait_for(cls._monitor_stocks_impl(), timeout=600)
         except asyncio.TimeoutError:
             error_msg = "A股监控任务超时(3分钟)，已强制中断"
-            print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
+            logger = logging.getLogger("AUTOA")
+            logger.error(error_msg)
             cls.send_msg(error_msg)
         except Exception as e:
             error_msg = f"A股监控任务异常: {str(e)}"
-            print(f"[{datetime.datetime.now()}] {error_msg}", flush=True)
-            traceback.print_exc()
+            logger = logging.getLogger("AUTOA")
+            logger.error(error_msg)
+            logger.exception("A股监控任务发生异常")
             cls.send_msg(error_msg)
 
     @classmethod
@@ -2424,7 +2423,7 @@ class AUTOA:
         try:
             # 筛选符合量能条件的股票
             filtered = await cls.filter_stocks()
-            print(f"符合量能条件的股票：{filtered}", flush=True)
+            self.logger.info(f"符合量能条件的股票：{filtered}")
 
             # 如果有符合条件的股票，发送通知
             if filtered:
@@ -2445,17 +2444,22 @@ atexit.register(AUTOA._save_alert_all_on_exit)
 def handle_exit_signal(signum, frame):
     """处理系统退出信号，确保触发atexit"""
     signal_name = "SIGINT (Ctrl+C)" if signum == signal.SIGINT else "SIGTERM"
-    print(
-        f"\n[{datetime.datetime.now()}] 接收到退出信号 {signal_name}, 准备退出...",
-        flush=True,
-    )
+    logger = logging.getLogger("AUTOA")
+    logger.info(f"接收到退出信号 {signal_name}, 准备退出...")
     # 调用 sys.exit(0) 会触发 atexit 注册的函数
     sys.exit(0)
 
 
-# 注册信号处理
+# 注册信号处理，确保程序优雅退出
 signal.signal(signal.SIGINT, handle_exit_signal)
 signal.signal(signal.SIGTERM, handle_exit_signal)
+
+# 配置根日志记录器
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
+)
 
 
 async def main():
@@ -2471,7 +2475,8 @@ async def main():
     # 从环境变量或配置文件加载密钥
     qy_key = os.getenv("QY_WECHAT_KEY", "095984b1-5bc0-43ac-8037-d65a9608d120")
     if not qy_key:
-        print("警告: 未设置环境变量 QY_WECHAT_KEY，消息通知功能将不可用", flush=True)
+        logger = logging.getLogger("AUTOA")
+        logger.warning("未设置环境变量 QY_WECHAT_KEY，消息通知功能将不可用")
         # 可以选择：1) 抛出异常退出  2) 使用空密钥继续运行
         # 这里选择继续运行但禁用通知
         qy_key = ""
@@ -2482,10 +2487,12 @@ async def main():
         qy_key=qy_key,
     )
 
-    # 初始化任务调度器
+    # 初始化任务调度器，配置全局日志级别
     scheduler = AsyncIOScheduler()
+    logging.getLogger('apscheduler').setLevel(logging.WARNING)  # 减少调度器自身的日志输出
 
-    print("配置A股监控任务...", flush=True)
+    logger = logging.getLogger("AUTOA")
+    logger.info("配置A股监控任务...")
     # 设置A股监控定时任务
     scheduler.add_job(
         AUTOA.monitor_stocks,  # 执行的函数
@@ -2501,7 +2508,8 @@ async def main():
         name="股票监控任务",  # 任务名称
     )
 
-    print("配置币安市场分析任务...", flush=True)
+    logger = logging.getLogger("AUTOBN")
+    logger.info("配置币安市场分析任务...")
     # 设置币安市场分析定时任务
     scheduler.add_job(
         autobn.rzq_market,  # 执行的函数
@@ -2517,10 +2525,11 @@ async def main():
         name="币安市场分析任务",  # 任务名称
     )
 
-    print("启动调度器...", flush=True)
+    logger = logging.getLogger("AUTOA")
+    logger.info("启动调度器...")
     # 启动调度器
     scheduler.start()
-    print("调度器已启动，等待任务触发...", flush=True)
+    logger.info("调度器已启动，等待任务触发...")
 
     # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
@@ -2533,6 +2542,7 @@ if __name__ == "__main__":
 
     功能：初始化所有必要的配置和客户端，然后启动主程序
     """
-    print("autoBN启动", flush=True)
+    logger = logging.getLogger("AUTOA")
+    logger.info("autoBN启动")
     # 启动主程序（调度器在main函数中初始化）
     asyncio.run(main())
