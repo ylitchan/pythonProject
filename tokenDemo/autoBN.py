@@ -1618,7 +1618,7 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.to_list()
         except Exception as e:
-            self.logger.exception(f"处理持仓信息时发生异常:{e}")
+            self.logger.exception("处理持仓信息时发生异常")
             return
 
     def get_symbols_info(self):
@@ -1831,6 +1831,152 @@ class AUTOA:
         return sum(tr_list[-period:]) / min(len(tr_list), period)
 
     @classmethod
+    def calculate_trend(cls, hist_data: pd.DataFrame, factor=3.0, atr_period=10):
+        """
+        计算 Supertrend 指标 (A股适配版)
+
+        参数:
+            hist_data: K线数据 DataFrame
+            factor: 因子，默认3.0
+            atr_period: ATR周期，默认10
+
+        返回:
+            (supertrend_values, directions): supertrend值列表和方向列表
+            方向: -1 表示上升趋势, 1 表示下降趋势
+        """
+        if hist_data.empty or len(hist_data) < atr_period + 1:
+            return [], [], []
+
+        supertrend_values = []
+        directions = []
+        atr_values = []
+
+        # 缓存列数据加速访问
+        highs = hist_data["high"].values
+        lows = hist_data["low"].values
+        closes = hist_data["close"].values
+
+        for i in range(atr_period, len(hist_data)):
+            # 截取截至当前的DataFrame切片用于计算ATR
+            # 注意：calculate_atr 需要包含前 atr_period 天的数据
+            current_data = hist_data.iloc[: i + 1]
+            atr = cls.calculate_atr(current_data, period=atr_period)
+            atr_values.append(atr)
+
+            # 当前K线数据
+            current_high = float(highs[i])
+            current_low = float(lows[i])
+            current_close = float(closes[i])
+
+            hl2 = (current_high + current_low) / 2
+
+            # 计算基础上下轨
+            basic_upper = hl2 + factor * atr
+            basic_lower = hl2 - factor * atr
+
+            if len(directions) == 0:
+                if current_close > basic_upper:
+                    direction = -1  # 上升
+                    supertrend = basic_lower
+                else:
+                    direction = 1  # 下降
+                    supertrend = basic_upper
+            else:
+                prev_direction = directions[-1]
+                prev_supertrend = supertrend_values[-1]
+
+                if prev_direction == -1:  # 之前是上升趋势
+                    final_lower = max(basic_lower, prev_supertrend)
+                    if current_close <= final_lower:
+                        direction = 1  # 反转为下降
+                        supertrend = basic_upper
+                    else:
+                        direction = -1  # 继续上升
+                        supertrend = final_lower
+                else:  # 之前是下降趋势
+                    final_upper = min(basic_upper, prev_supertrend)
+                    if current_close >= final_upper:
+                        direction = -1  # 反转为上升
+                        supertrend = basic_lower
+                    else:
+                        direction = 1  # 继续下降
+                        supertrend = final_upper
+
+            supertrend_values.append(supertrend)
+            directions.append(direction)
+
+        return supertrend_values, directions, atr_values
+
+    @classmethod
+    async def check_trend(cls, code, zt_dates=None, kline_data=None, check_at_index=-1):
+        """
+        检查趋势信号 - 基于 Supertrend 指标 (A股适配版)
+
+        功能: 使用 Supertrend 指标判断市场趋势方向
+        参数:
+            code: 股票代码
+            zt_dates: 交易日期列表
+            kline_data: K线数据(可选,如果不提供则获取)
+            check_at_index: 检查信号的索引位置，默认-1（最后一个点与前一个点比较）
+        返回:
+            (signal, last_atr): 信号('LONG'/'SHORT'/0) 和 最后一个点的ATR值
+        """
+        try:
+            atr_period = 10
+            factor = 3.0
+
+            # 如果未提供K线数据，则获取
+            if kline_data is None:
+                if zt_dates is None:
+                    zt_dates = cls.get_last_trading_days(days=60)
+
+                if not zt_dates:
+                    return 0, 0.0
+
+                kline_data = await cls.stock_zh_a_hist(
+                    code,
+                    "date,code,open,high,low,close,preclose,volume,amount",
+                    start_date=zt_dates[-1],
+                    end_date=zt_dates[0],
+                )
+
+            if kline_data.empty or len(kline_data) < atr_period + 1:
+                return 0, 0.0
+
+            supertrend_values, directions, atr_values = cls.calculate_trend(
+                kline_data, factor=factor, atr_period=atr_period
+            )
+
+            last_atr = atr_values[-1] if atr_values else 0.0
+
+            if len(directions) < 2:
+                return 0, last_atr
+
+            # 转换为实际索引
+            idx = (
+                check_at_index
+                if check_at_index >= 0
+                else len(directions) + check_at_index
+            )
+            if idx < 1 or idx >= len(directions):
+                return 0, last_atr
+
+            prev_direction = directions[idx - 1]
+            curr_direction = directions[idx]
+
+            # 检测趋势变化
+            if prev_direction == 1 and curr_direction == -1:
+                return PositionSide.LONG.value, last_atr  # 做多信号
+            elif prev_direction == -1 and curr_direction == 1:
+                return PositionSide.SHORT.value, last_atr  # 做空信号
+            else:
+                return 0, last_atr
+
+        except Exception as e:
+            cls.logger.exception(f"检查 {code} 趋势信号时发生错误")
+            return 0, 0.0
+
+    @classmethod
     def calculate_chebyshev_probability(cls, data, value):
         """
         计算给定数值对应的切比雪夫概率 (支持 pandas Series/DataFrame 和 list)
@@ -1976,7 +2122,7 @@ class AUTOA:
             cls.logger.error(f"消息发送异常: {str(e)}")
 
     @staticmethod
-    def get_last_trading_days(today=None, days=30):
+    def get_last_trading_days(today=None, days=60):
         """
         获取A股交易日历
 
@@ -2202,22 +2348,38 @@ class AUTOA:
                 msg = f"{close_info[2]} 平仓\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}"
                 cls.send_msg(msg)
         else:
-            # 未触及止盈止损，执行移动止损逻辑 (吊灯止损)
-            atr = cls.calculate_atr(hist)
-            if atr > 0:
-                # 移动止损：价格 - 1.5 * ATR
-                trailing_sl = price_close - (atr * 1.5)
-                # 只有当新止损位高于旧止损位时才更新 (只上不下)
-                if trailing_sl > close_info[1]:
-                    close_info[1] = trailing_sl
-                    # 如果价格创新高，也可以选择更新entry_price作为参考(可选)
-                    if price_close > close_info[4]:
-                        close_info[4] = price_close
+            # 未触及止盈止损，执行移动止损逻辑
 
-                    # 更新回字典
-                    cls.alert_all["POSITIONS"][code] = close_info
-                    # 可选：发送移动止损通知
-                    # cls.send_msg(f"{close_info[2]} 移动止损更新\n现价:{price_close:.2f}\n新止损:{trailing_sl:.2f}(前值:{old_sl:.2f})")
+            # 重新计算一次 Supertrend 获取详细数据
+            supertrend_values, directions, atr_values = cls.calculate_trend(
+                hist, factor=3.0, atr_period=10
+            )
+
+            if supertrend_values and directions:
+                current_price = price_close
+                # 衰减系数 (参考 AUTOBN 的 STOP_LOSS_DECAY_PER_MINUTE)
+                DECAY = 0.01
+
+                # 计算当前止盈止损与当前价的距离
+                take_profit_gap = close_info[0] - current_price
+
+                if directions[-1] == -1:  # Up trend
+                    # 上升趋势 (Supertrend在下方) -> 止损设为 Supertrend Lower Band
+                    close_info[1] = supertrend_values[-1]
+                else:  # Down trend
+                    # 趋势由多转空或维持空：止损上移(只能向有利方向移动,保护利润)
+                    stop_loss_gap = current_price - close_info[1]
+                    # 注意：如果当前触发了 update，说明 current_price > close_info[1] (否则在上面已经平仓了)
+                    # 所以 stop_loss_gap > 0.
+                    # decay 使得 stop_loss_gap 变小 -> (price - smaller_gap) 变大 -> SL 上移
+                    new_sl = current_price - stop_loss_gap * (1 - DECAY)
+                    # 确保止损只上不下
+                    if new_sl > close_info[1]:
+                        close_info[1] = new_sl
+
+                # 止盈下移(更容易触发止盈)
+                # decay 使得 take_profit_gap 变小 -> (price + smaller_gap) 变小 -> TP 下移
+                close_info[0] = current_price + take_profit_gap * (1 - DECAY)
 
     @classmethod
     async def on_observations(cls, code, zt_dates, open_info, today):
@@ -2259,37 +2421,53 @@ class AUTOA:
             frequency="d",
             adjustflag="3",  # 前复权
         )
-
+        should_open = False
         # 数据校验：无历史数据则跳过
         if hist.empty:
             return
+        if hist.empty:
+            return
 
-        # 条件1：价格突破关键阻力位（10日均价、昨收、今开）
-        # 条件2：成交量显著放大（确认突破有效性）
-        # 获取最新价格
-        price_close = float(hist.iloc[-1]["close"])
-        # 计算关键价格阻力位
-        resistance_price = max(
-            float(hist.iloc[-2]["close"]),  # 昨日收盘价
-            float(hist.iloc[-1]["open"]),  # 今日开盘价
-            float(hist.iloc[-10:]["close"].mean()),  # 10日均价
+        # 复用计算：check_trend 现在返回 (信号, 最新ATR)
+        # 传入完整 hist，指定 check_at_index=-2 (检查倒数第2个点，即昨天的翻转信号)
+        trend_signal, current_atr = await cls.check_trend(
+            code, zt_dates, hist, check_at_index=-2
         )
 
-        # 判断是否满足买入条件
-        price_breakout = price_close > resistance_price
-        volume_breakout = (
-            hist.iloc[-1]["volume"] > hist["volume"].iloc[-3:-1].mean()
-            and cls.calculate_chebyshev_probability(
-                hist["volume"].iloc[-3:-1], hist.iloc[-1]["volume"]
-            )["chebyshev_upper_bound"]
-            < cls.CHEBYSHEV_SIGNIFICANT_THRESHOLD
-        )
+        if trend_signal == PositionSide.LONG.value:
+            should_open = PositionSide.Supertrend.value
+        else:
+            # 条件1：价格突破关键阻力位（10日均价、昨收、今开）
+            # ... (保持原有逻辑) ...
+            # 获取最新价格
+            price_close = float(hist.iloc[-1]["close"])
+            # 计算关键价格阻力位
+            resistance_price = max(
+                float(hist.iloc[-2]["close"]),  # 昨日收盘价
+                float(hist.iloc[-1]["open"]),  # 今日开盘价
+                float(hist.iloc[-10:]["close"].mean()),  # 10日均价
+            )
 
-        if price_breakout and volume_breakout:
+            # 判断是否满足买入条件
+            price_breakout = price_close > resistance_price
+            volume_breakout = (
+                hist.iloc[-1]["volume"] > hist["volume"].iloc[-3:-1].mean()
+                and cls.calculate_chebyshev_probability(
+                    hist["volume"].iloc[-3:-1], hist.iloc[-1]["volume"]
+                )["chebyshev_upper_bound"]
+                < cls.CHEBYSHEV_SIGNIFICANT_THRESHOLD
+            )
+
+            if price_breakout and volume_breakout:
+                should_open = PositionSide.BZ2.value
             # ========== 计算止盈止损（ATR动态方法） ==========
+        if should_open:
+            # 1. 使用 calculate_trend 复用的 ATR
+            atr = current_atr
+            # 如果 atr 为 0 (可能异常)，则兜底计算一次，虽然 check_trend 应该已经计算过
+            if atr <= 0:
+                atr = cls.calculate_atr(hist)
 
-            # 1. 计算ATR（平均真实波幅）
-            atr = cls.calculate_atr(hist)
             atr_percent = (atr / price_close) if price_close > 0 else 0
 
             # 3. 动态止盈止损：ATR模式 (止损2x, 止盈4x)
@@ -2307,7 +2485,7 @@ class AUTOA:
                     open_info[2],  # 股票名称
                     int(today.strftime("%Y%m%d")),  # 买入日期
                     price_close,
-                    "BZ2",  # 策略标签：BZ2=观察列表突破买入
+                    should_open,  # 策略标签：BZ2=观察列表突破买入
                 ]
 
                 # 5. 从观察列表移除
@@ -2315,7 +2493,7 @@ class AUTOA:
 
                 # 6. 发送买入通知
                 msg = (
-                    f"==={open_info[2]}**BZ2**===\n"
+                    f"==={open_info[2]}**{should_open}**===\n"
                     f"价格:{price_close:.2f}\n"
                     f"止盈:{take_profit:.2f}\n"
                     f"止损:{stop_loss:.2f}\n"
