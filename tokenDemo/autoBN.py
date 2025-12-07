@@ -11,7 +11,6 @@ import signal
 import sys
 import threading
 import time
-import traceback
 from decimal import Decimal, ROUND_DOWN
 from dataclasses import dataclass
 from enum import Enum
@@ -171,18 +170,20 @@ class AUTOBN:
     def from_cfg(cls, **kwargs):
         obj = cls.__new__(cls)
         obj.symbols = []
-        
+
         # 初始化日志记录器
         obj.logger = logging.getLogger(f"AUTOBN.{id(obj)}")
         obj.logger.setLevel(logging.INFO)  # 默认级别
-        
+
         # 如果没有处理器，则添加一个控制台处理器
         if not obj.logger.handlers:
             handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            formatter = logging.Formatter(
+                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            )
             handler.setFormatter(formatter)
             obj.logger.addHandler(handler)
-        
+
         # 基本配置：优先使用 kwargs，其次使用默认/环境
         # 支持键：qy_key, leverage, health4open, margin_mode/position_mode,
         #        session/session_verify/session_headers,
@@ -196,7 +197,7 @@ class AUTOBN:
         # 交易参数配置（可覆盖）
         obj.leverage = kwargs.get("leverage", cls.DEFAULT_LEVERAGE)
         obj.health4open = kwargs.get("health4open", cls.DEFAULT_HEALTH_THRESHOLD)
-        
+
         # 多空比阈值配置（可覆盖）
         obj.long_short_ratio_long_threshold = kwargs.get(
             "long_short_ratio_long_threshold", cls.LONG_SHORT_RATIO_LONG_THRESHOLD
@@ -1214,7 +1215,9 @@ class AUTOBN:
                     self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
                     # 更新到字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
-                    self.logger.info(f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}")
+                    self.logger.info(
+                        f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}"
+                    )
 
                 if open_info and open_info.position_side.value != PositionSide.BD.value:
                     is_today = (
@@ -1312,17 +1315,16 @@ class AUTOBN:
                     # 计算 Supertrend
                     supertrend_values, directions = self.calculate_trend(kline_15)
                     if close_info.position_side.value == PositionSide.LONG.value:
-                        # 做多: 计算当前止盈止损与当前价的距离
-                        stop_loss_gap = current_price - close_info.stop_loss
-                        take_profit_gap = close_info.take_profit - current_price
+                        if directions and directions[-1] == -1:
+                            close_info.stop_loss = supertrend_values[-1]
+                        else:
+                            # 做多: 计算当前止盈止损与当前价的距离
+                            stop_loss_gap = current_price - close_info.stop_loss
+                            take_profit_gap = close_info.take_profit - current_price
 
-                        # 止损上移(只能向有利方向移动,保护利润)
-                        close_info.stop_loss = current_price - stop_loss_gap * (
-                            1 - self.STOP_LOSS_DECAY_PER_MINUTE
-                        )
-                        if directions[-1] == -1:
-                            close_info.stop_loss = max(
-                                close_info.stop_loss, supertrend_values[-1]
+                            # 止损上移(只能向有利方向移动,保护利润)
+                            close_info.stop_loss = current_price - stop_loss_gap * (
+                                1 - self.STOP_LOSS_DECAY_PER_MINUTE
                             )
                         # 止盈下移(更容易触发止盈)
                         close_info.take_profit = current_price + take_profit_gap * (
@@ -1330,22 +1332,22 @@ class AUTOBN:
                         )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
-                        # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
-                        stop_loss_gap = (
-                            close_info.take_profit - current_price
-                        )  # 止损距离
-                        take_profit_gap = (
-                            current_price - close_info.stop_loss
-                        )  # 止盈距离
+                        if directions and directions[-1] == 1:
+                            close_info.take_profit = supertrend_values[-1]
+                        else:
+                            # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
+                            stop_loss_gap = (
+                                close_info.take_profit - current_price
+                            )  # 止损距离
+                            take_profit_gap = (
+                                current_price - close_info.stop_loss
+                            )  # 止盈距离
 
-                        # 止损下移(只能向有利方向移动)
-                        close_info.take_profit = current_price + stop_loss_gap * (
-                            1 - self.STOP_LOSS_DECAY_PER_MINUTE
-                        )
-                        if directions[-1] == 1:
-                            close_info.take_profit = min(
-                                close_info.take_profit, supertrend_values[-1]
+                            # 止损下移(只能向有利方向移动)
+                            close_info.take_profit = current_price + stop_loss_gap * (
+                                1 - self.STOP_LOSS_DECAY_PER_MINUTE
                             )
+
                         # 止盈上移(更容易触发止盈)
                         close_info.stop_loss = current_price - take_profit_gap * (
                             1 - self.STOP_LOSS_DECAY_PER_MINUTE
@@ -1743,8 +1745,7 @@ class AUTOBN:
         # 优化：移除 chunk 分批逻辑，改用全量任务提交 + Semaphore 控制并发
         # 这样可以避免"最慢任务拖慢整批进度"的问题，大幅提高整体吞吐量
         tasks = [
-            self.rzq_token(semaphore, symbol, success, now)
-            for symbol in self.symbols
+            self.rzq_token(semaphore, symbol, success, now) for symbol in self.symbols
         ]
 
         # 等待所有任务完成
@@ -1776,21 +1777,22 @@ class AUTOA:
     zt_dates = []
     hist_cache = {}
     # 添加线程锁以保护 baostock 查询操作(baostock 不是线程安全的)
+    # 添加线程锁以保护 baostock 查询操作(baostock 不是线程安全的)
     _bs_lock = threading.Lock()
+    logger = logging.getLogger("AUTOA")
 
     # 退出处理函数,在脚本退出时保存A股数据
     @staticmethod
     def _save_alert_all_on_exit():
         """脚本退出时保存AUTOA的alert_all数据到文件"""
         try:
-            logger = logging.getLogger("AUTOA")
-            logger.info(f"脚本退出,正在保存A股数据到 {AUTOA.alert_all_file}...")
+            AUTOA.logger.info(f"脚本退出,正在保存A股数据到 {AUTOA.alert_all_file}...")
             with open(AUTOA.alert_all_file, "w", encoding="utf-8") as f:
                 json.dump(AUTOA.alert_all, f, ensure_ascii=False, indent=4)
-            self.logger.info("A股数据保存完成")
+            AUTOA.logger.info("A股数据保存完成")
         except Exception as e:
-            self.logger.error(f"保存A股数据失败: {str(e)}")
-            self.logger.exception("保存A股数据时发生异常")
+            AUTOA.logger.error(f"保存A股数据失败: {str(e)}")
+            AUTOA.logger.exception("保存A股数据时发生异常")
 
     @classmethod
     def calculate_atr(cls, hist_data, period=None):
@@ -1951,9 +1953,7 @@ class AUTOA:
         """
         try:
             # 记录发送时间，便于调试和追踪
-            current_time = datetime.datetime.now()
-            logger = logging.getLogger("AUTOA")
-            logger.info(f"发送消息: {msg}")
+            cls.logger.info(f"发送消息: {msg}")
             # 企业微信发送格式：使用企业微信机器人webhook
             json_msg = {"msgtype": "text", "text": {"content": msg}}
             response = session.post(
@@ -1963,10 +1963,10 @@ class AUTOA:
 
             # 检查发送结果，失败时记录状态码
             if response.status_code != 200:
-                self.logger.error(f"消息发送失败，状态码: {response.status_code}")
+                cls.logger.error(f"消息发送失败，状态码: {response.status_code}")
         except Exception as e:
             # 异常处理：记录错误但不中断程序运行
-            self.logger.error(f"消息发送异常: {str(e)}")
+            cls.logger.error(f"消息发送异常: {str(e)}")
 
     @staticmethod
     def get_last_trading_days(today=None, days=30):
@@ -1993,9 +1993,8 @@ class AUTOA:
             valid_dates = trade_dates[trade_dates <= today]
 
             if valid_dates.empty:
-                logger = logging.getLogger("AUTOA")
-                logger.warning(f"未找到 {today} 之前的交易日")
-                return None, None, []
+                AUTOA.logger.warning(f"未找到 {today} 之前的交易日")
+                return []
 
             # 获取指定日期前的最近n个交易日，按时间降序排列
             recent_trading_days = valid_dates.sort_values(ascending=False).iloc[:days]
@@ -2003,8 +2002,8 @@ class AUTOA:
             # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
             return [i.strftime("%Y-%m-%d") for i in recent_trading_days.iloc]
         except Exception as e:
-            self.logger.error(f"获取交易日历失败: {str(e)}")
-            return None, None, []
+            AUTOA.logger.error(f"获取交易日历失败: {str(e)}")
+            return []
 
     @classmethod
     async def stock_zh_a_hist(
@@ -2019,10 +2018,12 @@ class AUTOA:
         try:
             loop = asyncio.get_running_loop()
             code_pre = "sh" if code[0] == "6" else "sz"
-            self.logger.debug(f"stock_zh_a_hist 调用: code={code}, code_pre={code_pre}")
+            cls.logger.debug(f"stock_zh_a_hist 调用: code={code}, code_pre={code_pre}")
             if code in cls.hist_cache:
                 data_list = copy.deepcopy(cls.hist_cache[code])
-                self.logger.debug(f"从缓存读取 code={code}, data_list前3行={data_list[:3] if data_list else 'empty'}")
+                cls.logger.debug(
+                    f"从缓存读取 code={code}, data_list前3行={data_list[:3] if data_list else 'empty'}"
+                )
             else:
 
                 def fetch_bs_data(
@@ -2035,7 +2036,9 @@ class AUTOA:
                     adj_flag,
                     lock,
                 ):
-                    self.logger.debug(f"fetch_bs_data 开始获取: {stock_code_pre}.{stock_code}")
+                    cls.logger.debug(
+                        f"fetch_bs_data 开始获取: {stock_code_pre}.{stock_code}"
+                    )
                     # 使用线程锁保护 baostock 查询（baostock 不是线程安全的）
                     with lock:
                         rs = bs.query_history_k_data_plus(
@@ -2055,9 +2058,13 @@ class AUTOA:
                         actual_code = dl[0][1]
                         expected_code = f"{stock_code_pre}.{stock_code}"
                         if actual_code != expected_code:
-                            self.logger.error(f"数据错误! 请求={expected_code}, 实际={actual_code}")
+                            cls.logger.error(
+                                f"数据错误! 请求={expected_code}, 实际={actual_code}"
+                            )
 
-                    self.logger.debug(f"fetch_bs_data 完成获取: {stock_code_pre}.{stock_code}, 数据行数={len(dl)}")
+                    cls.logger.debug(
+                        f"fetch_bs_data 完成获取: {stock_code_pre}.{stock_code}, 数据行数={len(dl)}"
+                    )
                     return dl
 
                 data_list = await loop.run_in_executor(
@@ -2079,7 +2086,9 @@ class AUTOA:
                         if data_list and len(data_list[0]) > 1
                         else "unknown"
                     )
-                    self.logger.debug(f"准备写入缓存 code={code}, data_list中的股票代码={actual_code_in_data}, 数据行数={len(data_list)}")
+                    cls.logger.debug(
+                        f"准备写入缓存 code={code}, data_list中的股票代码={actual_code_in_data}, 数据行数={len(data_list)}"
+                    )
                     cls.hist_cache[code] = copy.deepcopy(data_list)
             if not data_list:
                 return pd.DataFrame()
@@ -2126,8 +2135,7 @@ class AUTOA:
             hist["涨跌幅"] = (hist["close"] - hist["preclose"]) / hist["preclose"]
             return hist
         except Exception as e:
-            logger = logging.getLogger("AUTOA")
-            logger.exception("获取股票历史数据时发生异常")
+            cls.logger.exception("获取股票历史数据时发生异常")
             return pd.DataFrame()
 
     @classmethod
@@ -2329,6 +2337,8 @@ class AUTOA:
             return []
         if not cls.zt_dates:
             cls.zt_dates = cls.get_last_trading_days(today)
+            if not cls.zt_dates:
+                return []
         selected = set()  # 存储符合条件的股票
         if today.hour == 15:
             with open(cls.alert_all_file, "w", encoding="utf-8") as f:
@@ -2399,19 +2409,16 @@ class AUTOA:
         """
         try:
             # 设置超时时间为3分钟，防止任务卡住
-            logger = logging.getLogger("AUTOA")
-            logger.info("A股监控任务开始")
+            cls.logger.info("A股监控任务开始")
             await asyncio.wait_for(cls._monitor_stocks_impl(), timeout=600)
         except asyncio.TimeoutError:
             error_msg = "A股监控任务超时(3分钟)，已强制中断"
-            logger = logging.getLogger("AUTOA")
-            logger.error(error_msg)
+            cls.logger.error(error_msg)
             cls.send_msg(error_msg)
         except Exception as e:
             error_msg = f"A股监控任务异常: {str(e)}"
-            logger = logging.getLogger("AUTOA")
-            logger.error(error_msg)
-            logger.exception("A股监控任务发生异常")
+            cls.logger.error(error_msg)
+            cls.logger.exception("A股监控任务发生异常")
             cls.send_msg(error_msg)
 
     @classmethod
@@ -2423,7 +2430,7 @@ class AUTOA:
         try:
             # 筛选符合量能条件的股票
             filtered = await cls.filter_stocks()
-            self.logger.info(f"符合量能条件的股票：{filtered}")
+            cls.logger.info(f"符合量能条件的股票：{filtered}")
 
             # 如果有符合条件的股票，发送通知
             if filtered:
@@ -2457,8 +2464,8 @@ signal.signal(signal.SIGTERM, handle_exit_signal)
 # 配置根日志记录器
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()],
 )
 
 
@@ -2489,7 +2496,9 @@ async def main():
 
     # 初始化任务调度器，配置全局日志级别
     scheduler = AsyncIOScheduler()
-    logging.getLogger('apscheduler').setLevel(logging.WARNING)  # 减少调度器自身的日志输出
+    logging.getLogger("apscheduler").setLevel(
+        logging.WARNING
+    )  # 减少调度器自身的日志输出
 
     logger = logging.getLogger("AUTOA")
     logger.info("配置A股监控任务...")
