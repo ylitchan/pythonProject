@@ -1785,6 +1785,7 @@ class AUTOA:
     # 添加线程锁以保护 baostock 查询操作(baostock 不是线程安全的)
     _bs_lock = threading.Lock()
     logger = logging.getLogger("AUTOA")
+    logger.propagate = False  # 防止日志向上层传播导致重复
 
     # 退出处理函数,在脚本退出时保存A股数据
     @staticmethod
