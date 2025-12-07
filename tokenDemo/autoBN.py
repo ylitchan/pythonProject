@@ -174,6 +174,7 @@ class AUTOBN:
         # 初始化日志记录器
         obj.logger = logging.getLogger(f"AUTOBN.{id(obj)}")
         obj.logger.setLevel(logging.INFO)  # 默认级别
+        obj.logger.propagate = False  # 防止日志向上层传播导致重复
 
         # 如果没有处理器，则添加一个控制台处理器
         if not obj.logger.handlers:
