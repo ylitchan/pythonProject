@@ -1491,8 +1491,8 @@ class AUTOBN:
                             0.05,
                         ):
                             close_info = Position(
-                                take_profit=zs,  # 做空止损是上界
-                                stop_loss=zy,  # 做空止盈是下界
+                                take_profit=zy if is_long else zs,
+                                stop_loss=zs if is_long else zy,
                                 close_side=OrderSide.SELL if is_long else OrderSide.BUY,
                                 position_side=position_side,
                                 entry_price=current_price,
