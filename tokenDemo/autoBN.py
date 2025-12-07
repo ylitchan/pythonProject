@@ -1316,14 +1316,14 @@ class AUTOBN:
                     # 计算 Supertrend
                     supertrend_values, directions = self.calculate_trend(kline_15)
                     if close_info.position_side.value == PositionSide.LONG.value:
+                        # 做多: 计算当前止盈止损与当前价的距离
+                        take_profit_gap = close_info.take_profit - current_price
+
                         if directions and directions[-1] == -1:
                             close_info.stop_loss = supertrend_values[-1]
                         else:
-                            # 做多: 计算当前止盈止损与当前价的距离
-                            stop_loss_gap = current_price - close_info.stop_loss
-                            take_profit_gap = close_info.take_profit - current_price
-
                             # 止损上移(只能向有利方向移动,保护利润)
+                            stop_loss_gap = current_price - close_info.stop_loss
                             close_info.stop_loss = current_price - stop_loss_gap * (
                                 1 - self.STOP_LOSS_DECAY_PER_MINUTE
                             )
@@ -1333,18 +1333,18 @@ class AUTOBN:
                         )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
+                        # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
+                        take_profit_gap = (
+                            current_price - close_info.stop_loss
+                        )  # 止盈距离
+
                         if directions and directions[-1] == 1:
                             close_info.take_profit = supertrend_values[-1]
                         else:
-                            # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
+                            # 止损下移(只能向有利方向移动)
                             stop_loss_gap = (
                                 close_info.take_profit - current_price
                             )  # 止损距离
-                            take_profit_gap = (
-                                current_price - close_info.stop_loss
-                            )  # 止盈距离
-
-                            # 止损下移(只能向有利方向移动)
                             close_info.take_profit = current_price + stop_loss_gap * (
                                 1 - self.STOP_LOSS_DECAY_PER_MINUTE
                             )
