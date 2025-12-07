@@ -1449,12 +1449,16 @@ class AUTOBN:
                             should_open = True
                         should_observe = True
                         is_long = True
-                    elif (
-                        open_info.position_side.value == PositionSide.Supertrend.value
-                        and (
-                            open_side := await self.check_trend(
-                                semaphore, symbol, kline_15[:-1]
-                            )
+                    elif await self.check_bd(
+                        semaphore,
+                        symbol,
+                        PositionSide.LONG.value,
+                        kline_close,
+                        kline_volume,
+                        dtn,
+                    ) and (
+                        open_side := await self.check_trend(
+                            semaphore, symbol, kline_15[:-1]
                         )
                     ):
                         should_observe = True
@@ -1612,7 +1616,7 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.to_list()
         except Exception as e:
-            self.logger.exception("处理持仓信息时发生异常")
+            self.logger.exception(f"处理持仓信息时发生异常:{e}")
             return
 
     def get_symbols_info(self):
