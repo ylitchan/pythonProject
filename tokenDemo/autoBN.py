@@ -1464,6 +1464,7 @@ class AUTOBN:
                         should_observe = True
                         should_open = True
                         is_long = open_side == PositionSide.LONG.value
+                        open_info.position_side = PositionSide.Supertrend
                     if not should_observe:
                         return
                     if should_open:
