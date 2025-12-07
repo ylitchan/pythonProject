@@ -1775,6 +1775,17 @@ class AUTOA:
     # ==================== 时间常量 ====================
     TEN_DAY_SECONDS = 10 * 24 * 60 * 60  # 十天的秒数
 
+    # ==================== Supertrend Constants ====================
+    SUPERTREND_FACTOR = 3.0
+
+    # ==================== Trading Configuration ====================
+    TRADING_DAYS_LOOKBACK = 60
+    STOP_LOSS_DECAY = 0.01  # Dynamic stop loss decay rate per adjustment
+
+    # ==================== Market Timing ====================
+    MARKET_CLOSE_HOUR = 15
+    MARKET_CLOSE_MINUTE = 1
+
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "alert_all_A.json"
@@ -1831,19 +1842,23 @@ class AUTOA:
         return sum(tr_list[-period:]) / min(len(tr_list), period)
 
     @classmethod
-    def calculate_trend(cls, hist_data: pd.DataFrame, factor=3.0, atr_period=10):
+    def calculate_trend(cls, hist_data: pd.DataFrame, factor=None, atr_period=None):
         """
         计算 Supertrend 指标 (A股适配版)
 
         参数:
             hist_data: K线数据 DataFrame
-            factor: 因子，默认3.0
-            atr_period: ATR周期，默认10
+            factor: 因子，默认使用类常量 SUPERTREND_FACTOR
+            atr_period: ATR周期，默认使用类常量 ATR_PERIOD
 
         返回:
             (supertrend_values, directions): supertrend值列表和方向列表
             方向: -1 表示上升趋势, 1 表示下降趋势
         """
+        if factor is None:
+            factor = cls.SUPERTREND_FACTOR
+        if atr_period is None:
+            atr_period = cls.ATR_PERIOD
         if hist_data.empty or len(hist_data) < atr_period + 1:
             return [], [], []
 
@@ -1922,13 +1937,13 @@ class AUTOA:
             (signal, last_atr): 信号('LONG'/'SHORT'/0) 和 最后一个点的ATR值
         """
         try:
-            atr_period = 10
-            factor = 3.0
+            atr_period = cls.ATR_PERIOD
+            factor = cls.SUPERTREND_FACTOR
 
             # 如果未提供K线数据，则获取
             if kline_data is None:
                 if zt_dates is None:
-                    zt_dates = cls.get_last_trading_days(days=60)
+                    zt_dates = cls.get_last_trading_days(days=cls.TRADING_DAYS_LOOKBACK)
 
                 if not zt_dates:
                     return 0, 0.0
@@ -2122,20 +2137,23 @@ class AUTOA:
             cls.logger.error(f"消息发送异常: {str(e)}")
 
     @staticmethod
-    def get_last_trading_days(today=None, days=60):
+    def get_last_trading_days(today=None, days=None):
         """
         获取A股交易日历
 
         功能：从新浪财经获取A股交易日历，用于股票筛选
         参数：
             today: 指定日期，默认为当前日期
-            days: 获取最近交易日的天数，默认为60天
+            days: 获取最近交易日的天数，默认为 TRADING_DAYS_LOOKBACK
         返回：
             (start_date, end_date, zt_date): 起始日期、结束日期、涨停股查询日期列表
         """
         # 设置默认日期为今天
         if not today:
             today = datetime.datetime.today()
+
+        if days is None:
+            days = AUTOA.TRADING_DAYS_LOOKBACK
 
         try:
             # 从新浪财经获取交易日历
@@ -2352,13 +2370,13 @@ class AUTOA:
 
             # 重新计算一次 Supertrend 获取详细数据
             supertrend_values, directions, atr_values = cls.calculate_trend(
-                hist, factor=3.0, atr_period=10
+                hist, factor=cls.SUPERTREND_FACTOR, atr_period=cls.ATR_PERIOD
             )
 
             if supertrend_values and directions:
                 current_price = price_close
-                # 衰减系数 (参考 AUTOBN 的 STOP_LOSS_DECAY_PER_MINUTE)
-                DECAY = 0.01
+                # 衰减系数
+                DECAY = cls.STOP_LOSS_DECAY
 
                 # 计算当前止盈止损与当前价的距离
                 take_profit_gap = close_info[0] - current_price
@@ -2516,8 +2534,8 @@ class AUTOA:
         if (
             cls.zt_dates
             and today.strftime("%Y-%m-%d") not in cls.zt_dates
-            or today.hour >= 15
-            and today.minute >= 1
+            or today.hour >= cls.MARKET_CLOSE_HOUR
+            and today.minute >= cls.MARKET_CLOSE_MINUTE
         ):
             return []
         if not cls.zt_dates:
@@ -2525,7 +2543,7 @@ class AUTOA:
             if not cls.zt_dates:
                 return []
         selected = set()  # 存储符合条件的股票
-        if today.hour == 15:
+        if today.hour == cls.MARKET_CLOSE_HOUR:
             with open(cls.alert_all_file, "w", encoding="utf-8") as f:
                 json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
             zt_df = ak.stock_zt_pool_em(date=cls.zt_dates[0].replace("-", ""))
