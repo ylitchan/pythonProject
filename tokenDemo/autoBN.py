@@ -2446,6 +2446,9 @@ class AUTOA:
         if hist.empty:
             return
 
+        # 获取最新价格 (无论后续走哪个分支都需要用到)
+        price_close = float(hist.iloc[-1]["close"])
+
         # 复用计算：check_trend 现在返回 (信号, 最新ATR)
         # 传入完整 hist，指定 check_at_index=-2 (检查倒数第2个点，即昨天的翻转信号)
         trend_signal, current_atr = await cls.check_trend(
@@ -2457,8 +2460,6 @@ class AUTOA:
         else:
             # 条件1：价格突破关键阻力位（10日均价、昨收、今开）
             # ... (保持原有逻辑) ...
-            # 获取最新价格
-            price_close = float(hist.iloc[-1]["close"])
             # 计算关键价格阻力位
             resistance_price = max(
                 float(hist.iloc[-2]["close"]),  # 昨日收盘价
