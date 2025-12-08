@@ -2359,7 +2359,7 @@ class AUTOA:
             cls.alert_all["POSITIONS"].pop(code)
 
             # 发送平仓通知（仅BZ2策略需要通知）
-            if close_info[-1] == "BZ2":
+            if close_info[-1] != PositionSide.BZ1.value:
                 profit_rate = (
                     (price_close / close_info[4] - 1) if close_info[4] > 0 else 0
                 )
