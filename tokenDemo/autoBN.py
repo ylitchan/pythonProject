@@ -1450,22 +1450,17 @@ class AUTOBN:
                             should_open = True
                         should_observe = True
                         is_long = True
-                    elif await self.check_bd(
-                        semaphore,
-                        symbol,
-                        PositionSide.LONG.value,
-                        kline_close,
-                        kline_volume,
-                        dtn,
-                    ) and (
-                        open_side := await self.check_trend(
-                            semaphore, symbol, kline_15[:-1]
+                    elif (
+                        open_info.position_side.value == PositionSide.Supertrend.value
+                        and (
+                            open_side := await self.check_trend(
+                                semaphore, symbol, kline_15[:-1]
+                            )
                         )
                     ):
                         should_observe = True
                         should_open = True
                         is_long = open_side == PositionSide.LONG.value
-                        open_info.position_side = PositionSide.Supertrend
                     if not should_observe:
                         return
                     if should_open:
@@ -1500,7 +1495,6 @@ class AUTOBN:
                             self.alert_all["POSITIONS"][symbol] = close_info.to_list()
                     if open_info.position_side.value != PositionSide.Supertrend.value:
                         # 触发信号之后更新状态
-                        open_info.position_side = PositionSide.Supertrend
                         open_info.timestamp = current_timestamp
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
                     return
