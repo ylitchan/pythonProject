@@ -809,10 +809,10 @@ class AUTOBN:
                 # 检测趋势变化
                 # 从下降趋势转为上升趋势: prev_direction=1, curr_direction=-1
                 if prev_direction == 1 and curr_direction == -1:
-                    return PositionSide.LONG  # 做多信号
+                    return PositionSide.LONG.value  # 做多信号
                 # 从上升趋势转为下降趋势: prev_direction=-1, curr_direction=1
                 elif prev_direction == -1 and curr_direction == 1:
-                    return PositionSide.SHORT  # 做空信号
+                    return PositionSide.SHORT.value  # 做空信号
                 else:
                     # 趋势未变化,返回当前趋势方向
                     return 0
@@ -1515,7 +1515,11 @@ class AUTOBN:
                     ):
                         should_observe = True
                         should_open = True
-                        open_info.close_side = open_side
+                        open_info.close_side = (
+                            OrderSide.BUY
+                            if open_side == PositionSide.LONG.value
+                            else OrderSide.SELL
+                        )
                         open_info.position_side = PositionSide.Supertrend
                     if not should_observe:
                         return
