@@ -859,7 +859,7 @@ class AUTOBN:
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
                     period="1d",
-                    limit=self.KLINE_LIMIT,
+                    limit=self.LONG_SHORT_RATIO_LIMIT,
                 )
                 dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
                 if oi_1d[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
@@ -923,7 +923,7 @@ class AUTOBN:
                     self.um_futures_client.open_interest_hist,
                     symbol=symbol,
                     period="1d",
-                    limit=2,
+                    limit=self.LONG_SHORT_RATIO_LIMIT,
                 )
 
                 oi_5m, oi_1d = await asyncio.gather(oi_5m_task, oi_1d_task)
@@ -1589,12 +1589,9 @@ class AUTOBN:
                         close_info
                         and close_info.position_side == PositionSide.SHORT.value
                     ):
+                        atr_value = self.calculate_atr(kline)
                         self.close_bn_position(
-                            symbol,
-                            close_info.close_side.value,
-                            close_info.position_side,  # 已经是字符串，不需要 .value
-                            current_price,
-                            1,
+                            symbol, close_info, atr_value, current_price, 1, open_info
                         )
                     is_long = True
                     open_info = Observation(
@@ -1626,12 +1623,9 @@ class AUTOBN:
                         close_info
                         and close_info.position_side.value == PositionSide.LONG.value
                     ):
+                        atr_value = self.calculate_atr(kline)
                         self.close_bn_position(
-                            symbol,
-                            close_info.close_side.value,
-                            close_info.position_side.value,  # 已经是字符串，不需要 .value
-                            current_price,
-                            1,
+                            symbol, close_info, atr_value, current_price, 1, open_info
                         )
                     is_long = False
                     open_info = Observation(
