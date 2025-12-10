@@ -116,10 +116,11 @@ class CloseRecordManager:
     """
     全局平仓记录管理器
 
-    功能：将AUTOBN和AUTOA的平仓记录统一写入Excel文件
+    功能：将AUTOBN和AUTOA的平仓记录分别写入Excel的不同sheet
     特点：
         - 线程安全：使用锁保护写入操作
         - 自动创建：文件不存在时自动创建
+        - 分sheet存储：AUTOBN写入"币安期货"，AUTOA写入"A股"
         - 追加模式：每次平仓追加一行记录
     """
 
@@ -129,10 +130,15 @@ class CloseRecordManager:
     )
     _logger = logging.getLogger("CloseRecordManager")
 
+    # Sheet名称映射
+    SHEET_NAMES = {
+        "AUTOBN": "币安期货",
+        "AUTOA": "A股",
+    }
+
     # Excel列定义
     COLUMNS = [
         "平仓时间",
-        "交易来源",  # AUTOBN 或 AUTOA
         "交易品种",  # symbol 或 股票代码
         "持仓方向",  # LONG/SHORT
         "开仓价格",
@@ -171,16 +177,16 @@ class CloseRecordManager:
             realized_pnl: 平仓盈亏（USDT或CNY）
             pnl_percent: 平仓收益率
             close_ratio: 平仓比例（默认1.0表示全平）
-            strategy_tag: 策略标签（如'Supertrend'、'BZ1'等）
+            strategy_tag: 策略标签（如'Supertrend'、'BZ'等）
         """
         with cls._lock:
             try:
                 close_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                sheet_name = cls.SHEET_NAMES.get(source, source)
 
-                # 准备新记录
+                # 准备新记录（不再包含交易来源列，因为已经分sheet）
                 new_record = {
                     "平仓时间": close_time,
-                    "交易来源": source,
                     "交易品种": symbol,
                     "持仓方向": position_side,
                     "开仓价格": entry_price,
@@ -192,23 +198,37 @@ class CloseRecordManager:
                     "策略标签": strategy_tag,
                 }
 
-                # 读取现有数据或创建新的DataFrame
+                # 读取现有数据
+                existing_sheets = {}
                 if os.path.exists(cls._excel_file):
                     try:
-                        df = pd.read_excel(cls._excel_file, engine="openpyxl")
+                        # 读取所有现有sheet
+                        with pd.ExcelFile(cls._excel_file, engine="openpyxl") as xls:
+                            for name in xls.sheet_names:
+                                existing_sheets[name] = pd.read_excel(
+                                    xls, sheet_name=name
+                                )
                     except Exception:
-                        df = pd.DataFrame(columns=cls.COLUMNS)
+                        pass
+
+                # 获取或创建目标sheet的DataFrame
+                if sheet_name in existing_sheets:
+                    df = existing_sheets[sheet_name]
                 else:
                     df = pd.DataFrame(columns=cls.COLUMNS)
 
                 # 追加新记录
                 new_df = pd.DataFrame([new_record])
                 df = pd.concat([df, new_df], ignore_index=True)
+                existing_sheets[sheet_name] = df
 
-                # 写入Excel
-                df.to_excel(cls._excel_file, index=False, engine="openpyxl")
+                # 写入Excel（所有sheet）
+                with pd.ExcelWriter(cls._excel_file, engine="openpyxl") as writer:
+                    for name, data in existing_sheets.items():
+                        data.to_excel(writer, sheet_name=name, index=False)
+
                 cls._logger.info(
-                    f"平仓记录已保存: {source} {symbol} {position_side} "
+                    f"平仓记录已保存到[{sheet_name}]: {symbol} {position_side} "
                     f"盈亏:{realized_pnl:.4f} 收益率:{pnl_percent:.2%}"
                 )
 
