@@ -734,15 +734,20 @@ class AUTOBN:
                 if remaining_amount == 0 and symbol in self.alert_all["POSITIONS"]:
                     self.alert_all["POSITIONS"].pop(symbol)
                 elif atr_value > 0:
+                    is_long = positionSide == PositionSide.LONG.value
                     # 更新止盈止损并持久化到字典
                     new_tp, new_sl = self.calc_stop_profit_loss(
                         price_close,
-                        is_long=positionSide == PositionSide.LONG.value,
+                        is_long=is_long,
                         atr=atr_value,
                     )
                     if new_tp > 0 and new_sl > 0:
-                        close_info.take_profit = new_tp
-                        close_info.stop_loss = new_sl
+                        if is_long:
+                            close_info.take_profit = new_tp
+                            close_info.stop_loss = new_sl
+                        else:
+                            close_info.take_profit = new_sl
+                            close_info.stop_loss = new_tp
 
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
                 return symbol  # 成功平仓，退出循环
