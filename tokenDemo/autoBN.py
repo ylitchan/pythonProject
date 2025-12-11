@@ -1431,43 +1431,54 @@ class AUTOBN:
                     # 计算 Supertrend
                     supertrend_values, directions = self.calculate_trend(kline_15)
                     if close_info.position_side.value == PositionSide.LONG.value:
-                        # 做多: 计算当前止盈止损与当前价的距离
-                        take_profit_gap = close_info.take_profit - current_price
-
+                        # 做多: 基于入场价格计算初始距离，线性衰减
+                        initial_tp_gap = (
+                            close_info.take_profit - close_info.entry_price
+                        )  # 止盈到入场价的初始距离
+                        tp_decay_step = initial_tp_gap * self.STOP_LOSS_DECAY_PER_MINUTE
                         if directions and directions[-1] == -1:
                             close_info.stop_loss = supertrend_values[-1]
                         else:
-                            # 止损上移(只能向有利方向移动,保护利润)
-                            stop_loss_gap = current_price - close_info.stop_loss
-                            close_info.stop_loss = current_price - stop_loss_gap * (
-                                1 - self.STOP_LOSS_DECAY_PER_MINUTE
+                            # 止损上移(线性衰减,保护利润)
+                            initial_sl_gap = (
+                                close_info.entry_price - close_info.stop_loss
+                            )  # 入场价到止损的初始距离
+                            sl_decay_step = (
+                                initial_sl_gap * self.STOP_LOSS_DECAY_PER_MINUTE
                             )
-                        # 止盈下移(更容易触发止盈)
-                        close_info.take_profit = current_price + take_profit_gap * (
-                            1 - self.STOP_LOSS_DECAY_PER_MINUTE
+                            close_info.stop_loss = min(
+                                current_price, close_info.stop_loss + sl_decay_step
+                            )
+                        # 止盈下移(线性衰减,更容易触发止盈)
+                        close_info.take_profit = max(
+                            current_price, close_info.take_profit - tp_decay_step
                         )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
-                        take_profit_gap = (
-                            current_price - close_info.stop_loss
-                        )  # 止盈距离
-
+                        initial_tp_gap = (
+                            close_info.entry_price - close_info.stop_loss
+                        )  # 入场价到止盈的初始距离
+                        tp_decay_step = initial_tp_gap * self.STOP_LOSS_DECAY_PER_MINUTE
                         if directions and directions[-1] == 1:
                             close_info.take_profit = supertrend_values[-1]
                         else:
-                            # 止损下移(只能向有利方向移动)
-                            stop_loss_gap = (
-                                close_info.take_profit - current_price
-                            )  # 止损距离
-                            close_info.take_profit = current_price + stop_loss_gap * (
-                                1 - self.STOP_LOSS_DECAY_PER_MINUTE
+                            # 止损下移(线性衰减)
+                            initial_sl_gap = (
+                                close_info.take_profit - close_info.entry_price
+                            )  # 止损到入场价的初始距离
+                            sl_decay_step = (
+                                initial_sl_gap * self.STOP_LOSS_DECAY_PER_MINUTE
+                            )
+                            close_info.take_profit = max(
+                                current_price, close_info.take_profit - sl_decay_step
                             )
 
-                        # 止盈上移(更容易触发止盈)
-                        close_info.stop_loss = current_price - take_profit_gap * (
-                            1 - self.STOP_LOSS_DECAY_PER_MINUTE
+                        # 止盈上移(线性衰减,更容易触发止盈)
+                        close_info.stop_loss = min(
+                            current_price, close_info.stop_loss + tp_decay_step
                         )
+
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.to_list()
             elif open_info:
