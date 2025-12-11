@@ -795,7 +795,7 @@ class AUTOBN:
 
                 # 获取 4 小时 K 线数据(如果未提供)
                 if kline_data is None:
-                    kline_data = await self.get_kline(semaphore, symbol, "4h")
+                    kline_data = await self.get_kline(semaphore, symbol, "15m")
                     if len(kline_data) < atr_period + 1:  # 至少需要 ATR周期+1 根K线
                         return 0
 
