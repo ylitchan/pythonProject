@@ -287,7 +287,6 @@ class AUTOBN:
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
-    CHEBYSHEV_SIGNIFICANT_THRESHOLD = 0.25  # 显著异常阈值（25%），用于检测显著的异常
 
     @classmethod
     def from_cfg(cls, **kwargs):
@@ -1496,7 +1495,8 @@ class AUTOBN:
                         and kline_volume_15[-1]
                         > sum(kline_volume_15[:-2]) / len(kline_volume_15[:-2])
                         and self.calculate_chebyshev_probability(
-                            kline_volume_15[:-2], max(kline_volume_15[-2:])
+                            kline_volume_15[-self.ATR_PERIOD : -2],
+                            max(kline_volume_15[-2:]),
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                         and await self.check_oi(semaphore, symbol, open_info)
@@ -1507,7 +1507,9 @@ class AUTOBN:
                             > sum(kline_volume_15[: index - 1])
                             / len(kline_volume_15[: index - 1])
                             and self.calculate_chebyshev_probability(
-                                kline_volume_15[: index - 1],
+                                kline_volume_15[
+                                    index + 1 - self.ATR_PERIOD : index - 1
+                                ],
                                 max(kline_volume_15[index - 1 : index + 1]),
                             )["chebyshev_upper_bound"]
                             < self.CHEBYSHEV_EXTREME_THRESHOLD
@@ -1817,7 +1819,6 @@ class AUTOA:
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
-    CHEBYSHEV_SIGNIFICANT_THRESHOLD = 0.25  # 显著异常阈值（25%），用于检测显著的异常
 
     # ==================== 时间常量 ====================
     TEN_DAY_SECONDS = 10 * 24 * 60 * 60  # 十天的秒数
@@ -2509,6 +2510,20 @@ class AUTOA:
         if hist.empty:
             return
 
+        # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
+        hist_volume = hist["volume"].values
+        if len(hist_volume) >= 3:
+            # 计算最近两天最大成交量相对于历史成交量的切比雪夫概率
+            chebyshev_result = cls.calculate_chebyshev_probability(
+                hist_volume[-10:-2], max(hist_volume[-2:])
+            )
+            # 如果成交量不是极端异常值，则跳过（不满足放量条件）
+            if (
+                chebyshev_result["chebyshev_upper_bound"]
+                >= cls.CHEBYSHEV_EXTREME_THRESHOLD
+            ):
+                return
+
         # 复用计算：check_trend 现在返回 (信号, 最新ATR)
         # 传入完整 hist，指定 check_at_index=-2 (检查倒数第2个点，即昨天的翻转信号)
         trend_signal, current_atr = await cls.check_trend(
@@ -2602,23 +2617,13 @@ class AUTOA:
                     if hist.empty:
                         continue
                     price_close = hist.iloc[-1]["close"]
-
-                    # 使用ATR计算止盈止损
-                    atr = cls.calculate_atr(hist)
-                    if atr > 0:
-                        zy = price_close + (atr * cls.ATR_TAKE_PROFIT_MULTIPLIER)
-                        zs = price_close - (atr * cls.ATR_STOP_LOSS_MULTIPLIER)
-                        rate_show = (atr * cls.ATR_STOP_LOSS_MULTIPLIER) / price_close
-
-                        selected.add(
-                            f"==={code[1]}===\n价格:{price_close}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
-                        )
-                        cls.alert_all["OBSERVATIONS"][code[0]] = [
-                            price_close,
-                            today.timestamp(),
-                            code[1],  # 股票名称
-                            PositionSide.LONG.value,  # 观察方向（默认LONG）
-                        ]
+                    selected.add(f"{code[1]}")
+                    cls.alert_all["OBSERVATIONS"][code[0]] = [
+                        price_close,
+                        today.timestamp(),
+                        code[1],  # 股票名称
+                        PositionSide.LONG.value,  # 观察方向（默认LONG）
+                    ]
 
             cls.zt_dates.clear()
             cls.hist_cache.clear()
