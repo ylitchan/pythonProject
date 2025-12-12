@@ -278,7 +278,7 @@ class AUTOBN:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
-    ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
+    ATR_TAKE_PROFIT_MULTIPLIER = 0.5  # ATR止盈倍数 (盈亏比1:1)
     STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 止盈止损每分钟衰减比例(1%)
 
     # ==================== 缓存相关常量 ====================
