@@ -1,4 +1,4 @@
-# ==================== 标准库导入 ====================
+﻿# ==================== 标准库导入 ====================
 import asyncio
 import atexit
 import copy
@@ -12,7 +12,6 @@ import sys
 import threading
 import time
 from decimal import Decimal, ROUND_DOWN
-from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
 
@@ -23,6 +22,7 @@ import pandas as pd
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from binance.um_futures import UMFutures
+from pydantic import BaseModel
 
 # ==================== 类型定义 ====================
 
@@ -40,69 +40,49 @@ class OrderSide(str, Enum):
     SELL = "SELL"
 
 
-@dataclass
-class Position:
+class Position(BaseModel):
     """
-    持仓信息数据类
+    持仓信息数据类 (AUTOBN/AUTOA 通用)
 
-    数据结构对应：[止盈价, 止损价, 平仓方向, 持仓方向, 开仓均价]
+    字段：
+        take_profit: 止盈价
+        stop_loss: 止损价
+        close_side: 平仓方向 (BUY/SELL)
+        position_side: 持仓方向 (LONG/SHORT)
+        entry_price: 开仓均价
+        name: 品种名称 (AUTOBN: symbol, AUTOA: 股票名称)
+        date: 开仓日期 (YYYYMMDD 格式)
+        strategy: 策略标签列表 (BZ/BD/Supertrend)
     """
 
-    take_profit: float  # 止盈价 [0]
-    stop_loss: float  # 止损价 [1]
-    close_side: OrderSide  # 平仓方向 [2] (BUY/SELL)
-    position_side: PositionSide  # 持仓方向/策略标签 [3] (LONG/SHORT/BZ/BD/Supertrend)
-    entry_price: float = 0.0  # 开仓均价 [4]
-
-    def to_list(self) -> List:
-        """转换为列表格式（用于JSON存储兼容）"""
-        return [
-            self.take_profit,
-            self.stop_loss,
-            self.close_side.value,
-            self.position_side.value,  # 已经是字符串
-            self.entry_price,
-        ]
-
-    @classmethod
-    def from_list(cls, data: List):
-        """从列表创建对象"""
-        return cls(
-            take_profit=float(data[0]),
-            stop_loss=float(data[1]),
-            close_side=OrderSide(data[2]),
-            position_side=PositionSide(data[3]),
-            entry_price=float(data[4]) if len(data) > 4 else 0.0,
-        )
+    take_profit: float
+    stop_loss: float
+    close_side: OrderSide
+    position_side: PositionSide
+    entry_price: float
+    name: str
+    date: int
+    strategy: List[PositionSide]
 
 
-@dataclass
-class Observation:
+class Observation(BaseModel):
     """
-    观察列表信息数据类
+    观察列表信息数据类 (AUTOBN/AUTOA 通用)
 
     用途：记录待观察的交易机会
-    数据结构对应：[触发价格, 触发时间, 信号方向, 关联信息]
+    字段：
+        price: 触发价格
+        timestamp: 触发时间（Unix时间戳）
+        side: 信号方向 (BUY/SELL)
+        strategy: 策略标签列表 (LONG/SHORT/BZ/BD/Supertrend)
+        name: 品种名称 (AUTOBN: symbol, AUTOA: 股票名称)
     """
 
-    price: float  # 触发价格 [0]
-    timestamp: float  # 触发时间（Unix时间戳）[1]
-    side: OrderSide  # 信号方向 [2] (BUY/SELL)
-    position_side: PositionSide  # [3] 关联信息：持仓方向(LONG/SHORT)、策略标签(BZ/BD/Supertrend)或空字符串
-
-    def to_list(self) -> List:
-        """转换为列表格式"""
-        return [self.price, self.timestamp, self.side.value, self.position_side.value]
-
-    @classmethod
-    def from_list(cls, data: List):
-        """从列表创建对象"""
-        return cls(
-            price=float(data[0]),
-            timestamp=float(data[1]),
-            side=OrderSide(data[2]),
-            position_side=PositionSide(data[3]),
-        )
+    price: float
+    timestamp: float
+    side: OrderSide
+    strategy: List[PositionSide]
+    name: str
 
 
 # HTTP 会话配置（可覆盖）
@@ -431,8 +411,6 @@ class AUTOBN:
             None
         """
         try:
-            # 记录发送时间，便于调试和追踪
-            current_time = datetime.datetime.now()
             self.logger.info(f"发送消息: {msg}")
 
             if wx:
@@ -630,7 +608,7 @@ class AUTOBN:
             )
             # 发送成功通知
             # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
-            msg = f"{symbol} 开仓\n策略:{open_info.position_side.value}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT"
+            msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT"
             self.send_msg(msg)
             return account_data
         except Exception as e:
@@ -647,7 +625,6 @@ class AUTOBN:
         atr_value,
         price_close,
         close_ratio=1.0,
-        open_info=None,
     ):
         """
         在币安期货市场平仓
@@ -655,11 +632,10 @@ class AUTOBN:
         功能：执行平仓操作，支持重试机制确保成功，成功后记录到Excel
         参数：
             symbol: 交易对符号，如'BTCUSDT'
-            close_info: Position对象，包含止盈止损、平仓方向、持仓方向等信息
+            close_info: Position对象，包含止盈止损、平仓方向、持仓方向、策略标签等信息
             atr_value: ATR值，用于部分平仓后重新计算止盈止损，为0时不更新
             price_close: 当前价格（用于通知和盈亏计算）
             close_ratio: 平仓比例，1.0表示全部平仓，0.5表示平仓50%
-            open_info: Observation对象，包含策略信息（用于消息通知和策略标签）
         返回：
             成功返回symbol，失败返回None
         """
@@ -706,11 +682,7 @@ class AUTOBN:
                 )
                 realized_pnl = price_diff * close_amount
                 pnl_percent = price_diff / entryPrice if entryPrice != 0 else 0
-                strategy_tag = (
-                    open_info.position_side.value
-                    if hasattr(open_info, "position_side")
-                    else positionSide
-                )
+                strategy_tag = ",".join([ps.value for ps in close_info.strategy])
                 msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}"
                 self.send_msg(msg)
 
@@ -748,7 +720,7 @@ class AUTOBN:
                             close_info.take_profit = new_sl
                             close_info.stop_loss = new_tp
 
-                    self.alert_all["POSITIONS"][symbol] = close_info.to_list()
+                    self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                 return symbol  # 成功平仓，退出循环
             except Exception as e:
                 # 平仓失败，等待后重试
@@ -905,13 +877,13 @@ class AUTOBN:
                 lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
                 # 做多：要求多空比小于阈值（逆势做多）
                 if (
-                    open_info.position_side == PositionSide.LONG
+                    open_info.strategy == PositionSide.LONG
                     and lsrd >= self.long_short_ratio_long_threshold
                 ):
                     return False
                 # 做空：要求多空比大于阈值（逆势做空）
                 elif (
-                    open_info.position_side == PositionSide.SHORT
+                    open_info.strategy == PositionSide.SHORT
                     and lsrd <= self.long_short_ratio_short_threshold
                 ):
                     return False
@@ -946,13 +918,13 @@ class AUTOBN:
                     float(i["sumOpenInterest"]) for i in oi_1d
                 ]  # 持仓数量（合约数）
 
-                if open_info.position_side == PositionSide.LONG and (
+                if open_info.strategy == PositionSide.LONG and (
                     sumOpenInterest_5m[-1] <= min(sumOpenInterest_1d[-2:])
                     or sumOpenInterestValue_5m[-1] <= min(sumOpenInterestValue_1d[-2:])
                 ):
                     return False
                 elif (
-                    open_info.position_side == PositionSide.SHORT
+                    open_info.strategy == PositionSide.SHORT
                     and sumOpenInterest_5m[-1] >= sumOpenInterest_1d[-1]
                 ):
                     return False
@@ -1333,10 +1305,10 @@ class AUTOBN:
             open_info_list = self.alert_all["OBSERVATIONS"].get(symbol)
 
             close_info: Optional[Position] = (
-                Position.from_list(close_info_list) if close_info_list else None
+                Position.model_validate(close_info_list) if close_info_list else None
             )
             open_info: Optional[Observation] = (
-                Observation.from_list(open_info_list) if open_info_list else None
+                Observation.model_validate(open_info_list) if open_info_list else None
             )
 
             # 获取日K线数据（30天）
@@ -1395,11 +1367,12 @@ class AUTOBN:
                         price=current_price,
                         timestamp=current_timestamp,
                         side=order_side,
-                        position_side=position_side,
+                        strategy=[position_side],
+                        name=symbol,
                     )
                     # 更新到字典
-                    self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
-                    self.alert_all["POSITIONS"][symbol] = close_info.to_list()
+                    self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
+                    self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                     self.logger.info(
                         f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}"
                     )
@@ -1479,17 +1452,15 @@ class AUTOBN:
                         )
 
                     # 更新回字典
-                    self.alert_all["POSITIONS"][symbol] = close_info.to_list()
+                    self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             elif open_info:
                 if current_timestamp - open_info.timestamp > self.TEN_DAY_SECONDS:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
-                    should_observe = False
-                    should_open = False
                     await get_kline_15_data()
-
+                    open_info.strategy.clear()
                     if (
-                        open_info.position_side.value == PositionSide.LONG.value
+                        PositionSide.LONG in open_info.strategy
                         and open_info.price < kline_close_15[-1]
                         and max(kline_close_15[:-1]) < kline_close_15[-1]
                         and kline_volume_15[-1]
@@ -1501,47 +1472,28 @@ class AUTOBN:
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                         and await self.check_oi(semaphore, symbol, open_info)
                     ):
-                        if not any(
-                            kline_close_15[index] > max(kline_close_15[:index])
-                            and kline_volume_15[index]
-                            > sum(kline_volume_15[: index - 1])
-                            / len(kline_volume_15[: index - 1])
-                            and self.calculate_chebyshev_probability(
-                                kline_volume_15[
-                                    index + 1 - self.ATR_PERIOD : index - 1
-                                ],
-                                max(kline_volume_15[index - 1 : index + 1]),
-                            )["chebyshev_upper_bound"]
-                            < self.CHEBYSHEV_EXTREME_THRESHOLD
-                            for index in range(-3, -self.ATR_PERIOD, -1)
-                        ):
-                            should_open = True
-                        should_observe = True
                         open_info.close_side = OrderSide.BUY
-                        open_info.position_side = PositionSide.BZ
+                        # 重置策略列表：保留方向 + 添加触发策略
+                        open_info.strategy.append(PositionSide.BZ)
                     elif (
-                        open_info.position_side.value == PositionSide.SHORT.value
+                        PositionSide.SHORT in open_info.strategy
                         and current_price < kline_close[-2]
                         and await self.check_oi(semaphore, symbol, open_info)
                     ):
-                        should_open = True
-                        should_observe = True
                         open_info.close_side = OrderSide.SELL
-                        open_info.position_side = PositionSide.BD
-                    elif open_side := await self.check_trend(
+                        # 重置策略列表：保留方向 + 添加触发策略
+                        open_info.strategy.append(PositionSide.BD)
+                    if open_side := await self.check_trend(
                         semaphore, symbol, kline_15[:-1]
                     ):
-                        should_observe = True
-                        should_open = True
                         open_info.close_side = (
                             OrderSide.BUY
                             if open_side == PositionSide.LONG.value
                             else OrderSide.SELL
                         )
-                        open_info.position_side = PositionSide.Supertrend
-                    if not should_observe:
-                        return
-                    if should_open:
+                        # 重置策略列表：设置方向 + 添加触发策略
+                        open_info.strategy.append(PositionSide.Supertrend)
+                    if open_info.strategy:
                         atr_value = self.calculate_atr(kline)
                         is_long = open_info.close_side.value == OrderSide.BUY.value
                         zy, zs = self.calc_stop_profit_loss(
@@ -1553,7 +1505,7 @@ class AUTOBN:
                             atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
                         )
                         self.send_msg(
-                            f"==={symbol}**{open_info.position_side.value}**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                            f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                         )
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
@@ -1571,13 +1523,20 @@ class AUTOBN:
                                 close_side=OrderSide.SELL if is_long else OrderSide.BUY,
                                 position_side=position_side,
                                 entry_price=current_price,
+                                name=symbol,
+                                date=int(dtn.strftime("%Y%m%d")),
+                                strategy=open_info.strategy,
                             )
-                            self.alert_all["POSITIONS"][symbol] = close_info.to_list()
-                    if open_info.position_side.value != PositionSide.Supertrend.value:
-                        # 触发BZ信号之后更新状态
-                        open_info.timestamp = current_timestamp
-                    self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
-                    return
+                            self.alert_all["POSITIONS"][symbol] = (
+                                close_info.model_dump()
+                            )
+                        if (
+                            PositionSide.BZ in open_info.strategy
+                            or PositionSide.BD in open_info.strategy
+                        ):
+                            # 触发BZ/BD信号之后更新时间戳
+                            open_info.timestamp = current_timestamp
+                        self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
             else:
                 # 做多信号判断
@@ -1587,7 +1546,7 @@ class AUTOBN:
                         or (
                             # 检查是否已有空头持仓
                             symbol not in self.alert_all["POSITIONS"]
-                            or Position.from_list(
+                            or Position.model_validate(
                                 self.alert_all["POSITIONS"][symbol]
                             ).position_side
                             != PositionSide.LONG.value
@@ -1616,7 +1575,8 @@ class AUTOBN:
                         price=current_price,
                         timestamp=current_timestamp,
                         side=OrderSide.BUY,
-                        position_side=PositionSide.LONG,
+                        strategy=[PositionSide.LONG],
+                        name=symbol,
                     )
 
                 # 做空信号判断
@@ -1624,7 +1584,7 @@ class AUTOBN:
                     self.is_early_morning
                     or (
                         symbol not in self.alert_all["POSITIONS"]
-                        or Position.from_list(
+                        or Position.model_validate(
                             self.alert_all["POSITIONS"][symbol]
                         ).position_side
                         != PositionSide.SHORT.value
@@ -1650,7 +1610,8 @@ class AUTOBN:
                         price=current_price,
                         timestamp=current_timestamp,
                         side=OrderSide.SELL,
-                        position_side=PositionSide.SHORT,
+                        strategy=[PositionSide.SHORT],
+                        name=symbol,
                     )
                 if open_info:
                     atr_value = self.calculate_atr(kline)
@@ -1663,9 +1624,9 @@ class AUTOBN:
                         atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
                     )
                     self.send_msg(
-                        f"==={symbol}**{open_info.position_side.value}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                        f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                     )
-                    self.alert_all["OBSERVATIONS"][symbol] = open_info.to_list()
+                    self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
         except Exception as e:
             self.logger.exception("处理持仓信息时发生异常")
             return
@@ -1719,8 +1680,11 @@ class AUTOBN:
                         close_side=OrderSide.SELL,
                         position_side=PositionSide.LONG,
                         entry_price=entryPrice,
+                        name=p["symbol"],
+                        date=int(datetime.datetime.now().strftime("%Y%m%d")),
+                        strategy=[PositionSide.LONG],
                     )
-                    self.alert_all["POSITIONS"][p["symbol"]] = close_info.to_list()
+                    self.alert_all["POSITIONS"][p["symbol"]] = close_info.model_dump()
                 else:
                     close_info = Position(
                         take_profit=0,  # 标记:需要ATR更新
@@ -1728,16 +1692,19 @@ class AUTOBN:
                         close_side=OrderSide.BUY,
                         position_side=PositionSide.SHORT,
                         entry_price=entryPrice,
+                        name=p["symbol"],
+                        date=int(datetime.datetime.now().strftime("%Y%m%d")),
+                        strategy=[PositionSide.SHORT],
                     )
-                    self.alert_all["POSITIONS"][p["symbol"]] = close_info.to_list()
+                    self.alert_all["POSITIONS"][p["symbol"]] = close_info.model_dump()
             else:
                 # 更新现有持仓的开仓价格
                 # 先转换为对象，更新属性，再转换回列表
                 current_pos_list = self.alert_all["POSITIONS"][p["symbol"]]
                 # 兼容旧数据：如果列表长度小于5，说明缺少entry_price，from_list会自动处理
-                pos_obj = Position.from_list(current_pos_list)
+                pos_obj = Position.model_validate(current_pos_list)
                 pos_obj.entry_price = entryPrice
-                self.alert_all["POSITIONS"][p["symbol"]] = pos_obj.to_list()
+                self.alert_all["POSITIONS"][p["symbol"]] = pos_obj.model_dump()
 
         return "\n\n".join(positions_data) if positions_data else "暂无持仓"
 
@@ -2357,7 +2324,7 @@ class AUTOA:
             return pd.DataFrame()
 
     @classmethod
-    async def on_positions(cls, code, zt_dates, close_info, today):
+    async def on_positions(cls, code, zt_dates, close_info_dict, today):
         """
         处理持仓列表中的股票，检测平仓信号
 
@@ -2370,10 +2337,11 @@ class AUTOA:
         参数：
             code: 股票代码（如'000001'）
             zt_dates: 交易日期列表
-            close_info: 持仓记录 [止盈, 止损, 股票名称, 日期, 开仓价格, 策略标签]
+            close_info_dict: 持仓记录字典 (Pydantic Position.model_dump())
             today: 当前日期时间
         """
-        if int(today.strftime("%Y%m%d")) <= close_info[3]:
+        close_info = Position.model_validate(close_info_dict)
+        if int(today.strftime("%Y%m%d")) <= close_info.date:
             return
         # 获取股票历史数据（前复权）
         hist = await cls.stock_zh_a_hist(
@@ -2393,30 +2361,27 @@ class AUTOA:
         price_close = float(hist.iloc[-1]["close"])
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
-        if price_close <= close_info[1] or price_close >= close_info[0]:
+        if price_close <= close_info.stop_loss or price_close >= close_info.take_profit:
             # 将股票移至观察列表（记录平仓价格和时间）
-            cls.alert_all["OBSERVATIONS"][code] = [
-                price_close,
-                today.timestamp(),
-                close_info[2],  # 股票名称
-                "LONG",  # 观察方向（默认LONG）
-            ]
+            cls.alert_all["OBSERVATIONS"][code] = Observation(
+                price=price_close,
+                timestamp=today.timestamp(),
+                side=OrderSide.BUY,
+                strategy=[PositionSide.LONG],
+                name=close_info.name,
+            ).model_dump()
 
             # 从持仓列表移除
             cls.alert_all["POSITIONS"].pop(code)
 
-            # 发送平仓通知（非BZ策略会发送通知）
-            # 计算平仓收益
+            # 发送平仓通知
             entry_price = (
-                close_info[4]
-                if len(close_info) > 4 and close_info[4] > 0
-                else price_close
+                close_info.entry_price if close_info.entry_price > 0 else price_close
             )
             profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
-            realized_pnl = (
-                price_close - entry_price
-            ) * 100  # 假设持仓100股，用于展示盈亏金额
-            msg = f"{close_info[2]} 平仓\n策略:{close_info[-1]}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}"
+            realized_pnl = (price_close - entry_price) * 100  # 假设持仓100股
+            strategy_tag = ",".join([ps.value for ps in close_info.strategy])
+            msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}"
             cls.send_msg(msg)
 
             # 记录平仓到Excel
@@ -2426,48 +2391,36 @@ class AUTOA:
                 position_side="LONG",  # A股默认做多
                 entry_price=entry_price,
                 close_price=price_close,
-                close_amount=100,  # A股持仓数量未记录，使用默认值
+                close_amount=100,
                 realized_pnl=realized_pnl,
                 pnl_percent=profit_rate,
-                close_ratio=1.0,  # A股全量平仓
-                strategy_tag=close_info[-1] if len(close_info) > 5 else "",
+                close_ratio=1.0,
+                strategy_tag=strategy_tag,
             )
         else:
             # 未触及止盈止损，执行移动止损逻辑
-
-            # 重新计算一次 Supertrend 获取详细数据
             supertrend_values, directions, atr_values = cls.calculate_trend(
                 hist, factor=cls.SUPERTREND_FACTOR, atr_period=cls.ATR_PERIOD
             )
 
             if supertrend_values and directions:
                 current_price = price_close
-                # 衰减系数
                 DECAY = cls.STOP_LOSS_DECAY
-
-                # 计算当前止盈止损与当前价的距离
-                take_profit_gap = close_info[0] - current_price
+                take_profit_gap = close_info.take_profit - current_price
 
                 if directions[-1] == -1:  # Up trend
-                    # 上升趋势 (Supertrend在下方) -> 止损设为 Supertrend Lower Band
-                    close_info[1] = supertrend_values[-1]
+                    close_info.stop_loss = supertrend_values[-1]
                 else:  # Down trend
-                    # 趋势由多转空或维持空：止损上移(只能向有利方向移动,保护利润)
-                    stop_loss_gap = current_price - close_info[1]
-                    # 注意：如果当前触发了 update，说明 current_price > close_info[1] (否则在上面已经平仓了)
-                    # 所以 stop_loss_gap > 0.
-                    # decay 使得 stop_loss_gap 变小 -> (price - smaller_gap) 变大 -> SL 上移
+                    stop_loss_gap = current_price - close_info.stop_loss
                     new_sl = current_price - stop_loss_gap * (1 - DECAY)
-                    # 确保止损只上不下
-                    if new_sl > close_info[1]:
-                        close_info[1] = new_sl
+                    if new_sl > close_info.stop_loss:
+                        close_info.stop_loss = new_sl
 
-                # 止盈下移(更容易触发止盈)
-                # decay 使得 take_profit_gap 变小 -> (price + smaller_gap) 变小 -> TP 下移
-                close_info[0] = current_price + take_profit_gap * (1 - DECAY)
+                close_info.take_profit = current_price + take_profit_gap * (1 - DECAY)
+                cls.alert_all["POSITIONS"][code] = close_info.model_dump()
 
     @classmethod
-    async def on_observations(cls, code, zt_dates, open_info, today):
+    async def on_observations(cls, code, zt_dates, open_info_dict, today):
         """
         处理观察列表中的股票，检测买入信号
 
@@ -2482,10 +2435,11 @@ class AUTOA:
         参数：
             code: 股票代码（如'000001'）
             zt_dates: 交易日期列表
-            open_info: 观察记录 [价格, 时间戳, 股票名称, 仓位方向]
+            open_info_dict: 观察记录字典 (Pydantic Observation.model_dump())
             today: 当前日期时间
         """
-        if today.timestamp() - open_info[1] > cls.TEN_DAY_SECONDS:
+        open_info = Observation.model_validate(open_info_dict)
+        if today.timestamp() - open_info.timestamp > cls.TEN_DAY_SECONDS:
             cls.alert_all["OBSERVATIONS"].pop(code)
             return
         if (
@@ -2493,7 +2447,7 @@ class AUTOA:
                 today.timestamp(), datetime.timezone.utc
             ).date()
             == datetime.datetime.fromtimestamp(
-                open_info[1], datetime.timezone.utc
+                open_info.timestamp, datetime.timezone.utc
             ).date()
         ):
             return
@@ -2506,8 +2460,8 @@ class AUTOA:
             frequency="d",
             adjustflag="3",  # 前复权
         )
-        # 数据校验：无历史数据则跳过
-        if hist.empty:
+        # 数据校验：无历史数据则跳过，或当前价格不高于昨日最高价则跳过
+        if hist.empty or float(hist.iloc[-1]["close"]) <= float(hist.iloc[-2]["high"]):
             return
 
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
@@ -2531,10 +2485,8 @@ class AUTOA:
         )
 
         if trend_signal == PositionSide.LONG.value:
-            position_side = PositionSide.Supertrend.value
             # 1. 使用 calculate_trend 复用的 ATR
             atr = current_atr
-            # 如果 atr 为 0 (可能异常)，则兜底计算一次，虽然 check_trend 应该已经计算过
             if atr <= 0:
                 atr = cls.calculate_atr(hist)
             price_close = float(hist.iloc[-1]["close"])
@@ -2549,21 +2501,23 @@ class AUTOA:
                 stop_loss = price_close - stop_loss_dist
 
                 # 4. 记录到持仓列表
-                cls.alert_all["POSITIONS"][code] = [
-                    take_profit,
-                    stop_loss,
-                    open_info[2],  # 股票名称
-                    int(today.strftime("%Y%m%d")),  # 买入日期
-                    price_close,
-                    position_side,
-                ]
+                cls.alert_all["POSITIONS"][code] = Position(
+                    take_profit=take_profit,
+                    stop_loss=stop_loss,
+                    close_side=OrderSide.SELL,
+                    position_side=PositionSide.LONG,
+                    entry_price=price_close,
+                    name=open_info.name,
+                    date=int(today.strftime("%Y%m%d")),
+                    strategy=[PositionSide.Supertrend],
+                ).model_dump()
 
                 # 5. 从观察列表移除
                 cls.alert_all["OBSERVATIONS"].pop(code)
 
                 # 6. 发送买入通知
                 msg = (
-                    f"==={open_info[2]}**{position_side}**===\n"
+                    f"==={open_info.name}**Supertrend**===\n"
                     f"价格:{price_close:.2f}\n"
                     f"止盈:{take_profit:.2f}\n"
                     f"止损:{stop_loss:.2f}\n"
@@ -2618,12 +2572,13 @@ class AUTOA:
                         continue
                     price_close = hist.iloc[-1]["close"]
                     selected.add(f"{code[1]}")
-                    cls.alert_all["OBSERVATIONS"][code[0]] = [
-                        price_close,
-                        today.timestamp(),
-                        code[1],  # 股票名称
-                        PositionSide.LONG.value,  # 观察方向（默认LONG）
-                    ]
+                    cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
+                        price=float(price_close),
+                        timestamp=today.timestamp(),
+                        side=OrderSide.BUY,
+                        strategy=[PositionSide.LONG],
+                        name=code[1],  # 股票名称
+                    ).model_dump()
 
             cls.zt_dates.clear()
             cls.hist_cache.clear()
