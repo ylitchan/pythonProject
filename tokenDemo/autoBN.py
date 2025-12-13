@@ -1301,14 +1301,14 @@ class AUTOBN:
         """
         try:
             # 获取原始数据并转换为对象
-            close_info_list = self.alert_all["POSITIONS"].get(symbol)
-            open_info_list = self.alert_all["OBSERVATIONS"].get(symbol)
+            close_info_dict = self.alert_all["POSITIONS"].get(symbol)
+            open_info_dict = self.alert_all["OBSERVATIONS"].get(symbol)
 
             close_info: Optional[Position] = (
-                Position.model_validate(close_info_list) if close_info_list else None
+                Position.model_validate(close_info_dict) if close_info_dict else None
             )
             open_info: Optional[Observation] = (
-                Observation.model_validate(open_info_list) if open_info_list else None
+                Observation.model_validate(open_info_dict) if open_info_dict else None
             )
 
             # 获取日K线数据（30天）
@@ -1458,13 +1458,14 @@ class AUTOBN:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
                     await get_kline_15_data()
-                    open_info.strategy.clear()
+                    should_open = False
                     if (
                         PositionSide.LONG in open_info.strategy
-                        and open_info.price < kline_close_15[-1]
-                        and max(kline_close_15[:-1]) < kline_close_15[-1]
-                        and kline_volume_15[-1]
-                        > sum(kline_volume_15[:-2]) / len(kline_volume_15[:-2])
+                        and max(kline_close_15[-self.ATR_PERIOD : -1])
+                        < kline_close_15[-1]
+                        and max(kline_volume_15[-2:])
+                        > sum(kline_volume_15[-self.ATR_PERIOD : -2])
+                        / len(kline_volume_15[-self.ATR_PERIOD : -2])
                         and self.calculate_chebyshev_probability(
                             kline_volume_15[-self.ATR_PERIOD : -2],
                             max(kline_volume_15[-2:]),
@@ -1474,7 +1475,9 @@ class AUTOBN:
                     ):
                         open_info.close_side = OrderSide.BUY
                         # 重置策略列表：保留方向 + 添加触发策略
+                        open_info.strategy.clear()
                         open_info.strategy.append(PositionSide.BZ)
+                        should_open = True
                     elif (
                         PositionSide.SHORT in open_info.strategy
                         and current_price < kline_close[-2]
@@ -1482,7 +1485,9 @@ class AUTOBN:
                     ):
                         open_info.close_side = OrderSide.SELL
                         # 重置策略列表：保留方向 + 添加触发策略
+                        open_info.strategy.clear()
                         open_info.strategy.append(PositionSide.BD)
+                        should_open = True
                     if open_side := await self.check_trend(
                         semaphore, symbol, kline_15[:-1]
                     ):
@@ -1492,8 +1497,10 @@ class AUTOBN:
                             else OrderSide.SELL
                         )
                         # 重置策略列表：设置方向 + 添加触发策略
+                        if not should_open:
+                            open_info.strategy.clear()
                         open_info.strategy.append(PositionSide.Supertrend)
-                    if open_info.strategy:
+                    if should_open:
                         atr_value = self.calculate_atr(kline)
                         is_long = open_info.close_side.value == OrderSide.BUY.value
                         zy, zs = self.calc_stop_profit_loss(
