@@ -221,19 +221,18 @@ class AUTOBN:
     """币安期货自动交易类"""
 
     # ==================== 交易参数常量 ====================
-    DEFAULT_CLOSE_RATIO = 0.5  # 默认平仓比例
     DEFAULT_OPEN_RATIO = 0.1  # 默认开仓比例
-    MAX_BALANCE_USAGE = 0.7  # 最大资金使用比例
-    DEFAULT_LEVERAGE = 1  # 默认杠杆倍数
-    MIN_NOTIONAL = 6  # 最小交易额（USDT）
-
-    # ==================== 风控参数常量 ====================
-    DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值
-    MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率（0.4%）
 
     # ==================== 并发控制常量 ====================
     MAX_CONCURRENT_REQUESTS = 10  # 最大并发请求数
-    CHUNK_SIZE = 10  # 批处理大小
+
+    # ==================== 时间常量 ====================
+    TEN_DAY_SECONDS = 96 * 15 * 60  # 96个15分钟周期的秒数（约24小时）
+    RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
+    CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
+
+    # ==================== K线相关常量 ====================
+    KLINE_LIMIT = 96  # K线数据条数
 
     # ==================== 基差监控常量 ====================
     BASIS_WARNING_THRESHOLD = 1.02  # 基差警告阈值（2%）
@@ -241,29 +240,13 @@ class AUTOBN:
     BASIS_WARNING_COOLDOWN = 60  # 基差警告冷却时间（秒）
     BASIS_ALERT_COOLDOWN = 180  # 基差异常冷却时间（秒）
 
-    # ==================== 多空比阈值常量 ====================
-    LONG_SHORT_RATIO_LONG_THRESHOLD = 4 / 6  # 做多阈值（逆势逻辑：lsrd < 阈值时做多）
-    LONG_SHORT_RATIO_SHORT_THRESHOLD = 4 / 6  # 做空阈值（逆势逻辑：lsrd > 阈值时做空）
-
-    # ==================== 时间常量 ====================
-    ONE_DAY_SECONDS = 24 * 60 * 60  # 一天的秒数
-    TEN_DAY_SECONDS = 96 * 15 * 60  # 96个15分钟周期的秒数（2.5小时）
-    RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
-    CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
-
-    # ==================== K线相关常量 ====================
-    KLINE_LIMIT = 96  # K线数据条数
-    MIN_KLINE_FOR_ANALYSIS = 4  # 分析所需最小K线数量
+    # ==================== 多空比相关常量 ====================
+    LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
     ATR_TAKE_PROFIT_MULTIPLIER = 0.5  # ATR止盈倍数 (盈亏比1:1)
-    STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 止盈止损每分钟衰减比例(1%)
-
-    # ==================== 缓存相关常量 ====================
-    LONG_SHORT_RATIO_CACHE_TTL = 300  # 多空比缓存过期时间（秒），与5分钟周期匹配
-    LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -1521,7 +1504,7 @@ class AUTOBN:
                             symbol,
                             OrderSide.BUY.value if is_long else OrderSide.SELL.value,
                             position_side.value,
-                            0.1,
+                            self.DEFAULT_OPEN_RATIO,
                             open_info,
                         ):
                             close_info = Position(
@@ -1802,11 +1785,6 @@ class AUTOA:
 
     # ==================== Trading Configuration ====================
     TRADING_DAYS_LOOKBACK = 60
-    STOP_LOSS_DECAY = 0.01  # Dynamic stop loss decay rate per adjustment
-
-    # ==================== Market Timing ====================
-    MARKET_CLOSE_HOUR = 15
-    MARKET_CLOSE_MINUTE = 1
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = os.path.join(
@@ -2476,7 +2454,7 @@ class AUTOA:
         if len(hist_volume) >= 3:
             # 计算最近两天最大成交量相对于历史成交量的切比雪夫概率
             chebyshev_result = cls.calculate_chebyshev_probability(
-                hist_volume[-10:-2], max(hist_volume[-2:])
+                hist_volume[-cls.ATR_PERIOD : -2], max(hist_volume[-2:])
             )
             # 如果成交量不是极端异常值，则跳过（不满足放量条件）
             if (
