@@ -1360,26 +1360,28 @@ class AUTOBN:
                         f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}"
                     )
 
-                if current_price <= close_info.stop_loss:  # 触及止损
-                    if close_info.position_side.value == PositionSide.SHORT.value:
-                        self.close_bn_position(
-                            symbol, close_info, atr_value, current_price, 0.5, open_info
-                        )
+                # 根据持仓方向判断止盈止损触发
+                # 多头: take_profit=高价, stop_loss=低价
+                # 空头: take_profit=低价, stop_loss=高价
+                is_long = close_info.position_side.value == PositionSide.LONG.value
 
-                    else:
-                        self.close_bn_position(
-                            symbol, close_info, atr_value, current_price, 1, open_info
-                        )
+                # 止损触发条件
+                sl_triggered = (is_long and current_price <= close_info.stop_loss) or (
+                    not is_long and current_price >= close_info.stop_loss
+                )
+                # 止盈触发条件
+                tp_triggered = (
+                    is_long and current_price >= close_info.take_profit
+                ) or (not is_long and current_price <= close_info.take_profit)
 
-                elif current_price >= close_info.take_profit:  # 触及止盈
-                    if close_info.position_side.value == PositionSide.LONG.value:
-                        self.close_bn_position(
-                            symbol, close_info, atr_value, current_price, 0.5, open_info
-                        )
-                    else:
-                        self.close_bn_position(
-                            symbol, close_info, atr_value, current_price, 1, open_info
-                        )
+                if sl_triggered:  # 触及止损 - 全仓平仓
+                    self.close_bn_position(
+                        symbol, close_info, atr_value, current_price, 1, open_info
+                    )
+                elif tp_triggered:  # 触及止盈 - 部分平仓
+                    self.close_bn_position(
+                        symbol, close_info, atr_value, current_price, 0.5, open_info
+                    )
 
                 else:
                     await get_kline_15_data()
@@ -1410,29 +1412,29 @@ class AUTOBN:
                         )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
-                        # 做空: 止损在上界(take_profit变量),止盈在下界(stop_loss变量)
+                        # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
                         initial_tp_gap = (
-                            close_info.entry_price - close_info.stop_loss
+                            close_info.entry_price - close_info.take_profit
                         )  # 入场价到止盈的初始距离
                         tp_decay_step = initial_tp_gap * self.STOP_LOSS_DECAY_PER_MINUTE
                         if directions and directions[-1] == 1:
-                            close_info.take_profit = supertrend_values[-1]
+                            close_info.stop_loss = supertrend_values[-1]
                         else:
                             # 止损下移(线性衰减)
                             initial_sl_gap = (
-                                close_info.take_profit - close_info.entry_price
+                                close_info.stop_loss - close_info.entry_price
                             )  # 止损到入场价的初始距离
                             sl_decay_step = (
                                 initial_sl_gap * self.STOP_LOSS_DECAY_PER_MINUTE
                             )
-                            close_info.take_profit = max(
-                                current_price, close_info.take_profit - sl_decay_step
+                            # 止盈上移(线性衰减,更容易触发止盈)
+                            close_info.take_profit = min(
+                                current_price, close_info.take_profit + tp_decay_step
                             )
 
-                        # 止盈上移(线性衰减,更容易触发止盈)
-                        close_info.stop_loss = min(
-                            current_price, close_info.stop_loss + tp_decay_step
-                        )
+                            close_info.stop_loss = max(
+                                current_price, close_info.stop_loss - sl_decay_step
+                            )
 
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
@@ -1507,9 +1509,11 @@ class AUTOBN:
                             self.DEFAULT_OPEN_RATIO,
                             open_info,
                         ):
+                            # 多头: zy=高价(止盈), zs=低价(止损)
+                            # 空头: zy=低价(止盈), zs=高价(止损)
                             close_info = Position(
-                                take_profit=zy if is_long else zs,
-                                stop_loss=zs if is_long else zy,
+                                take_profit=zy,  # 多头高价止盈，空头低价止盈
+                                stop_loss=zs,  # 多头低价止损，空头高价止损
                                 close_side=OrderSide.SELL if is_long else OrderSide.BUY,
                                 position_side=position_side,
                                 entry_price=current_price,
