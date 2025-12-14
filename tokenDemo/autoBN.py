@@ -232,6 +232,7 @@ class AUTOBN:
 
     # ==================== K线相关常量 ====================
     KLINE_LIMIT = 96  # K线数据条数
+    MIN_KLINE_FOR_ANALYSIS = 4  # 分析所需最小K线数量
 
     # ==================== 基差监控常量 ====================
     BASIS_WARNING_THRESHOLD = 1.02  # 基差警告阈值（2%）
@@ -241,6 +242,9 @@ class AUTOBN:
 
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
+    LONG_SHORT_RATIO_LONG_THRESHOLD = 4 / 6  # 多头开仓阈值（多空比 > 此值时禁止做多）
+    LONG_SHORT_RATIO_SHORT_THRESHOLD = 4 / 6  # 空头开仓阈值（多空比 < 此值时禁止做空）
+    LONG_SHORT_RATIO_CACHE_TTL = 300  # 多空比缓存过期时间（秒）
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
@@ -251,6 +255,7 @@ class AUTOBN:
     # ==================== 风险管理常量 ====================
     RISK_PER_TRADE = 0.02  # 每笔交易风险比例 (2%: 止损触发时最多损失账户的2%)
     MAX_POSITION_RATIO = 0.2  # 单币种最大持仓比例 (防止极端杠杆)
+    MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -263,6 +268,10 @@ class AUTOBN:
     MAX_RETRY_COUNT = 10  # 最大重试次数
     EARLY_MORNING_HOUR = 8  # 早盘检测小时
     MARKET_ANALYSIS_TIMEOUT = 300  # 市场分析超时时间（秒）
+
+    # ==================== 交易配置常量 ====================
+    DEFAULT_LEVERAGE = 1  # 默认杠杆倍数
+    DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
 
     @classmethod
     def from_cfg(cls, **kwargs):
@@ -1526,7 +1535,7 @@ class AUTOBN:
                         and current_price < kline_close[-2]
                         and await self.check_oi(semaphore, symbol, open_info)
                     ):
-                        open_info.close_side = OrderSide.SELL
+                        open_info.side = OrderSide.SELL
                         # 重置策略列表：保留方向 + 添加触发策略
                         open_info.strategy.clear()
                         open_info.strategy.append(PositionSide.BD)
@@ -1534,7 +1543,7 @@ class AUTOBN:
                     if open_side := await self.check_trend(
                         semaphore, symbol, kline_15[:-1]
                     ):
-                        open_info.close_side = (
+                        open_info.side = (
                             OrderSide.BUY
                             if open_side == PositionSide.LONG.value
                             else OrderSide.SELL
@@ -1545,7 +1554,7 @@ class AUTOBN:
                         open_info.strategy.append(PositionSide.Supertrend)
                     if should_open:
                         atr_value = self.calculate_atr(kline)
-                        is_long = open_info.close_side.value == OrderSide.BUY.value
+                        is_long = open_info.side.value == OrderSide.BUY.value
                         zy, zs = self.calc_stop_profit_loss(
                             current_price, is_long=is_long, atr=atr_value
                         )
