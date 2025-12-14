@@ -637,7 +637,6 @@ class AUTOBN:
         atr_value,
         price_close,
         close_ratio=1.0,
-        open_info=None,
     ):
         """
         在币安期货市场平仓
@@ -649,7 +648,6 @@ class AUTOBN:
             atr_value: ATR值，用于部分平仓后重新计算止盈止损，为0时不更新
             price_close: 当前价格（用于通知和盈亏计算）
             close_ratio: 平仓比例，1.0表示全部平仓，0.5表示平仓50%
-            open_info: Observation对象，包含策略信息（可选，用于日志）
         返回：
             成功返回symbol，失败返回None
         """
@@ -1409,7 +1407,7 @@ class AUTOBN:
 
                 if sl_triggered:  # 触及止损 - 全仓平仓
                     self.close_bn_position(
-                        symbol, close_info, atr_value, current_price, 1, open_info
+                        symbol, close_info, atr_value, current_price, 1
                     )
                 elif tp_triggered:  # 触及止盈 - 部分平仓
                     # 止盈次数+1，加速后续衰减
@@ -1420,7 +1418,6 @@ class AUTOBN:
                         atr_value,
                         current_price,
                         self.PARTIAL_CLOSE_RATIO,
-                        open_info,
                     )
 
                 else:
