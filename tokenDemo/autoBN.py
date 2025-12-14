@@ -1513,7 +1513,8 @@ class AUTOBN:
                     await get_kline_15_data()
                     should_open = False
                     if (
-                        PositionSide.LONG in open_info.strategy
+                        PositionSide.BD not in open_info.strategy
+                        and PositionSide.SHORT not in open_info.strategy
                         and max(kline_close_15[-self.ATR_PERIOD : -2])
                         < max(kline_close_15[-2:])
                         and max(kline_volume_15[-2:])
@@ -1541,8 +1542,10 @@ class AUTOBN:
                         open_info.strategy.clear()
                         open_info.strategy.append(PositionSide.BD)
                         should_open = True
-                    if open_side := await self.check_trend(
-                        semaphore, symbol, kline_15[:-1]
+                    if PositionSide.SHORT not in open_info.strategy and (
+                        open_side := await self.check_trend(
+                            semaphore, symbol, kline_15[:-1]
+                        )
                     ):
                         open_info.side = (
                             OrderSide.BUY
