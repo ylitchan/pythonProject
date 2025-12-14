@@ -73,15 +73,28 @@ def migrate_position(
         return data
 
     # 旧版列表格式转换
+    # 旧格式: [价格1, 价格2, close_side, position_side, entry_price, ...]
+    # 对于 LONG: 价格1=止盈(高), 价格2=止损(低) -> 直接使用
+    # 对于 SHORT: 价格1=止损(高), 价格2=止盈(低) -> 需要交换
+    position_side = data[3]
+    if position_side == "SHORT":
+        # 空头仓位：止盈应低于入场价，止损应高于入场价
+        take_profit = data[1]  # 较低的价格作为止盈
+        stop_loss = data[0]  # 较高的价格作为止损
+    else:
+        # 多头仓位：止盈应高于入场价，止损应低于入场价
+        take_profit = data[0]  # 较高的价格作为止盈
+        stop_loss = data[1]  # 较低的价格作为止损
+
     return {
-        "take_profit": data[0],
-        "stop_loss": data[1],
+        "take_profit": take_profit,
+        "stop_loss": stop_loss,
         "close_side": data[2],
-        "position_side": data[3],
+        "position_side": position_side,
         "entry_price": data[4] if len(data) > 4 else 0.0,
         "name": symbol_or_code,
         "date": 0,  # 旧版没有日期，设为0
-        "strategy": [data[3]],  # 使用 position_side 作为策略
+        "strategy": [position_side],  # 使用 position_side 作为策略
         "tp_count": 0,  # 新增字段，默认为0
     }
 
