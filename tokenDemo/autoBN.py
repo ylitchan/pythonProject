@@ -692,12 +692,8 @@ class AUTOBN:
                     quantity=close_amount,  # 平仓数量
                     positionSide=positionSide,  # 持仓方向
                 )
-                # 尝试获取开仓价格，如果使用的是对象则获取entry_price，否则获取列表最后一个元素
-                pos_data = self.alert_all["POSITIONS"].get(symbol)
-                if pos_data and len(pos_data) >= 5:
-                    entryPrice = pos_data[4]
-                else:
-                    entryPrice = price_close  # 无法获取时使用当前价格避免报错
+                # 尝试获取开仓价格，使用 close_info 对象的 entry_price
+                entryPrice = close_info.entry_price if close_info.entry_price > 0 else price_close
 
                 # 发送成功通知
                 price_diff = (
