@@ -222,14 +222,11 @@ class CloseRecordManager:
 class AUTOBN:
     """币安期货自动交易类"""
 
-    # ==================== 交易参数常量 ====================
-    DEFAULT_OPEN_RATIO = 0.1  # 默认开仓比例
-
     # ==================== 并发控制常量 ====================
     MAX_CONCURRENT_REQUESTS = 10  # 最大并发请求数
 
     # ==================== 时间常量 ====================
-    TEN_DAY_SECONDS = 96 * 15 * 60  # 96个15分钟周期的秒数（约24小时）
+    OBSERVATION_TIMEOUT_SECONDS = 96 * 15 * 60  # 观察记录超时时间（约24小时）
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
 
@@ -249,6 +246,7 @@ class AUTOBN:
     ATR_PERIOD = 10  # ATR计算周期
     ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
     ATR_TAKE_PROFIT_MULTIPLIER = 0.5  # ATR止盈倍数 (盈亏比1:1)
+    STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 每分钟止盈止损衰减比例 (1%)
 
     # ==================== 风险管理常量 ====================
     RISK_PER_TRADE = 0.02  # 每笔交易风险比例 (2%: 止损触发时最多损失账户的2%)
@@ -256,6 +254,15 @@ class AUTOBN:
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+
+    # ==================== 平仓相关常量 ====================
+    PARTIAL_CLOSE_RATIO = 0.5  # 部分平仓比例 (止盈时使用)
+    MIN_NOTIONAL = 10  # 最小交易金额 (USDT)
+
+    # ==================== 任务控制常量 ====================
+    MAX_RETRY_COUNT = 10  # 最大重试次数
+    EARLY_MORNING_HOUR = 8  # 早盘检测小时
+    MARKET_ANALYSIS_TIMEOUT = 300  # 市场分析超时时间（秒）
 
     @classmethod
     def from_cfg(cls, **kwargs):
@@ -630,6 +637,7 @@ class AUTOBN:
         atr_value,
         price_close,
         close_ratio=1.0,
+        open_info=None,
     ):
         """
         在币安期货市场平仓
@@ -641,6 +649,7 @@ class AUTOBN:
             atr_value: ATR值，用于部分平仓后重新计算止盈止损，为0时不更新
             price_close: 当前价格（用于通知和盈亏计算）
             close_ratio: 平仓比例，1.0表示全部平仓，0.5表示平仓50%
+            open_info: Observation对象，包含策略信息（可选，用于日志）
         返回：
             成功返回symbol，失败返回None
         """
@@ -648,7 +657,9 @@ class AUTOBN:
         amount = self.get_amount_close(symbol)
         if not amount:  # 0表示无持仓
             return
-        close_ratio = 1 if amount * close_ratio * price_close < 10 else close_ratio
+        close_ratio = (
+            1 if amount * close_ratio * price_close < self.MIN_NOTIONAL else close_ratio
+        )
         # 计算实际平仓数量
         close_amount = amount * close_ratio
         close_amount = float(
@@ -1404,7 +1415,12 @@ class AUTOBN:
                     # 止盈次数+1，加速后续衰减
                     close_info.tp_count += 1
                     self.close_bn_position(
-                        symbol, close_info, atr_value, current_price, 0.5, open_info
+                        symbol,
+                        close_info,
+                        atr_value,
+                        current_price,
+                        self.PARTIAL_CLOSE_RATIO,
+                        open_info,
                     )
 
                 else:
@@ -1479,7 +1495,10 @@ class AUTOBN:
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             elif open_info:
-                if current_timestamp - open_info.timestamp > self.TEN_DAY_SECONDS:
+                if (
+                    current_timestamp - open_info.timestamp
+                    > self.OBSERVATION_TIMEOUT_SECONDS
+                ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
                     await get_kline_15_data()
@@ -1758,7 +1777,9 @@ class AUTOBN:
         try:
             # 设置超时时间为5分钟，防止任务卡住
             self.logger.info(f"{market} 市场分析任务开始")
-            await asyncio.wait_for(self._rzq_market_impl(market), timeout=300)
+            await asyncio.wait_for(
+                self._rzq_market_impl(market), timeout=self.MARKET_ANALYSIS_TIMEOUT
+            )
         except asyncio.TimeoutError:
             error_msg = f"{market} 市场分析任务超时(5分钟)，已强制中断"
             self.logger.error(error_msg)
@@ -1772,11 +1793,11 @@ class AUTOBN:
     async def _rzq_market_impl(self, market):
         """市场分析的实际实现"""
         now = datetime.datetime.now()
-        self.is_early_morning = now.hour == 8 and now.minute == 0
+        self.is_early_morning = now.hour == self.EARLY_MORNING_HOUR and now.minute == 0
 
         # 重试机制：最多尝试10次获取交易对信息
         if now.minute % 15 == 0 or not self.symbols:
-            for i in range(10):
+            for i in range(self.MAX_RETRY_COUNT):
                 try:
                     positions_data = self.get_position_risk()
                     self.get_symbols_info()
@@ -1822,13 +1843,17 @@ class AUTOA:
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
-    TEN_DAY_SECONDS = 10 * 24 * 60 * 60  # 十天的秒数
+    OBSERVATION_TIMEOUT_SECONDS = 10 * 24 * 60 * 60  # 观察记录超时时间（10天）
 
     # ==================== Supertrend Constants ====================
     SUPERTREND_FACTOR = 3.0
 
     # ==================== Trading Configuration ====================
     TRADING_DAYS_LOOKBACK = 60
+    STOP_LOSS_DECAY = 0.1  # 止损衰减系数 (10%)
+    MARKET_CLOSE_HOUR = 15  # A股收盘小时
+    MARKET_CLOSE_MINUTE = 0  # A股收盘分钟
+    MONITOR_TIMEOUT = 600  # 股票监控超时时间（秒）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = os.path.join(
@@ -2468,7 +2493,7 @@ class AUTOA:
             today: 当前日期时间
         """
         open_info = Observation.model_validate(open_info_dict)
-        if today.timestamp() - open_info.timestamp > cls.TEN_DAY_SECONDS:
+        if today.timestamp() - open_info.timestamp > cls.OBSERVATION_TIMEOUT_SECONDS:
             cls.alert_all["OBSERVATIONS"].pop(code)
             return
         if (
@@ -2635,11 +2660,13 @@ class AUTOA:
         策略：低吸策略，寻找回调买入机会
         """
         try:
-            # 设置超时时间为3分钟，防止任务卡住
+            # 设置超时时间为10分钟，防止任务卡住
             cls.logger.info("A股监控任务开始")
-            await asyncio.wait_for(cls._monitor_stocks_impl(), timeout=600)
+            await asyncio.wait_for(
+                cls._monitor_stocks_impl(), timeout=cls.MONITOR_TIMEOUT
+            )
         except asyncio.TimeoutError:
-            error_msg = "A股监控任务超时(3分钟)，已强制中断"
+            error_msg = "A股监控任务超时(10分钟)，已强制中断"
             cls.logger.error(error_msg)
             cls.send_msg(error_msg)
         except Exception as e:
