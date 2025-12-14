@@ -781,19 +781,16 @@ class AUTOBN:
         """
         async with semaphore:
             try:
-                # Supertrend 参数
-                atr_period = 10
-                factor = 3.0
 
                 # 获取 4 小时 K 线数据(如果未提供)
                 if kline_data is None:
                     kline_data = await self.get_kline(semaphore, symbol, "15m")
-                    if len(kline_data) < atr_period + 1:  # 至少需要 ATR周期+1 根K线
+                    if len(kline_data) < self.atr_period + 1:  # 至少需要 ATR周期+1 根K线
                         return 0
 
                 # 计算 Supertrend
                 supertrend_values, directions = self.calculate_trend(
-                    kline_data, factor=factor, atr_period=atr_period
+                    kline_data, factor=self.factor, atr_period=self.atr_period
                 )
 
                 # 获取最近两根K线的方向
@@ -1548,6 +1545,7 @@ class AUTOBN:
                         if not should_open:
                             open_info.strategy.clear()
                         open_info.strategy.append(PositionSide.Supertrend)
+                        should_open = True
                     if should_open:
                         atr_value = self.calculate_atr(kline)
                         is_long = open_info.side.value == OrderSide.BUY.value
