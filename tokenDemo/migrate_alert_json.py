@@ -63,7 +63,8 @@ def migrate_position(
     """
     将旧版 Position 列表转换为新版字典格式，并添加 tp_count
 
-    旧格式: [take_profit, stop_loss, close_side, position_side, entry_price, ...]
+    旧格式 (BN):  [take_profit, stop_loss, close_side, position_side, entry_price]
+    旧格式 (A股): [take_profit, stop_loss, name, date, entry_price, strategy]
     新格式: {take_profit, stop_loss, close_side, position_side, entry_price, name, date, strategy, tp_count}
     """
     if isinstance(data, dict):
@@ -72,31 +73,45 @@ def migrate_position(
             data["tp_count"] = 0
         return data
 
-    # 旧版列表格式转换
-    # 旧格式: [价格1, 价格2, close_side, position_side, entry_price, ...]
-    # 对于 LONG: 价格1=止盈(高), 价格2=止损(低) -> 直接使用
-    # 对于 SHORT: 价格1=止损(高), 价格2=止盈(低) -> 需要交换
-    position_side = data[3]
-    if position_side == "SHORT":
-        # 空头仓位：止盈应低于入场价，止损应高于入场价
-        take_profit = data[1]  # 较低的价格作为止盈
-        stop_loss = data[0]  # 较高的价格作为止损
+    if is_a_stock:
+        # A股格式: [take_profit, stop_loss, name, date, entry_price, strategy]
+        strategy_value = data[5] if len(data) > 5 else "Supertrend"
+        return {
+            "take_profit": data[0],
+            "stop_loss": data[1],
+            "close_side": "SELL",  # A股默认卖出平仓
+            "position_side": "LONG",  # A股只能做多
+            "entry_price": data[4] if len(data) > 4 else 0.0,
+            "name": data[2],  # 股票名称
+            "date": data[3] if len(data) > 3 else 0,  # 日期
+            "strategy": [strategy_value] if isinstance(strategy_value, str) else strategy_value,
+            "tp_count": 0,
+        }
     else:
-        # 多头仓位：止盈应高于入场价，止损应低于入场价
-        take_profit = data[0]  # 较高的价格作为止盈
-        stop_loss = data[1]  # 较低的价格作为止损
+        # BN格式: [价格1, 价格2, close_side, position_side, entry_price, ...]
+        # 对于 LONG: 价格1=止盈(高), 价格2=止损(低) -> 直接使用
+        # 对于 SHORT: 价格1=止损(高), 价格2=止盈(低) -> 需要交换
+        position_side = data[3]
+        if position_side == "SHORT":
+            # 空头仓位：止盈应低于入场价，止损应高于入场价
+            take_profit = data[1]  # 较低的价格作为止盈
+            stop_loss = data[0]  # 较高的价格作为止损
+        else:
+            # 多头仓位：止盈应高于入场价，止损应低于入场价
+            take_profit = data[0]  # 较高的价格作为止盈
+            stop_loss = data[1]  # 较低的价格作为止损
 
-    return {
-        "take_profit": take_profit,
-        "stop_loss": stop_loss,
-        "close_side": data[2],
-        "position_side": position_side,
-        "entry_price": data[4] if len(data) > 4 else 0.0,
-        "name": symbol_or_code,
-        "date": 0,  # 旧版没有日期，设为0
-        "strategy": [position_side],  # 使用 position_side 作为策略
-        "tp_count": 0,  # 新增字段，默认为0
-    }
+        return {
+            "take_profit": take_profit,
+            "stop_loss": stop_loss,
+            "close_side": data[2],
+            "position_side": position_side,
+            "entry_price": data[4] if len(data) > 4 else 0.0,
+            "name": symbol_or_code,
+            "date": 0,  # 旧版没有日期，设为0
+            "strategy": [position_side],  # 使用 position_side 作为策略
+            "tp_count": 0,  # 新增字段，默认为0
+        }
 
 
 def migrate_file(file_path: str, is_a_stock: bool = False) -> None:
