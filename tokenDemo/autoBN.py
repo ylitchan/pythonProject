@@ -1525,7 +1525,7 @@ class AUTOBN:
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                         and await self.check_oi(semaphore, symbol, open_info)
                     ):
-                        open_info.close_side = OrderSide.BUY
+                        open_info.side = OrderSide.BUY
                         # 重置策略列表：保留方向 + 添加触发策略
                         open_info.strategy.clear()
                         open_info.strategy.append(PositionSide.BZ)
