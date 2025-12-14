@@ -483,9 +483,9 @@ class AUTOBN:
                 min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100))
             )
 
-    def get_amount_close(self, symbol):
+    async def get_amount_close(self, symbol):
         """
-        获取指定交易对的持仓数量
+        获取指定交易对的持仓数量 (异步)
 
         功能：查询币安账户中指定交易对的当前持仓数量
         用途：用于平仓时确定需要平仓的数量
@@ -498,20 +498,22 @@ class AUTOBN:
             # 获取所有持仓信息，转换为字典格式
             # positionAmt: 持仓数量（正数=多头，负数=空头）
             # 使用abs()取绝对值，统一处理多空持仓
+            position_risk = await asyncio.to_thread(
+                self.um_futures_client.get_position_risk
+            )
             position = {
-                k["symbol"]: abs(float(k["positionAmt"]))
-                for k in self.um_futures_client.get_position_risk()
+                k["symbol"]: abs(float(k["positionAmt"])) for k in position_risk
             }
             return position.get(symbol, 0)  # 返回指定交易对的持仓数量
         except Exception:
             # 异常时返回0，避免程序崩溃
             return 0
 
-    def open_bn_position(
+    async def open_bn_position(
         self, symbol, side, positionSide, stop_loss_price=None, open_info=None
     ):
         """
-        在币安期货市场开仓 (风险定仓位模型)
+        在币安期货市场开仓 (风险定仓位模型) - 异步版本
 
         功能：执行开仓操作，基于止损距离动态计算仓位大小
         参数：
@@ -524,16 +526,18 @@ class AUTOBN:
             成功返回account_data，失败返回None
         """
         try:
-            # 获取账户可用余额
-            account_data = self.um_futures_client.account()
+            # 获取账户可用余额 (异步)
+            account_data = await asyncio.to_thread(self.um_futures_client.account)
             balance = float(account_data["availableBalance"])
             # 风险控制：检查可用余额
             if balance <= 0:
                 self.send_msg(f"{symbol} 开仓失败：可用余额为零")
                 return None
 
-            # 获取当前标记价格（用于计算开仓数量）
-            mark_price_data = self.um_futures_client.mark_price(symbol)
+            # 获取当前标记价格（用于计算开仓数量）(异步)
+            mark_price_data = await asyncio.to_thread(
+                self.um_futures_client.mark_price, symbol
+            )
             if not mark_price_data:
                 self.send_msg(f"{symbol} 开仓失败：无法获取标记价格")
                 return None
@@ -588,7 +592,7 @@ class AUTOBN:
                 )
                 return None
 
-            # 风险控制：检查“账户级健康度”（逐仓建议额外结合仓位强平距离/保证金冗余）
+            # 风险控制：检查"账户级健康度"（逐仓建议额外结合仓位强平距离/保证金冗余）
             # 健康度 = (1 - 维持保证金/总余额) * 100%
             # 目的：确保开仓后不会导致全局账户风险过高
             account_health = self.calculate_health_bn(notional)
@@ -598,20 +602,17 @@ class AUTOBN:
                 )
                 return None
 
-            # 设置保证金模式（全仓/逐仓）。若已为目标模式，交易所可能返回错误码或提示，忽略即可
-            # try:
-            #     self.um_futures_client.change_margin_type(
-            #         symbol=symbol, marginType=self.margin_mode)
-            # except Exception:
-            #     pass
-
-            # 设置杠杆倍数
-            leverage_result = self.um_futures_client.change_leverage(
-                symbol=symbol, leverage=self.leverage
+            # 设置杠杆倍数 (异步)
+            leverage_result = await asyncio.to_thread(
+                self.um_futures_client.change_leverage,
+                symbol=symbol,
+                leverage=self.leverage,
             )
             actual_leverage = leverage_result.get("leverage", self.leverage)
-            # 执行市价单开仓
-            tx = self.um_futures_client.new_order(
+
+            # 执行市价单开仓 (异步)
+            tx = await asyncio.to_thread(
+                self.um_futures_client.new_order,
                 symbol=symbol,
                 side=side,  # 'BUY'或'SELL'
                 type="MARKET",  # 市价单，立即成交
@@ -630,7 +631,7 @@ class AUTOBN:
             self.logger.exception(f"{symbol} 开仓失败")
             return None
 
-    def close_bn_position(
+    async def close_bn_position(
         self,
         symbol,
         close_info,
@@ -639,7 +640,7 @@ class AUTOBN:
         close_ratio=1.0,
     ):
         """
-        在币安期货市场平仓
+        在币安期货市场平仓 (异步版本)
 
         功能：执行平仓操作，支持重试机制确保成功，成功后记录到Excel
         参数：
@@ -651,8 +652,8 @@ class AUTOBN:
         返回：
             成功返回symbol，失败返回None
         """
-        # 获取当前持仓数量
-        amount = self.get_amount_close(symbol)
+        # 获取当前持仓数量 (异步)
+        amount = await self.get_amount_close(symbol)
         if not amount:  # 0表示无持仓
             return
         close_ratio = (
@@ -673,8 +674,9 @@ class AUTOBN:
         # 循环平仓，直到完全平仓或失败
         while close_amount > 0:
             try:
-                # 执行市价单平仓
-                tx = self.um_futures_client.new_order(
+                # 执行市价单平仓 (异步)
+                tx = await asyncio.to_thread(
+                    self.um_futures_client.new_order,
                     symbol=symbol,
                     side=side,  # 平仓方向
                     type="MARKET",  # 市价单，立即成交
@@ -714,8 +716,8 @@ class AUTOBN:
                     strategy_tag=strategy_tag,
                 )
 
-                # 检查平仓后是否仍有该symbol的仓位，若无则从POSITIONS中移除
-                remaining_amount = self.get_amount_close(symbol)
+                # 检查平仓后是否仍有该symbol的仓位，若无则从POSITIONS中移除 (异步)
+                remaining_amount = await self.get_amount_close(symbol)
                 if remaining_amount == 0 and symbol in self.alert_all["POSITIONS"]:
                     self.alert_all["POSITIONS"].pop(symbol)
                 elif atr_value > 0:
@@ -737,13 +739,13 @@ class AUTOBN:
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                 return symbol  # 成功平仓，退出循环
             except Exception as e:
-                # 平仓失败，等待后重试
-                time.sleep(self.CLOSE_RETRY_DELAY)
+                # 平仓失败，等待后重试 (异步)
+                await asyncio.sleep(self.CLOSE_RETRY_DELAY)
                 self.logger.exception(f"平仓 {symbol} 失败，当前价格: {price_close}")
                 msg = f"bn平仓{symbol}失败，当前价格:{price_close}"
                 self.send_msg(msg)
-                # 重新获取持仓数量，可能部分平仓成功
-                current_amount = self.get_amount_close(symbol)
+                # 重新获取持仓数量，可能部分平仓成功 (异步)
+                current_amount = await self.get_amount_close(symbol)
                 close_amount = current_amount * close_ratio
                 close_amount = float(
                     Decimal(str(close_amount)).quantize(
@@ -1406,13 +1408,13 @@ class AUTOBN:
                 ) or (not is_long and current_price <= close_info.take_profit)
 
                 if sl_triggered:  # 触及止损 - 全仓平仓
-                    self.close_bn_position(
+                    await self.close_bn_position(
                         symbol, close_info, atr_value, current_price, 1
                     )
                 elif tp_triggered:  # 触及止盈 - 部分平仓
                     # 止盈次数+1，加速后续衰减
                     close_info.tp_count += 1
-                    self.close_bn_position(
+                    await self.close_bn_position(
                         symbol,
                         close_info,
                         atr_value,
@@ -1558,7 +1560,7 @@ class AUTOBN:
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
                         )
-                        if self.open_bn_position(
+                        if await self.open_bn_position(
                             symbol,
                             OrderSide.BUY.value if is_long else OrderSide.SELL.value,
                             position_side.value,
@@ -1617,8 +1619,8 @@ class AUTOBN:
                         and close_info.position_side == PositionSide.SHORT.value
                     ):
                         atr_value = self.calculate_atr(kline)
-                        self.close_bn_position(
-                            symbol, close_info, atr_value, current_price, 1, open_info
+                        await self.close_bn_position(
+                            symbol, close_info, atr_value, current_price, 1
                         )
                     is_long = True
                     open_info = Observation(
@@ -1652,8 +1654,8 @@ class AUTOBN:
                         and close_info.position_side.value == PositionSide.LONG.value
                     ):
                         atr_value = self.calculate_atr(kline)
-                        self.close_bn_position(
-                            symbol, close_info, atr_value, current_price, 1, open_info
+                        await self.close_bn_position(
+                            symbol, close_info, atr_value, current_price, 1
                         )
                     is_long = False
                     open_info = Observation(
