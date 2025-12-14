@@ -621,7 +621,7 @@ class AUTOBN:
             )
             # 发送成功通知
             # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
-            msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT"
+            msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n仓位比例:{notional / balance:.2%}"
             self.send_msg(msg)
             return account_data
         except Exception as e:
@@ -699,7 +699,7 @@ class AUTOBN:
                 realized_pnl = price_diff * close_amount
                 pnl_percent = price_diff / entryPrice if entryPrice != 0 else 0
                 strategy_tag = ",".join([ps.value for ps in close_info.strategy])
-                msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}"
+                msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}"
                 self.send_msg(msg)
 
                 # 记录平仓到Excel
