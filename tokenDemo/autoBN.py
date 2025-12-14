@@ -248,6 +248,7 @@ class AUTOBN:
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
+    SUPERTREND_FACTOR = 3.0
     ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
     ATR_TAKE_PROFIT_MULTIPLIER = 0.5  # ATR止盈倍数 (盈亏比1:1)
     STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 每分钟止盈止损衰减比例 (1%)
@@ -790,7 +791,7 @@ class AUTOBN:
 
                 # 计算 Supertrend
                 supertrend_values, directions = self.calculate_trend(
-                    kline_data, factor=self.factor, atr_period=self.atr_period
+                    kline_data, factor=self.SUPERTREND_FACTOR, atr_period=self.atr_period
                 )
 
                 # 获取最近两根K线的方向
