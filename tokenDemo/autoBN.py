@@ -790,7 +790,7 @@ class AUTOBN:
                 if kline_data is None:
                     kline_data = await self.get_kline(semaphore, symbol, "15m")
                     if (
-                        len(kline_data) < self.atr_period + 1
+                        len(kline_data) < self.ATR_PERIOD + 1
                     ):  # 至少需要 ATR周期+1 根K线
                         return 0
 
@@ -798,7 +798,7 @@ class AUTOBN:
                 supertrend_values, directions = self.calculate_trend(
                     kline_data,
                     factor=self.SUPERTREND_FACTOR,
-                    atr_period=self.atr_period,
+                    atr_period=self.ATR_PERIOD,
                 )
 
                 # 获取最近两根K线的方向
