@@ -53,6 +53,7 @@ class Position(BaseModel):
         name: 品种名称 (AUTOBN: symbol, AUTOA: 股票名称)
         date: 开仓日期 (YYYYMMDD 格式)
         strategy: 策略标签列表 (BZ/BD/Supertrend)
+        tp_count: 止盈次数 (用于加速衰减)
     """
 
     take_profit: float
@@ -63,6 +64,7 @@ class Position(BaseModel):
     name: str
     date: int
     strategy: List[PositionSide]
+    tp_count: int = 0  # 止盈次数，每次部分止盈后+1，衰减加速系数
 
 
 class Observation(BaseModel):
@@ -247,6 +249,10 @@ class AUTOBN:
     ATR_PERIOD = 10  # ATR计算周期
     ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
     ATR_TAKE_PROFIT_MULTIPLIER = 0.5  # ATR止盈倍数 (盈亏比1:1)
+
+    # ==================== 风险管理常量 ====================
+    RISK_PER_TRADE = 0.02  # 每笔交易风险比例 (2%: 止损触发时最多损失账户的2%)
+    MAX_POSITION_RATIO = 0.2  # 单币种最大持仓比例 (防止极端杠杆)
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -495,17 +501,17 @@ class AUTOBN:
             return 0
 
     def open_bn_position(
-        self, symbol, side, positionSide, open_ratio=0.1, open_info=None
+        self, symbol, side, positionSide, stop_loss_price=None, open_info=None
     ):
         """
-        在币安期货市场开仓
+        在币安期货市场开仓 (风险定仓位模型)
 
-        功能：执行开仓操作，包含完整的风险控制和资金管理
+        功能：执行开仓操作，基于止损距离动态计算仓位大小
         参数：
             symbol: 交易对符号，如'BTCUSDT'
             side: 交易方向，'BUY'或'SELL'
             positionSide: 持仓方向，'LONG'或'SHORT'
-            open_ratio: 开仓比例，占可用余额的比例（默认0.1即10%）
+            stop_loss_price: 止损价格 (必填，用于计算风险仓位)
             open_info: Observation对象，包含策略信息（用于消息通知）
         返回：
             成功返回account_data，失败返回None
@@ -514,7 +520,7 @@ class AUTOBN:
             # 获取账户可用余额
             account_data = self.um_futures_client.account()
             balance = float(account_data["availableBalance"])
-            # 风险控制2：检查可用余额
+            # 风险控制：检查可用余额
             if balance <= 0:
                 self.send_msg(f"{symbol} 开仓失败：可用余额为零")
                 return None
@@ -527,19 +533,35 @@ class AUTOBN:
 
             markPrice = float(mark_price_data["markPrice"])
 
-            # 风险控制3：检查交易对配置是否存在
+            # 风险控制：检查交易对配置是否存在
             if symbol not in self.symbols_info:
                 self.send_msg(f"{symbol} 开仓失败：找不到交易对信息")
                 return None
 
-            # 资金管理策略：限制单次开仓金额，控制风险
-            # 策略1：设置资金槽位，单次开仓不超过总资金的 open_ratio（默认 1/3）
-            self.slot_balance[0] = max(balance * open_ratio, self.slot_balance[0])
-            # 策略2：实际开仓金额不超过槽位和总资金的较小值
-            safe_balance = min(self.slot_balance[0], balance * self.MAX_BALANCE_USAGE)
+            # ==================== 风险定仓位计算 ====================
+            # 公式: 开仓数量 = (账户余额 * 风险比例) / |入场价 - 止损价|
+            if stop_loss_price is None or stop_loss_price <= 0:
+                self.send_msg(f"{symbol} 开仓失败：未提供有效止损价格")
+                return None
 
-            # 计算开仓数量：可用资金 * 杠杆 / 当前价格
-            amount_raw = safe_balance * self.leverage / markPrice
+            price_gap = abs(markPrice - stop_loss_price)
+            if price_gap <= 0:
+                self.send_msg(f"{symbol} 开仓失败：止损距离为零")
+                return None
+
+            # 计算风险金额和理论仓位
+            risk_amount = balance * self.RISK_PER_TRADE  # e.g., 1000 * 0.02 = 20 USDT
+            amount_raw = risk_amount / price_gap
+
+            # 安全兜底：持仓名义价值(算上杠杆后)不超过账户的 MAX_POSITION_RATIO
+            # 例: 账户1000U, MAX=50% -> 最大开仓名义价值 500U
+            max_notional = balance * self.MAX_POSITION_RATIO
+            max_amount = max_notional / markPrice
+            if amount_raw > max_amount:
+                self.logger.warning(
+                    f"{symbol} 风险仓位 {amount_raw:.4f} 超限，限制为 {max_amount:.4f}"
+                )
+                amount_raw = max_amount
 
             # 按交易对精度要求调整数量（向下取整，避免超出可用余额）
             amount = float(
@@ -1379,6 +1401,8 @@ class AUTOBN:
                         symbol, close_info, atr_value, current_price, 1, open_info
                     )
                 elif tp_triggered:  # 触及止盈 - 部分平仓
+                    # 止盈次数+1，加速后续衰减
+                    close_info.tp_count += 1
                     self.close_bn_position(
                         symbol, close_info, atr_value, current_price, 0.5, open_info
                     )
@@ -1389,10 +1413,16 @@ class AUTOBN:
                     supertrend_values, directions = self.calculate_trend(kline_15)
                     if close_info.position_side.value == PositionSide.LONG.value:
                         # 做多: 基于入场价格计算初始距离，线性衰减
+                        # 衰减系数 = 1 + tp_count (每次止盈后加速)
+                        decay_multiplier = 1 + close_info.tp_count
                         initial_tp_gap = (
                             close_info.take_profit - close_info.entry_price
                         )  # 止盈到入场价的初始距离
-                        tp_decay_step = initial_tp_gap * self.STOP_LOSS_DECAY_PER_MINUTE
+                        tp_decay_step = (
+                            initial_tp_gap
+                            * self.STOP_LOSS_DECAY_PER_MINUTE
+                            * decay_multiplier
+                        )
                         if directions and directions[-1] == -1:
                             close_info.stop_loss = supertrend_values[-1]
                         else:
@@ -1401,7 +1431,9 @@ class AUTOBN:
                                 close_info.entry_price - close_info.stop_loss
                             )  # 入场价到止损的初始距离
                             sl_decay_step = (
-                                initial_sl_gap * self.STOP_LOSS_DECAY_PER_MINUTE
+                                initial_sl_gap
+                                * self.STOP_LOSS_DECAY_PER_MINUTE
+                                * decay_multiplier
                             )
                             close_info.stop_loss = min(
                                 current_price, close_info.stop_loss + sl_decay_step
@@ -1413,10 +1445,16 @@ class AUTOBN:
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
+                        # 衰减系数 = 1 + tp_count (每次止盈后加速)
+                        decay_multiplier = 1 + close_info.tp_count
                         initial_tp_gap = (
                             close_info.entry_price - close_info.take_profit
                         )  # 入场价到止盈的初始距离
-                        tp_decay_step = initial_tp_gap * self.STOP_LOSS_DECAY_PER_MINUTE
+                        tp_decay_step = (
+                            initial_tp_gap
+                            * self.STOP_LOSS_DECAY_PER_MINUTE
+                            * decay_multiplier
+                        )
                         if directions and directions[-1] == 1:
                             close_info.stop_loss = supertrend_values[-1]
                         else:
@@ -1425,7 +1463,9 @@ class AUTOBN:
                                 close_info.stop_loss - close_info.entry_price
                             )  # 止损到入场价的初始距离
                             sl_decay_step = (
-                                initial_sl_gap * self.STOP_LOSS_DECAY_PER_MINUTE
+                                initial_sl_gap
+                                * self.STOP_LOSS_DECAY_PER_MINUTE
+                                * decay_multiplier
                             )
                             # 止盈上移(线性衰减,更容易触发止盈)
                             close_info.take_profit = min(
@@ -1506,7 +1546,7 @@ class AUTOBN:
                             symbol,
                             OrderSide.BUY.value if is_long else OrderSide.SELL.value,
                             position_side.value,
-                            self.DEFAULT_OPEN_RATIO,
+                            zs,  # 止损价用于计算风险仓位
                             open_info,
                         ):
                             # 多头: zy=高价(止盈), zs=低价(止损)
@@ -2498,7 +2538,7 @@ class AUTOA:
                     entry_price=price_close,
                     name=open_info.name,
                     date=int(today.strftime("%Y%m%d")),
-                    strategy=[PositionSide.Supertrend],
+                    strategy=[PositionSide.LONG],
                 ).model_dump()
 
                 # 5. 从观察列表移除
@@ -2506,7 +2546,7 @@ class AUTOA:
 
                 # 6. 发送买入通知
                 msg = (
-                    f"==={open_info.name}**Supertrend**===\n"
+                    f"==={open_info.name}**Long**===\n"
                     f"价格:{price_close:.2f}\n"
                     f"止盈:{take_profit:.2f}\n"
                     f"止损:{stop_loss:.2f}\n"
