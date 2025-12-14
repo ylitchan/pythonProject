@@ -694,7 +694,11 @@ class AUTOBN:
                     positionSide=positionSide,  # 持仓方向
                 )
                 # 尝试获取开仓价格，使用 close_info 对象的 entry_price
-                entryPrice = close_info.entry_price if close_info.entry_price > 0 else price_close
+                entryPrice = (
+                    close_info.entry_price
+                    if close_info.entry_price > 0
+                    else price_close
+                )
 
                 # 发送成功通知
                 price_diff = (
@@ -782,16 +786,19 @@ class AUTOBN:
         """
         async with semaphore:
             try:
-
                 # 获取 4 小时 K 线数据(如果未提供)
                 if kline_data is None:
                     kline_data = await self.get_kline(semaphore, symbol, "15m")
-                    if len(kline_data) < self.atr_period + 1:  # 至少需要 ATR周期+1 根K线
+                    if (
+                        len(kline_data) < self.atr_period + 1
+                    ):  # 至少需要 ATR周期+1 根K线
                         return 0
 
                 # 计算 Supertrend
                 supertrend_values, directions = self.calculate_trend(
-                    kline_data, factor=self.SUPERTREND_FACTOR, atr_period=self.atr_period
+                    kline_data,
+                    factor=self.SUPERTREND_FACTOR,
+                    atr_period=self.atr_period,
                 )
 
                 # 获取最近两根K线的方向
