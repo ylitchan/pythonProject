@@ -604,6 +604,14 @@ class AUTOBN:
                 )
                 return None
 
+            # 保证金充足性检查：确保所需保证金不超过可用余额
+            required_margin = notional / self.leverage
+            if required_margin > balance:
+                self.send_msg(
+                    f"{symbol} 开仓失败：所需保证金 {required_margin:.2f} 超过可用余额 {balance:.2f}"
+                )
+                return None
+
             # 风险控制：检查"账户级健康度"（逐仓建议额外结合仓位强平距离/保证金冗余）
             # 健康度 = (1 - 维持保证金/总余额) * 100%
             # 目的：确保开仓后不会导致全局账户风险过高
@@ -2530,7 +2538,9 @@ class AUTOA:
             adjustflag="3",  # 前复权
         )
         # 数据校验：无历史数据则跳过，或当前价格不高于昨日最高价则跳过
-        if hist.empty or float(hist.iloc[-1]["close"]) <= float(hist.iloc[-2]["high"]):
+        if hist.empty or float(hist.iloc[-1]["close"]) <= max(
+            float(hist.iloc[-2]["high"]), float(hist.iloc[-1]["open"])
+        ):
             return
 
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
