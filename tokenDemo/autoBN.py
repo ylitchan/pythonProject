@@ -641,7 +641,7 @@ class AUTOBN:
             )
             # 发送成功通知
             # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
-            msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n仓位比例:{notional / balance:.2%}"
+            msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n仓位比例:{notional / total_balance:.2%}"
             self.send_msg(msg)
             return account_data
         except Exception as e:
@@ -1603,9 +1603,7 @@ class AUTOBN:
                             date=int(dtn.strftime("%Y%m%d")),
                             strategy=open_info.strategy,
                         )
-                        self.alert_all["POSITIONS"][symbol] = (
-                            close_info.model_dump()
-                        )
+                        self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                         if (
                             PositionSide.BZ in open_info.strategy
                             or PositionSide.BD in open_info.strategy
