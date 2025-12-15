@@ -647,8 +647,7 @@ class AUTOBN:
         except Exception as e:
             # 异常处理：记录错误并发送通知
             error_msg = f"{symbol} 开仓失败：{str(e)}"
-            self.send_msg(error_msg)
-            self.logger.exception(f"{symbol} 开仓失败")
+            self.logger.exception(error_msg)
             return None
 
     async def close_bn_position(
