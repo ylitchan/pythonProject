@@ -687,6 +687,7 @@ class AUTOBN:
         )
         # 如果平仓数量为0，直接返回
         if close_amount <= 0:
+            self.alert_all["POSITIONS"].pop(symbol)
             return
         side = close_info.close_side.value
         positionSide = close_info.position_side.value
@@ -1583,28 +1584,28 @@ class AUTOBN:
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
                         )
-                        if await self.open_bn_position(
+                        await self.open_bn_position(
                             symbol,
                             OrderSide.BUY.value if is_long else OrderSide.SELL.value,
                             position_side.value,
                             zs,  # 止损价用于计算风险仓位
                             open_info,
-                        ):
-                            # 多头: zy=高价(止盈), zs=低价(止损)
-                            # 空头: zy=低价(止盈), zs=高价(止损)
-                            close_info = Position(
-                                take_profit=zy,  # 多头高价止盈，空头低价止盈
-                                stop_loss=zs,  # 多头低价止损，空头高价止损
-                                close_side=OrderSide.SELL if is_long else OrderSide.BUY,
-                                position_side=position_side,
-                                entry_price=current_price,
-                                name=symbol,
-                                date=int(dtn.strftime("%Y%m%d")),
-                                strategy=open_info.strategy,
-                            )
-                            self.alert_all["POSITIONS"][symbol] = (
-                                close_info.model_dump()
-                            )
+                        )
+                        # 多头: zy=高价(止盈), zs=低价(止损)
+                        # 空头: zy=低价(止盈), zs=高价(止损)
+                        close_info = Position(
+                            take_profit=zy,  # 多头高价止盈，空头低价止盈
+                            stop_loss=zs,  # 多头低价止损，空头高价止损
+                            close_side=OrderSide.SELL if is_long else OrderSide.BUY,
+                            position_side=position_side,
+                            entry_price=current_price,
+                            name=symbol,
+                            date=int(dtn.strftime("%Y%m%d")),
+                            strategy=open_info.strategy,
+                        )
+                        self.alert_all["POSITIONS"][symbol] = (
+                            close_info.model_dump()
+                        )
                         if (
                             PositionSide.BZ in open_info.strategy
                             or PositionSide.BD in open_info.strategy
