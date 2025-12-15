@@ -569,14 +569,16 @@ class AUTOBN:
             if price_gap <= 0:
                 self.send_msg(f"{symbol} 开仓失败：止损距离为零")
                 return None
-
+            total_balance = float(account_data["totalMarginBalance"])
             # 计算风险金额和理论仓位
-            risk_amount = balance * self.RISK_PER_TRADE  # e.g., 1000 * 0.02 = 20 USDT
+            risk_amount = (
+                total_balance * self.RISK_PER_TRADE
+            )  # e.g., 1000 * 0.02 = 20 USDT
             amount_raw = risk_amount / price_gap
 
             # 安全兜底：持仓名义价值(算上杠杆后)不超过账户的 MAX_POSITION_RATIO
             # 例: 账户1000U, MAX=50% -> 最大开仓名义价值 500U
-            max_notional = balance * self.MAX_POSITION_RATIO
+            max_notional = min(total_balance * self.MAX_POSITION_RATIO, balance)
             max_amount = max_notional / markPrice
             if amount_raw > max_amount:
                 self.logger.warning(
@@ -1377,7 +1379,7 @@ class AUTOBN:
                         close_info.stop_loss = close_info.entry_price - (
                             atr_value * self.ATR_STOP_LOSS_MULTIPLIER
                         )
-                        position_side = PositionSide.LONG
+                        position_side = PositionSide.Supertrend
                         order_side = OrderSide.BUY
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         close_info.take_profit = close_info.entry_price - (
@@ -1386,7 +1388,7 @@ class AUTOBN:
                         close_info.stop_loss = close_info.entry_price + (
                             atr_value * self.ATR_STOP_LOSS_MULTIPLIER
                         )
-                        position_side = PositionSide.SHORT
+                        position_side = PositionSide.Supertrend
                         order_side = OrderSide.SELL
                     # 转换为 Observation 对象并保存
                     open_info = Observation(
