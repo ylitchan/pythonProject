@@ -571,14 +571,12 @@ class AUTOBN:
                 return None
             total_balance = float(account_data["totalMarginBalance"])
             # 计算风险金额和理论仓位
-            risk_amount = (
-                total_balance * self.RISK_PER_TRADE
-            )  # e.g., 1000 * 0.02 = 20 USDT
+            risk_amount = balance * self.RISK_PER_TRADE  # e.g., 1000 * 0.02 = 20 USDT
             amount_raw = risk_amount / price_gap
 
             # 安全兜底：持仓名义价值(算上杠杆后)不超过账户的 MAX_POSITION_RATIO
             # 例: 账户1000U, MAX=50% -> 最大开仓名义价值 500U
-            max_notional = min(total_balance * self.MAX_POSITION_RATIO, balance)
+            max_notional = balance * self.MAX_POSITION_RATIO
             max_amount = max_notional / markPrice
             if amount_raw > max_amount:
                 self.logger.warning(
