@@ -2023,7 +2023,7 @@ class AUTOA:
             kline_data: K线数据(可选,如果不提供则获取)
             check_at_index: 检查信号的索引位置，默认-1（最后一个点与前一个点比较）
         返回:
-            (signal, last_atr): 信号('LONG'/'SHORT'/0) 和 最后一个点的ATR值
+            (signal, last_atr, supertrend_values): 信号('LONG'/'SHORT'/0)、最后一个点的ATR值 和 supertrend值列表
         """
         try:
             atr_period = cls.ATR_PERIOD
@@ -2054,7 +2054,7 @@ class AUTOA:
             last_atr = atr_values[-1] if atr_values else 0.0
 
             if len(directions) < 2:
-                return 0, last_atr
+                return 0, last_atr, supertrend_values
 
             # 转换为实际索引
             idx = (
@@ -2063,22 +2063,22 @@ class AUTOA:
                 else len(directions) + check_at_index
             )
             if idx < 1 or idx >= len(directions):
-                return 0, last_atr
+                return 0, last_atr, supertrend_values
 
             prev_direction = directions[idx - 1]
             curr_direction = directions[idx]
 
             # 检测趋势变化
             if prev_direction == 1 and curr_direction == -1:
-                return PositionSide.LONG.value, last_atr  # 做多信号
+                return PositionSide.LONG.value, last_atr, supertrend_values  # 做多信号
             elif prev_direction == -1 and curr_direction == 1:
-                return PositionSide.SHORT.value, last_atr  # 做空信号
+                return PositionSide.SHORT.value, last_atr, supertrend_values  # 做空信号
             else:
-                return 0, last_atr
+                return 0, last_atr, supertrend_values
 
         except Exception as e:
             cls.logger.exception(f"检查 {code} 趋势信号时发生错误")
-            return 0, 0.0
+            return 0, 0.0, []
 
     @classmethod
     def calculate_chebyshev_probability(cls, data, value):
@@ -2462,7 +2462,7 @@ class AUTOA:
             # 记录平仓到Excel
             CloseRecordManager.record_close(
                 source="AUTOA",
-                symbol=code,
+                symbol=f"{code} {close_info.name}",
                 position_side="LONG",  # A股默认做多
                 entry_price=entry_price,
                 close_price=price_close,
@@ -2478,21 +2478,30 @@ class AUTOA:
                 hist, factor=cls.SUPERTREND_FACTOR, atr_period=cls.ATR_PERIOD
             )
 
-            if supertrend_values and directions:
-                current_price = price_close
-                DECAY = cls.STOP_LOSS_DECAY
-                take_profit_gap = close_info.take_profit - current_price
+            # 参照 AUTOBN 的动态止盈止损逻辑
+            current_price = price_close
+            DECAY = cls.STOP_LOSS_DECAY
 
-                if directions[-1] == -1:  # Up trend
-                    close_info.stop_loss = supertrend_values[-1]
-                else:  # Down trend
-                    stop_loss_gap = current_price - close_info.stop_loss
-                    new_sl = current_price - stop_loss_gap * (1 - DECAY)
-                    if new_sl > close_info.stop_loss:
-                        close_info.stop_loss = new_sl
+            # 做多: 止盈在上方，止损在下方
+            # 止盈下移（线性衰减，更容易触发止盈）
+            initial_tp_gap = close_info.take_profit - close_info.entry_price
+            tp_decay_step = initial_tp_gap * DECAY
+            close_info.take_profit = max(
+                current_price, close_info.take_profit - tp_decay_step
+            )
 
-                close_info.take_profit = current_price + take_profit_gap * (1 - DECAY)
-                cls.alert_all["POSITIONS"][code] = close_info.model_dump()
+            # 止损优先取 supertrend 值
+            if directions and directions[-1] == -1:  # Up trend
+                close_info.stop_loss = supertrend_values[-1]
+            else:
+                # 止损上移（线性衰减，保护利润）
+                initial_sl_gap = close_info.entry_price - close_info.stop_loss
+                sl_decay_step = initial_sl_gap * DECAY
+                close_info.stop_loss = min(
+                    current_price, close_info.stop_loss + sl_decay_step
+                )
+
+            cls.alert_all["POSITIONS"][code] = close_info.model_dump()
 
     @classmethod
     async def on_observations(cls, code, zt_dates, open_info_dict, today):
@@ -2555,9 +2564,9 @@ class AUTOA:
             ):
                 return
 
-        # 复用计算：check_trend 现在返回 (信号, 最新ATR)
+        # 复用计算：check_trend 现在返回 (信号, 最新ATR, supertrend_values)
         # 传入完整 hist，指定 check_at_index=-2 (检查倒数第2个点，即昨天的翻转信号)
-        trend_signal, current_atr = await cls.check_trend(
+        trend_signal, current_atr, supertrend_values = await cls.check_trend(
             code, zt_dates, hist, check_at_index=-2
         )
 
@@ -2569,13 +2578,17 @@ class AUTOA:
             price_close = float(hist.iloc[-1]["close"])
             atr_percent = (atr / price_close) if price_close > 0 else 0
 
-            # 3. 动态止盈止损：ATR模式 (止损2x, 止盈4x)
+            # 2. 先计算止盈（无论如何都要计算）
             if atr > 0:
-                stop_loss_dist = atr * cls.ATR_STOP_LOSS_MULTIPLIER
                 take_profit_dist = atr * cls.ATR_TAKE_PROFIT_MULTIPLIER
-
                 take_profit = price_close + take_profit_dist
-                stop_loss = price_close - stop_loss_dist
+
+                # 3. 止损优先使用 supertrend 值
+                if supertrend_values:
+                    stop_loss = supertrend_values[-1]
+                else:
+                    stop_loss_dist = atr * cls.ATR_STOP_LOSS_MULTIPLIER
+                    stop_loss = price_close - stop_loss_dist
 
                 # 4. 记录到持仓列表
                 cls.alert_all["POSITIONS"][code] = Position(
