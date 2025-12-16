@@ -2442,7 +2442,7 @@ class AUTOA:
                 price=price_close,
                 timestamp=today.timestamp(),
                 side=OrderSide.BUY,
-                strategy=[PositionSide.LONG],
+                strategy=[PositionSide.Supertrend],
                 name=close_info.name,
             ).model_dump()
 
@@ -2553,16 +2553,19 @@ class AUTOA:
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
         hist_volume = hist["volume"].values
         if len(hist_volume) >= 3:
-            # 计算最近两天最大成交量相对于历史成交量的切比雪夫概率
-            chebyshev_result = cls.calculate_chebyshev_probability(
-                hist_volume[-cls.ATR_PERIOD : -2], max(hist_volume[-2:])
-            )
-            # 如果成交量不是极端异常值，则跳过（不满足放量条件）
-            if (
-                chebyshev_result["chebyshev_upper_bound"]
-                >= cls.CHEBYSHEV_EXTREME_THRESHOLD
-            ):
-                return
+            if PositionSide.BZ in open_info.strategy:
+                # 计算最近两天最大成交量相对于历史成交量的切比雪夫概率
+                chebyshev_result = cls.calculate_chebyshev_probability(
+                    hist_volume[-cls.ATR_PERIOD : -2], max(hist_volume[-2:])
+                )
+                # 如果成交量不是极端异常值，则跳过（不满足放量条件）
+                if (
+                    chebyshev_result["chebyshev_upper_bound"]
+                    >= cls.CHEBYSHEV_EXTREME_THRESHOLD
+                ):
+                    return
+        else:
+            return
 
         # 复用计算：check_trend 现在返回 (信号, 最新ATR, supertrend_values)
         # 传入完整 hist，指定 check_at_index=-2 (检查倒数第2个点，即昨天的翻转信号)
@@ -2599,7 +2602,7 @@ class AUTOA:
                     entry_price=price_close,
                     name=open_info.name,
                     date=int(today.strftime("%Y%m%d")),
-                    strategy=[PositionSide.LONG],
+                    strategy=open_info.strategy,
                 ).model_dump()
 
                 # 5. 从观察列表移除
@@ -2666,7 +2669,7 @@ class AUTOA:
                         price=float(price_close),
                         timestamp=today.timestamp(),
                         side=OrderSide.BUY,
-                        strategy=[PositionSide.LONG],
+                        strategy=[PositionSide.BZ],
                         name=code[1],  # 股票名称
                     ).model_dump()
 
