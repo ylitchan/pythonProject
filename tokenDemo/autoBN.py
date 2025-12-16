@@ -2548,7 +2548,7 @@ class AUTOA:
             if PositionSide.BZ in open_info.strategy:
                 # 计算最近两天最大成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
-                    hist_volume[-cls.ATR_PERIOD : -2], max(hist_volume[-2:])
+                    hist_volume[-cls.ATR_PERIOD : -1], hist_volume[-1]
                 )
                 # 如果成交量不是极端异常值，则跳过（不满足放量条件）
                 if (
