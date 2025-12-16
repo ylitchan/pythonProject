@@ -1873,7 +1873,7 @@ class AUTOA:
     TRADING_DAYS_LOOKBACK = 60
     STOP_LOSS_DECAY = 0.1  # 止损衰减系数 (10%)
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
-    MARKET_CLOSE_MINUTE = 0  # A股收盘分钟
+    MARKET_CLOSE_MINUTE = 5  # A股收盘分钟
     MONITOR_TIMEOUT = 600  # 股票监控超时时间（秒）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
@@ -2625,12 +2625,14 @@ class AUTOA:
         """
         # 获取交易日历信息
         today = datetime.datetime.today()
+        # 收盘后不执行：小时大于15，或者小时等于15且分钟大于0
+        is_after_close = today.hour > cls.MARKET_CLOSE_HOUR or (
+            today.hour == cls.MARKET_CLOSE_HOUR
+            and today.minute > cls.MARKET_CLOSE_MINUTE
+        )
         if (
-            cls.zt_dates
-            and today.strftime("%Y-%m-%d") not in cls.zt_dates
-            or today.hour >= cls.MARKET_CLOSE_HOUR
-            and today.minute >= cls.MARKET_CLOSE_MINUTE
-        ):
+            cls.zt_dates and today.strftime("%Y-%m-%d") not in cls.zt_dates
+        ) or is_after_close:
             return []
         if not cls.zt_dates:
             cls.zt_dates = cls.get_last_trading_days(today)
