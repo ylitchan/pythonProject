@@ -2437,15 +2437,6 @@ class AUTOA:
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
         if price_close <= close_info.stop_loss or price_close >= close_info.take_profit:
-            # 将股票移至观察列表（记录平仓价格和时间）
-            cls.alert_all["OBSERVATIONS"][code] = Observation(
-                price=price_close,
-                timestamp=today.timestamp(),
-                side=OrderSide.BUY,
-                strategy=[PositionSide.Supertrend],
-                name=close_info.name,
-            ).model_dump()
-
             # 从持仓列表移除
             cls.alert_all["POSITIONS"].pop(code)
 
@@ -2553,6 +2544,7 @@ class AUTOA:
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
         hist_volume = hist["volume"].values
         if len(hist_volume) >= 3:
+            should_open = False
             if PositionSide.BZ in open_info.strategy:
                 # 计算最近两天最大成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
@@ -2563,60 +2555,64 @@ class AUTOA:
                     chebyshev_result["chebyshev_upper_bound"]
                     >= cls.CHEBYSHEV_EXTREME_THRESHOLD
                 ):
-                    return
+                    should_open = True
+            else:
+                # 复用计算：check_trend 现在返回 (信号, 最新ATR, supertrend_values)
+                # 传入完整 hist，指定 check_at_index=-2 (检查倒数第2个点，即昨天的翻转信号)
+                trend_signal, current_atr, supertrend_values = await cls.check_trend(
+                    code, zt_dates, hist, check_at_index=-2
+                )
+
+                if trend_signal == PositionSide.LONG.value:
+                    should_open = True
+            if should_open:
+                # 1. 使用 calculate_trend 复用的 ATR
+                atr = current_atr
+                if atr <= 0:
+                    atr = cls.calculate_atr(hist)
+                price_close = float(hist.iloc[-1]["close"])
+                atr_percent = (atr / price_close) if price_close > 0 else 0
+
+                # 2. 先计算止盈（无论如何都要计算）
+                if atr > 0:
+                    take_profit_dist = atr * cls.ATR_TAKE_PROFIT_MULTIPLIER
+                    take_profit = price_close + take_profit_dist
+
+                    # 3. 止损优先使用 supertrend 值
+                    if supertrend_values:
+                        stop_loss = supertrend_values[-1]
+                    else:
+                        stop_loss_dist = atr * cls.ATR_STOP_LOSS_MULTIPLIER
+                        stop_loss = price_close - stop_loss_dist
+
+                    # 4. 记录到持仓列表
+                    cls.alert_all["POSITIONS"][code] = Position(
+                        take_profit=take_profit,
+                        stop_loss=stop_loss,
+                        close_side=OrderSide.SELL,
+                        position_side=PositionSide.LONG,
+                        entry_price=price_close,
+                        name=open_info.name,
+                        date=int(today.strftime("%Y%m%d")),
+                        strategy=open_info.strategy,
+                    ).model_dump()
+
+                    # 5. 从观察列表移除
+                    open_info.strategy.clear()
+                    open_info.strategy.append(PositionSide.Supertrend)
+                    cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+
+                    # 6. 发送买入通知
+                    msg = (
+                        f"==={open_info.name}**Long**===\n"
+                        f"价格:{price_close:.2f}\n"
+                        f"止盈:{take_profit:.2f}\n"
+                        f"止损:{stop_loss:.2f}\n"
+                        f"收益率:{atr_percent:.2%}\n"
+                    )
+                    cls.send_msg(msg)
         else:
             return
-
-        # 复用计算：check_trend 现在返回 (信号, 最新ATR, supertrend_values)
-        # 传入完整 hist，指定 check_at_index=-2 (检查倒数第2个点，即昨天的翻转信号)
-        trend_signal, current_atr, supertrend_values = await cls.check_trend(
-            code, zt_dates, hist, check_at_index=-2
-        )
-
-        if trend_signal == PositionSide.LONG.value:
-            # 1. 使用 calculate_trend 复用的 ATR
-            atr = current_atr
-            if atr <= 0:
-                atr = cls.calculate_atr(hist)
-            price_close = float(hist.iloc[-1]["close"])
-            atr_percent = (atr / price_close) if price_close > 0 else 0
-
-            # 2. 先计算止盈（无论如何都要计算）
-            if atr > 0:
-                take_profit_dist = atr * cls.ATR_TAKE_PROFIT_MULTIPLIER
-                take_profit = price_close + take_profit_dist
-
-                # 3. 止损优先使用 supertrend 值
-                if supertrend_values:
-                    stop_loss = supertrend_values[-1]
-                else:
-                    stop_loss_dist = atr * cls.ATR_STOP_LOSS_MULTIPLIER
-                    stop_loss = price_close - stop_loss_dist
-
-                # 4. 记录到持仓列表
-                cls.alert_all["POSITIONS"][code] = Position(
-                    take_profit=take_profit,
-                    stop_loss=stop_loss,
-                    close_side=OrderSide.SELL,
-                    position_side=PositionSide.LONG,
-                    entry_price=price_close,
-                    name=open_info.name,
-                    date=int(today.strftime("%Y%m%d")),
-                    strategy=open_info.strategy,
-                ).model_dump()
-
-                # 5. 从观察列表移除
-                cls.alert_all["OBSERVATIONS"].pop(code)
-
-                # 6. 发送买入通知
-                msg = (
-                    f"==={open_info.name}**Long**===\n"
-                    f"价格:{price_close:.2f}\n"
-                    f"止盈:{take_profit:.2f}\n"
-                    f"止损:{stop_loss:.2f}\n"
-                    f"收益率:{atr_percent:.2%}\n"
-                )
-                cls.send_msg(msg)
 
     @classmethod
     async def filter_stocks(cls):
