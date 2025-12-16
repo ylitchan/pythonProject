@@ -2462,7 +2462,7 @@ class AUTOA:
             # 记录平仓到Excel
             CloseRecordManager.record_close(
                 source="AUTOA",
-                symbol=f"{code} {close_info.name}",
+                symbol=f"{close_info.name} {code}",
                 position_side="LONG",  # A股默认做多
                 entry_price=entry_price,
                 close_price=price_close,
