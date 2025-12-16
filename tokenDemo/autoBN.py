@@ -2545,26 +2545,25 @@ class AUTOA:
         hist_volume = hist["volume"].values
         if len(hist_volume) >= 3:
             should_open = False
+            # 先计算 supertrend 和 ATR（两种策略都需要）
+            trend_signal, current_atr, supertrend_values = await cls.check_trend(
+                code, zt_dates, hist, check_at_index=-2
+            )
+
             if PositionSide.BZ in open_info.strategy:
-                # 计算最近两天最大成交量相对于历史成交量的切比雪夫概率
+                # 计算最近成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
                     hist_volume[-cls.ATR_PERIOD : -1], hist_volume[-1]
                 )
-                # 如果成交量不是极端异常值，则跳过（不满足放量条件）
+                # 如果成交量是极端异常值（满足放量条件），则开仓
                 if (
                     chebyshev_result["chebyshev_upper_bound"]
-                    >= cls.CHEBYSHEV_EXTREME_THRESHOLD
+                    < cls.CHEBYSHEV_EXTREME_THRESHOLD
                 ):
                     should_open = True
-            else:
-                # 复用计算：check_trend 现在返回 (信号, 最新ATR, supertrend_values)
-                # 传入完整 hist，指定 check_at_index=-2 (检查倒数第2个点，即昨天的翻转信号)
-                trend_signal, current_atr, supertrend_values = await cls.check_trend(
-                    code, zt_dates, hist, check_at_index=-2
-                )
+            elif trend_signal == PositionSide.LONG.value:
+                should_open = True
 
-                if trend_signal == PositionSide.LONG.value:
-                    should_open = True
             if should_open:
                 # 1. 使用 calculate_trend 复用的 ATR
                 atr = current_atr
