@@ -2681,6 +2681,7 @@ class AUTOA:
         ] + [
             cls.on_observations(code, cls.zt_dates, open_info, today)
             for code, open_info in cls.alert_all["OBSERVATIONS"].items()
+            if code not in cls.alert_all["POSITIONS"]
         ]
         # 等待所有任务完成
         await asyncio.gather(*tasks)
