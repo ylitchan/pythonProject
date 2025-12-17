@@ -2543,10 +2543,9 @@ class AUTOA:
             trend_signal, current_atr, supertrend_values = await cls.check_trend(
                 code, zt_dates, hist, check_at_index=-1
             )
-
-            if PositionSide.BZ in open_info.strategy:
-                if trend_signal != PositionSide.LONG.value:
-                    return
+            if trend_signal != PositionSide.LONG.value:
+                return
+            elif PositionSide.BZ in open_info.strategy:
                 # 计算最近成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
                     hist_volume[-cls.ATR_PERIOD : -1], hist_volume[-1]
@@ -2557,7 +2556,7 @@ class AUTOA:
                     < cls.CHEBYSHEV_EXTREME_THRESHOLD
                 ):
                     should_open = True
-            elif trend_signal == PositionSide.LONG.value:
+            else:
                 should_open = True
 
             if should_open:
