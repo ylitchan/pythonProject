@@ -1619,11 +1619,8 @@ class AUTOBN:
                         self.is_early_morning
                         or (
                             # 检查是否已有空头持仓
-                            symbol not in self.alert_all["POSITIONS"]
-                            or Position.model_validate(
-                                self.alert_all["POSITIONS"][symbol]
-                            ).position_side
-                            != PositionSide.LONG.value
+                            not close_info
+                            or close_info.position_side != PositionSide.LONG.value
                         )
                     )
                     and kline_close[-2] < current_price
@@ -1657,11 +1654,8 @@ class AUTOBN:
                 elif (
                     self.is_early_morning
                     or (
-                        symbol not in self.alert_all["POSITIONS"]
-                        or Position.model_validate(
-                            self.alert_all["POSITIONS"][symbol]
-                        ).position_side
-                        != PositionSide.SHORT.value
+                        not close_info
+                        or close_info.position_side != PositionSide.SHORT.value
                     )
                 ) and await self.check_side(
                     semaphore,
