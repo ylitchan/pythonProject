@@ -2541,7 +2541,7 @@ class AUTOA:
             should_open = False
             # 先计算 supertrend 和 ATR（两种策略都需要）
             trend_signal, current_atr, supertrend_values = await cls.check_trend(
-                code, zt_dates, hist, check_at_index=-2
+                code, zt_dates, hist, check_at_index=-1
             )
 
             if PositionSide.BZ in open_info.strategy:
