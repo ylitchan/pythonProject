@@ -1525,8 +1525,8 @@ class AUTOBN:
                     if (
                         PositionSide.BD not in open_info.strategy
                         and PositionSide.SHORT not in open_info.strategy
-                        and max(kline_close_15[-self.ATR_PERIOD : -2])
-                        < max(kline_close_15[-2:])
+                        and max(kline_close_15[-self.ATR_PERIOD : -1])
+                        < kline_close_15[-1]
                         and max(kline_volume_15[-2:])
                         > sum(kline_volume_15[-self.ATR_PERIOD : -2])
                         / len(kline_volume_15[-self.ATR_PERIOD : -2])
