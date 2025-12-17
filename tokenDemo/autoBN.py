@@ -2596,20 +2596,20 @@ class AUTOA:
                         strategy=open_info.strategy,
                     ).model_dump()
 
-                    # 5. 从观察列表移除
-                    open_info.strategy.clear()
-                    open_info.strategy.append(PositionSide.Supertrend)
-                    cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
-
-                    # 6. 发送买入通知
+                    # 5. 发送买入通知
                     msg = (
-                        f"==={open_info.name}**Long**===\n"
+                        f"==={open_info.name}**{','.join(open_info.strategy)}**===\n"
                         f"价格:{price_close:.2f}\n"
                         f"止盈:{take_profit:.2f}\n"
                         f"止损:{stop_loss:.2f}\n"
                         f"收益率:{atr_percent:.2%}\n"
                     )
                     cls.send_msg(msg)
+
+                    # 6. 从观察列表移除
+                    open_info.strategy.clear()
+                    open_info.strategy.append(PositionSide.Supertrend)
+                    cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
         else:
             return
 
