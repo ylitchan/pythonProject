@@ -1865,7 +1865,7 @@ class AUTOA:
 
     # ==================== Trading Configuration ====================
     TRADING_DAYS_LOOKBACK = 60
-    STOP_LOSS_DECAY = 0.1  # 止损衰减系数 (10%)
+    STOP_LOSS_DECAY = 0.001  # 止损衰减系数 (1‰)
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
     MARKET_CLOSE_MINUTE = 5  # A股收盘分钟
     MONITOR_TIMEOUT = 600  # 股票监控超时时间（秒）
