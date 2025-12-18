@@ -1858,7 +1858,7 @@ class AUTOA:
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
-    OBSERVATION_TIMEOUT_SECONDS = 10 * 24 * 60 * 60  # 观察记录超时时间（10天）
+    OBSERVATION_TIMEOUT_SECONDS = 20 * 24 * 60 * 60  # 观察记录超时时间（20天）
 
     # ==================== Supertrend Constants ====================
     SUPERTREND_FACTOR = 3.0
