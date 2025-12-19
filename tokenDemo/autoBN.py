@@ -262,7 +262,7 @@ class AUTOBN:
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 平仓相关常量 ====================
-    PARTIAL_CLOSE_RATIO = 0.5  # 部分平仓比例 (止盈时使用)
+    PARTIAL_CLOSE_RATIO = 1.0  # 部分平仓比例 (止盈时使用)
     MIN_NOTIONAL = 10  # 最小交易金额 (USDT)
 
     # ==================== 任务控制常量 ====================
