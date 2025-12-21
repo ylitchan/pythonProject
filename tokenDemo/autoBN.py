@@ -32,6 +32,7 @@ class PositionSide(str, Enum):
     SHORT = "SHORT"
     BZ = "BZ"
     BD = "BD"
+    DK = "DK"
     Supertrend = "Supertrend"
 
 
@@ -905,24 +906,24 @@ class AUTOBN:
     async def check_oi(self, semaphore, symbol, open_info):
         async with semaphore:
             try:
-                # 获取多空人数比数据（使用缓存）
-                long_short_ratio_data = await self.get_long_short_ratio(symbol)
-                # 提取最新的多空人数比
-                if not long_short_ratio_data:
-                    return False
-                lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
-                # 做多：要求多空比小于阈值（逆势做多）
-                if (
-                    open_info.strategy == PositionSide.LONG
-                    and lsrd >= self.long_short_ratio_long_threshold
-                ):
-                    return False
-                # 做空：要求多空比大于阈值（逆势做空）
-                elif (
-                    open_info.strategy == PositionSide.SHORT
-                    and lsrd <= self.long_short_ratio_short_threshold
-                ):
-                    return False
+                # # 获取多空人数比数据（使用缓存）
+                # long_short_ratio_data = await self.get_long_short_ratio(symbol)
+                # # 提取最新的多空人数比
+                # if not long_short_ratio_data:
+                #     return False
+                # lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
+                # # 做多：要求多空比小于阈值（逆势做多）
+                # if (
+                #     open_info.strategy == PositionSide.LONG
+                #     and lsrd >= self.long_short_ratio_long_threshold
+                # ):
+                #     return False
+                # # 做空：要求多空比大于阈值（逆势做空）
+                # elif (
+                #     open_info.strategy == PositionSide.SHORT
+                #     and lsrd <= self.long_short_ratio_short_threshold
+                # ):
+                #     return False
 
                 # 并行获取 5m 和 1d 的持仓量数据，减少 IO 等待时间
                 oi_5m_task = asyncio.to_thread(
@@ -954,13 +955,13 @@ class AUTOBN:
                     float(i["sumOpenInterest"]) for i in oi_1d
                 ]  # 持仓数量（合约数）
 
-                if open_info.strategy == PositionSide.LONG and (
+                if PositionSide.BZ in open_info.strategy and (
                     sumOpenInterest_5m[-1] <= min(sumOpenInterest_1d[-2:])
                     or sumOpenInterestValue_5m[-1] <= min(sumOpenInterestValue_1d[-2:])
                 ):
                     return False
                 elif (
-                    open_info.strategy == PositionSide.SHORT
+                    PositionSide.BD in open_info.strategy
                     and sumOpenInterest_5m[-1] >= sumOpenInterest_1d[-1]
                 ):
                     return False
@@ -1455,18 +1456,20 @@ class AUTOBN:
                             initial_tp_gap
                             * self.STOP_LOSS_DECAY_PER_MINUTE
                             * decay_multiplier
-                        )   
+                        )
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            supertrend_values, directions = self.calculate_trend(kline_15)
+                            supertrend_values, directions = self.calculate_trend(
+                                kline_15
+                            )
                             if directions and directions[-1] == -1:
                                 close_info.stop_loss = supertrend_values[-1]
                             else:
                                 # 止损上移(线性衰减,保护利润)
                                 initial_sl_gap = (
                                     close_info.entry_price - close_info.stop_loss
-                            )  # 入场价到止损的初始距离
+                                )  # 入场价到止损的初始距离
                                 sl_decay_step = (
                                     initial_sl_gap
                                     * self.STOP_LOSS_DECAY_PER_MINUTE
@@ -1495,14 +1498,16 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            supertrend_values, directions = self.calculate_trend(kline_15)
+                            supertrend_values, directions = self.calculate_trend(
+                                kline_15
+                            )
                             if directions and directions[-1] == 1:
                                 close_info.stop_loss = supertrend_values[-1]
                             else:
                                 # 止损下移(线性衰减)
                                 initial_sl_gap = (
-                                close_info.stop_loss - close_info.entry_price
-                            )  # 止损到入场价的初始距离
+                                    close_info.stop_loss - close_info.entry_price
+                                )  # 止损到入场价的初始距离
                                 sl_decay_step = (
                                     initial_sl_gap
                                     * self.STOP_LOSS_DECAY_PER_MINUTE
@@ -1526,51 +1531,32 @@ class AUTOBN:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
                     await get_kline_15_data()
+                    current_price = kline_close_15[-1]
                     should_open = False
                     if (
-                        PositionSide.BD not in open_info.strategy
-                        and PositionSide.SHORT not in open_info.strategy
-                        and max(kline_close_15[-self.ATR_PERIOD : -1])
-                        < kline_close_15[-1]
-                        and max(kline_volume_15[-2:])
-                        > sum(kline_volume_15[-self.ATR_PERIOD : -2])
-                        / len(kline_volume_15[-self.ATR_PERIOD : -2])
-                        and self.calculate_chebyshev_probability(
-                            kline_volume_15[-self.ATR_PERIOD : -2],
-                            max(kline_volume_15[-2:]),
-                        )["chebyshev_upper_bound"]
-                        < self.CHEBYSHEV_EXTREME_THRESHOLD
+                        PositionSide.BZ in open_info.strategy
+                        and PositionSide.Supertrend not in open_info.strategy
+                        and kline_close[-2] < current_price
                         and await self.check_oi(semaphore, symbol, open_info)
                     ):
                         open_info.side = OrderSide.BUY
-                        # 重置策略列表：保留方向 + 添加触发策略
-                        open_info.strategy.clear()
-                        open_info.strategy.append(PositionSide.BZ)
                         should_open = True
                     elif (
-                        PositionSide.SHORT in open_info.strategy
+                        PositionSide.BD in open_info.strategy
+                        and PositionSide.Supertrend not in open_info.strategy
                         and current_price < kline_close[-2]
                         and await self.check_oi(semaphore, symbol, open_info)
                     ):
                         open_info.side = OrderSide.SELL
-                        # 重置策略列表：保留方向 + 添加触发策略
-                        open_info.strategy.clear()
-                        open_info.strategy.append(PositionSide.BD)
                         should_open = True
-                    if PositionSide.SHORT not in open_info.strategy and (
-                        open_side := await self.check_trend(
-                            semaphore, symbol, kline_15[:-1]
-                        )
+                    elif open_side := await self.check_trend(
+                        semaphore, symbol, kline_15[:-1]
                     ):
                         open_info.side = (
                             OrderSide.BUY
                             if open_side == PositionSide.LONG.value
                             else OrderSide.SELL
                         )
-                        # 重置策略列表：设置方向 + 添加触发策略
-                        if not should_open:
-                            open_info.strategy.clear()
-                        open_info.strategy.append(PositionSide.Supertrend)
                         should_open = True
                     if should_open:
                         atr_value = self.calculate_atr(kline)
@@ -1609,60 +1595,52 @@ class AUTOBN:
                             strategy=open_info.strategy,
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
-                        if (
-                            PositionSide.BZ in open_info.strategy
-                            or PositionSide.BD in open_info.strategy
-                        ):
-                            # 触发BZ/BD信号之后更新时间戳
+                        # 重置策略列表：设置方向 + 添加触发策略
+                        if PositionSide.Supertrend not in open_info.strategy:
                             open_info.timestamp = current_timestamp
+                            open_info.strategy.append(PositionSide.Supertrend)
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
             else:
                 # 做多信号判断
                 if (
-                    (
-                        self.is_early_morning
-                        or (
-                            # 检查是否已有空头持仓
-                            not close_info
-                            or close_info.position_side != PositionSide.LONG.value
-                        )
-                    )
-                    and kline_close[-2] < current_price
-                    and await self.check_side(
-                        semaphore,
-                        symbol,
-                        PositionSide.LONG.value,
-                        kline_close,
-                        kline_volume,
-                        dtn,
-                    )
+                    kline_volume[-1]
+                    > sum(kline_volume[-self.ATR_PERIOD : -1])
+                    / len(kline_volume[-self.ATR_PERIOD : -1])
+                    and self.calculate_chebyshev_probability(
+                        kline_volume[-self.ATR_PERIOD : -1],
+                        kline_volume[-1],
+                    )["chebyshev_upper_bound"]
+                    < self.CHEBYSHEV_EXTREME_THRESHOLD
                 ):
-                    if (
-                        close_info
-                        and close_info.position_side == PositionSide.SHORT.value
-                    ):
-                        atr_value = self.calculate_atr(kline)
-                        await self.close_bn_position(
-                            symbol, close_info, atr_value, current_price, 1
-                        )
                     is_long = True
                     open_info = Observation(
                         price=current_price,
                         timestamp=current_timestamp,
                         side=OrderSide.BUY,
-                        strategy=[PositionSide.LONG],
+                        strategy=[PositionSide.BZ],
+                        name=symbol,
+                    )
+
+                elif kline_close[-2] < current_price and await self.check_side(
+                    semaphore,
+                    symbol,
+                    PositionSide.LONG.value,
+                    kline_close,
+                    kline_volume,
+                    dtn,
+                ):
+                    is_long = True
+                    open_info = Observation(
+                        price=current_price,
+                        timestamp=current_timestamp,
+                        side=OrderSide.BUY,
+                        strategy=[PositionSide.DK],
                         name=symbol,
                     )
 
                 # 做空信号判断
-                elif (
-                    self.is_early_morning
-                    or (
-                        not close_info
-                        or close_info.position_side != PositionSide.SHORT.value
-                    )
-                ) and await self.check_side(
+                elif await self.check_side(
                     semaphore,
                     symbol,
                     PositionSide.SHORT.value,
@@ -1670,20 +1648,12 @@ class AUTOBN:
                     kline_volume,
                     dtn,
                 ):
-                    if (
-                        close_info
-                        and close_info.position_side.value == PositionSide.LONG.value
-                    ):
-                        atr_value = self.calculate_atr(kline)
-                        await self.close_bn_position(
-                            symbol, close_info, atr_value, current_price, 1
-                        )
                     is_long = False
                     open_info = Observation(
                         price=current_price,
                         timestamp=current_timestamp,
                         side=OrderSide.SELL,
-                        strategy=[PositionSide.SHORT],
+                        strategy=[PositionSide.BD],
                         name=symbol,
                     )
                 if open_info:
