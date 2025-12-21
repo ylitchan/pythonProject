@@ -262,7 +262,7 @@ class AUTOBN:
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 平仓相关常量 ====================
-    PARTIAL_CLOSE_RATIO = 1.0  # 部分平仓比例 (止盈时使用)
+    PARTIAL_CLOSE_RATIO = 0.7  # 部分平仓比例 (止盈时使用)
     MIN_NOTIONAL = 10  # 最小交易金额 (USDT)
 
     # ==================== 任务控制常量 ====================
@@ -1444,8 +1444,6 @@ class AUTOBN:
 
                 else:
                     await get_kline_15_data()
-                    # 计算 Supertrend
-                    supertrend_values, directions = self.calculate_trend(kline_15)
                     if close_info.position_side.value == PositionSide.LONG.value:
                         # 做多: 基于入场价格计算初始距离，线性衰减
                         # 衰减系数 = 1 + tp_count (每次止盈后加速)
@@ -1457,22 +1455,26 @@ class AUTOBN:
                             initial_tp_gap
                             * self.STOP_LOSS_DECAY_PER_MINUTE
                             * decay_multiplier
-                        )
-                        if directions and directions[-1] == -1:
-                            close_info.stop_loss = supertrend_values[-1]
+                        )   
+                        if close_info.tp_count > 0:
+                            close_info.stop_loss = close_info.entry_price
                         else:
-                            # 止损上移(线性衰减,保护利润)
-                            initial_sl_gap = (
-                                close_info.entry_price - close_info.stop_loss
+                            supertrend_values, directions = self.calculate_trend(kline_15)
+                            if directions and directions[-1] == -1:
+                                close_info.stop_loss = supertrend_values[-1]
+                            else:
+                                # 止损上移(线性衰减,保护利润)
+                                initial_sl_gap = (
+                                    close_info.entry_price - close_info.stop_loss
                             )  # 入场价到止损的初始距离
-                            sl_decay_step = (
-                                initial_sl_gap
-                                * self.STOP_LOSS_DECAY_PER_MINUTE
-                                * decay_multiplier
-                            )
-                            close_info.stop_loss = min(
-                                current_price, close_info.stop_loss + sl_decay_step
-                            )
+                                sl_decay_step = (
+                                    initial_sl_gap
+                                    * self.STOP_LOSS_DECAY_PER_MINUTE
+                                    * decay_multiplier
+                                )
+                                close_info.stop_loss = min(
+                                    current_price, close_info.stop_loss + sl_decay_step
+                                )
                         # 止盈下移(线性衰减,更容易触发止盈)
                         close_info.take_profit = max(
                             current_price, close_info.take_profit - tp_decay_step
@@ -1490,26 +1492,29 @@ class AUTOBN:
                             * self.STOP_LOSS_DECAY_PER_MINUTE
                             * decay_multiplier
                         )
-                        if directions and directions[-1] == 1:
-                            close_info.stop_loss = supertrend_values[-1]
+                        if close_info.tp_count > 0:
+                            close_info.stop_loss = close_info.entry_price
                         else:
-                            # 止损下移(线性衰减)
-                            initial_sl_gap = (
+                            supertrend_values, directions = self.calculate_trend(kline_15)
+                            if directions and directions[-1] == 1:
+                                close_info.stop_loss = supertrend_values[-1]
+                            else:
+                                # 止损下移(线性衰减)
+                                initial_sl_gap = (
                                 close_info.stop_loss - close_info.entry_price
                             )  # 止损到入场价的初始距离
-                            sl_decay_step = (
-                                initial_sl_gap
-                                * self.STOP_LOSS_DECAY_PER_MINUTE
-                                * decay_multiplier
-                            )
-                            # 止盈上移(线性衰减,更容易触发止盈)
-                            close_info.take_profit = min(
-                                current_price, close_info.take_profit + tp_decay_step
-                            )
-
-                            close_info.stop_loss = max(
-                                current_price, close_info.stop_loss - sl_decay_step
-                            )
+                                sl_decay_step = (
+                                    initial_sl_gap
+                                    * self.STOP_LOSS_DECAY_PER_MINUTE
+                                    * decay_multiplier
+                                )
+                                close_info.stop_loss = max(
+                                    current_price, close_info.stop_loss - sl_decay_step
+                                )
+                        # 止盈上移(线性衰减,更容易触发止盈)
+                        close_info.take_profit = min(
+                            current_price, close_info.take_profit + tp_decay_step
+                        )
 
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
