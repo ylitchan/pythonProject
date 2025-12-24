@@ -255,7 +255,7 @@ class AUTOBN:
     STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 每分钟止盈止损衰减比例 (1%)
 
     # ==================== 风险管理常量 ====================
-    RISK_PER_TRADE = 0.02  # 每笔交易风险比例 (2%: 止损触发时最多损失账户的2%)
+    RISK_PER_TRADE = 0.005  # 每笔交易风险比例 (0.5%: 止损触发时最多损失账户的0.5%)
     MAX_POSITION_RATIO = 0.1  # 单币种最大持仓比例 (防止极端杠杆)
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
