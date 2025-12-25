@@ -250,9 +250,7 @@ class AUTOBN:
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
-    SUPERTREND_FACTOR = 3.0
-    ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
-    ATR_TAKE_PROFIT_MULTIPLIER = 0.5  # ATR止盈倍数 (盈亏比1:1)
+    SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
     STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 每分钟止盈止损衰减比例 (1%)
 
     # ==================== 风险管理常量 ====================
@@ -1259,19 +1257,18 @@ class AUTOBN:
 
         return atr
 
-    # 止盈止损计算辅助函数 (支持ATR)
+    # 止盈止损计算辅助函数 (使用supertrend的factor倍ATR)
     def calc_stop_profit_loss(self, price, is_long=True, atr=0):
         if atr <= 0:
             return (0, 0)
 
-        # ATR模式：使用类常量定义的倍数
-        sl_dist = atr * self.ATR_STOP_LOSS_MULTIPLIER
-        tp_dist = atr * self.ATR_TAKE_PROFIT_MULTIPLIER
+        # 使用supertrend的factor倍ATR作为止盈止损距离
+        atr_distance = atr * self.SUPERTREND_FACTOR
         if is_long:
-            return (price + tp_dist, price - sl_dist)
+            return (price + atr_distance, price - atr_distance)
         else:
             # 做空：返回 (下界/止盈位, 上界/止损位)
-            return (price - tp_dist, price + sl_dist)
+            return (price - atr_distance, price + atr_distance)
 
     def calculate_chebyshev_probability(self, data_list, value):
         """
@@ -1422,29 +1419,22 @@ class AUTOBN:
 
             # 检查现有持仓是否需要平仓
             if close_info:
-                atr_value = self.calculate_atr(kline)
+                # 获取15分钟K线数据用于ATR计算（与supertrend保持一致）
+                await get_kline_15_data()
+                atr_value = self.calculate_atr(kline_15)
                 # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
                 if (
                     close_info.take_profit == 0 or close_info.stop_loss == 0
                 ) and atr_value > 0:
-                    if close_info.position_side.value == PositionSide.LONG.value:
-                        close_info.take_profit = close_info.entry_price + (
-                            atr_value * self.ATR_TAKE_PROFIT_MULTIPLIER
-                        )
-                        close_info.stop_loss = close_info.entry_price - (
-                            atr_value * self.ATR_STOP_LOSS_MULTIPLIER
-                        )
-                        position_side = PositionSide.Supertrend
-                        order_side = OrderSide.BUY
-                    elif close_info.position_side.value == PositionSide.SHORT.value:
-                        close_info.take_profit = close_info.entry_price - (
-                            atr_value * self.ATR_TAKE_PROFIT_MULTIPLIER
-                        )
-                        close_info.stop_loss = close_info.entry_price + (
-                            atr_value * self.ATR_STOP_LOSS_MULTIPLIER
-                        )
-                        position_side = PositionSide.Supertrend
-                        order_side = OrderSide.SELL
+                    is_long = close_info.position_side.value == PositionSide.LONG.value
+                    # 复用calc_stop_profit_loss方法计算止盈止损
+                    tp, sl = self.calc_stop_profit_loss(
+                        close_info.entry_price, is_long=is_long, atr=atr_value
+                    )
+                    close_info.take_profit = tp
+                    close_info.stop_loss = sl
+                    position_side = PositionSide.Supertrend
+                    order_side = OrderSide.BUY if is_long else OrderSide.SELL
                     # 转换为 Observation 对象并保存
                     open_info = Observation(
                         price=current_price,
@@ -1490,7 +1480,11 @@ class AUTOBN:
                     )
 
                 else:
-                    await get_kline_15_data()
+                    # 计算当前supertrend上下轨，用于止盈边界限制
+                    hl2 = (kline_15[-1][2] + kline_15[-1][3]) / 2  # (high + low) / 2
+                    current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
+                    current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
+
                     if close_info.position_side.value == PositionSide.LONG.value:
                         # 做多: 基于入场价格计算初始距离，线性衰减
                         # 衰减系数 = 1 + tp_count (每次止盈后加速)
@@ -1524,10 +1518,9 @@ class AUTOBN:
                                 close_info.stop_loss = min(
                                     current_price, close_info.stop_loss + sl_decay_step
                                 )
-                        # 止盈下移(线性衰减,更容易触发止盈)
-                        close_info.take_profit = max(
-                            current_price, close_info.take_profit - tp_decay_step
-                        )
+                        # 止盈下移: 取衰减后的值和当前上轨的较大值（止盈不低于当前上轨）
+                        decayed_tp = close_info.take_profit - tp_decay_step
+                        close_info.take_profit = min(decayed_tp, current_upper)
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
@@ -1562,10 +1555,9 @@ class AUTOBN:
                                 close_info.stop_loss = max(
                                     current_price, close_info.stop_loss - sl_decay_step
                                 )
-                        # 止盈上移(线性衰减,更容易触发止盈)
-                        close_info.take_profit = min(
-                            current_price, close_info.take_profit + tp_decay_step
-                        )
+                        # 止盈上移: 取衰减后的值和当前下轨的较小值（止盈不高于当前下轨）
+                        decayed_tp = close_info.take_profit + tp_decay_step
+                        close_info.take_profit = max(decayed_tp, current_lower)
 
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
@@ -1605,16 +1597,19 @@ class AUTOBN:
                         )
                         should_open = True
                     if should_open:
-                        atr_value = self.calculate_atr(kline)
+                        # 使用15分钟K线的ATR计算止盈止损（与supertrend保持一致）
+                        atr_value = self.calculate_atr(kline_15)
                         is_long = open_info.side.value == OrderSide.BUY.value
+                        # 使用hl2中间价计算止盈止损，与supertrend上下轨计算方式一致
+                        hl2 = (
+                            kline_15[-1][2] + kline_15[-1][3]
+                        ) / 2  # (high + low) / 2
                         zy, zs = self.calc_stop_profit_loss(
-                            current_price, is_long=is_long, atr=atr_value
+                            hl2, is_long=is_long, atr=atr_value
                         )
                         if zy == 0 and zs == 0:
                             return
-                        rate_show = (
-                            atr_value * self.ATR_STOP_LOSS_MULTIPLIER / current_price
-                        )
+                        rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
                         self.send_msg(
                             f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                         )
