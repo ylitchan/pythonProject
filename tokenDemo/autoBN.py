@@ -1701,7 +1701,8 @@ class AUTOBN:
                         name=symbol,
                     )
                 if open_info:
-                    atr_value = self.calculate_atr(kline)
+                    await get_kline_15_data()
+                    atr_value = self.calculate_atr(kline_15)
                     zy, zs = self.calc_stop_profit_loss(
                         current_price, is_long=is_long, atr=atr_value
                     )
