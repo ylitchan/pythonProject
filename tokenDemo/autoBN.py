@@ -959,7 +959,7 @@ class AUTOBN:
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
                         period="5m",
-                        limit=self.KLINE_LIMIT,
+                        limit=self.LONG_SHORT_RATIO_LIMIT,
                     )
                     self._oi_5m_cache[symbol] = {
                         "data": oi_5m,
