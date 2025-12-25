@@ -1427,9 +1427,10 @@ class AUTOBN:
                     close_info.take_profit == 0 or close_info.stop_loss == 0
                 ) and atr_value > 0:
                     is_long = close_info.position_side.value == PositionSide.LONG.value
-                    # 复用calc_stop_profit_loss方法计算止盈止损
+                    # 使用hl2中间价计算止盈止损，与supertrend保持一致
+                    hl2 = (kline_15[-1][2] + kline_15[-1][3]) / 2  # (high + low) / 2
                     tp, sl = self.calc_stop_profit_loss(
-                        close_info.entry_price, is_long=is_long, atr=atr_value
+                        hl2, is_long=is_long, atr=atr_value
                     )
                     close_info.take_profit = tp
                     close_info.stop_loss = sl
