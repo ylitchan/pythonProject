@@ -246,6 +246,7 @@ class AUTOBN:
     LONG_SHORT_RATIO_LONG_THRESHOLD = 4 / 6  # 多头开仓阈值（多空比 > 此值时禁止做多）
     LONG_SHORT_RATIO_SHORT_THRESHOLD = 4 / 6  # 空头开仓阈值（多空比 < 此值时禁止做空）
     LONG_SHORT_RATIO_CACHE_TTL = 300  # 多空比缓存过期时间（秒）
+    OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
@@ -390,6 +391,8 @@ class AUTOBN:
         # 初始化持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
         # target_date 是当天8点的时间戳(毫秒)，用于判断缓存是否过期
         obj._oi_1d_cache = {}
+        # 初始化5分钟持仓量缓存: {symbol: {"data": [...], "timestamp": float}}
+        obj._oi_5m_cache = {}
 
         # 注册退出处理函数,在脚本退出时保存数据
         def save_on_exit():
@@ -921,7 +924,7 @@ class AUTOBN:
                 self.logger.exception("检查增仓信号时发生错误")
                 return False
 
-    async def check_oi(self, semaphore, symbol, open_info):
+    async def check_oi(self, semaphore, symbol, open_info, dtn):
         async with semaphore:
             try:
                 # # 获取多空人数比数据（使用缓存）
@@ -943,21 +946,46 @@ class AUTOBN:
                 # ):
                 #     return False
 
-                # 并行获取 5m 和 1d 的持仓量数据，减少 IO 等待时间
-                oi_5m_task = asyncio.to_thread(
-                    self.um_futures_client.open_interest_hist,
-                    symbol=symbol,
-                    period="5m",
-                    limit=self.KLINE_LIMIT,
-                )
-                oi_1d_task = asyncio.to_thread(
-                    self.um_futures_client.open_interest_hist,
-                    symbol=symbol,
-                    period="1d",
-                    limit=self.LONG_SHORT_RATIO_LIMIT,
-                )
+                # 获取 5m 持仓量数据（带缓存，5分钟过期）
+                current_time = time.time()
+                oi_5m_cache = self._oi_5m_cache.get(symbol)
+                if (
+                    oi_5m_cache
+                    and (current_time - oi_5m_cache["timestamp"]) < self.OI_5M_CACHE_TTL
+                ):
+                    oi_5m = oi_5m_cache["data"]
+                else:
+                    oi_5m = await asyncio.to_thread(
+                        self.um_futures_client.open_interest_hist,
+                        symbol=symbol,
+                        period="5m",
+                        limit=self.KLINE_LIMIT,
+                    )
+                    self._oi_5m_cache[symbol] = {
+                        "data": oi_5m,
+                        "timestamp": current_time,
+                    }
 
-                oi_5m, oi_1d = await asyncio.gather(oi_5m_task, oi_1d_task)
+                # 获取 1d 持仓量数据（复用 _oi_1d_cache，需检查 target_date）
+                dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
+                target_ts = int(dtn_target.timestamp() * 1000)
+
+                oi_1d_cache = self._oi_1d_cache.get(symbol)
+                if oi_1d_cache and oi_1d_cache.get("target_date") == target_ts:
+                    oi_1d = oi_1d_cache["data"]
+                else:
+                    oi_1d = await asyncio.to_thread(
+                        self.um_futures_client.open_interest_hist,
+                        symbol=symbol,
+                        period="1d",
+                        limit=self.LONG_SHORT_RATIO_LIMIT,
+                    )
+                    # 如果数据时间戳匹配，也更新缓存
+                    if oi_1d and oi_1d[-1]["timestamp"] == target_ts:
+                        self._oi_1d_cache[symbol] = {
+                            "data": oi_1d,
+                            "target_date": target_ts,
+                        }
 
                 sumOpenInterestValue_5m = [
                     float(i["sumOpenInterestValue"]) for i in oi_5m
@@ -1555,7 +1583,7 @@ class AUTOBN:
                         PositionSide.BZ in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and kline_close[-2] < current_price
-                        and await self.check_oi(semaphore, symbol, open_info)
+                        and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.BUY
                         should_open = True
@@ -1563,7 +1591,7 @@ class AUTOBN:
                         PositionSide.BD in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and current_price < kline_close[-2]
-                        and await self.check_oi(semaphore, symbol, open_info)
+                        and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.SELL
                         should_open = True
