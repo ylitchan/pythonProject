@@ -387,6 +387,9 @@ class AUTOBN:
         obj.is_early_morning = False
         # 初始化多空比缓存: {symbol: {"data": [...], "timestamp": float}}
         obj._long_short_ratio_cache = {}
+        # 初始化持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
+        # target_date 是当天8点的时间戳(毫秒)，用于判断缓存是否过期
+        obj._oi_1d_cache = {}
 
         # 注册退出处理函数,在脚本退出时保存数据
         def save_on_exit():
@@ -867,16 +870,31 @@ class AUTOBN:
                 ):
                     return False
 
-                # 获取持仓量历史数据
-                oi_1d = await asyncio.to_thread(
-                    self.um_futures_client.open_interest_hist,
-                    symbol=symbol,
-                    period="1d",
-                    limit=self.LONG_SHORT_RATIO_LIMIT,
-                )
+                # 获取持仓量历史数据（带缓存）
                 dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
-                if oi_1d[-1]["timestamp"] != int(dtn_target.timestamp() * 1000):
-                    return False
+                target_ts = int(dtn_target.timestamp() * 1000)
+
+                # 检查缓存是否存在且有效（target_date 匹配当天8点）
+                cache_entry = self._oi_1d_cache.get(symbol)
+                if cache_entry and cache_entry.get("target_date") == target_ts:
+                    # 缓存有效，直接使用
+                    oi_1d = cache_entry["data"]
+                else:
+                    # 缓存无效或不存在，获取新数据
+                    oi_1d = await asyncio.to_thread(
+                        self.um_futures_client.open_interest_hist,
+                        symbol=symbol,
+                        period="1d",
+                        limit=self.LONG_SHORT_RATIO_LIMIT,
+                    )
+                    # 检查数据是否满足条件
+                    if oi_1d[-1]["timestamp"] != target_ts:
+                        return False
+                    # 数据满足条件，缓存起来
+                    self._oi_1d_cache[symbol] = {
+                        "data": oi_1d,
+                        "target_date": target_ts,
+                    }
                 sumOpenInterestValue_1d = [
                     float(i["sumOpenInterestValue"]) for i in oi_1d
                 ]  # 持仓价值（美元）
