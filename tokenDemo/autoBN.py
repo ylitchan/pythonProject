@@ -1420,15 +1420,14 @@ class AUTOBN:
             # 检查现有持仓是否需要平仓
             if close_info:
                 # 获取15分钟K线数据用于ATR计算（与supertrend保持一致）
-                await get_kline_15_data()
-                atr_value = self.calculate_atr(kline_15)
+                atr_value = self.calculate_atr(kline)
                 # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
                 if (
                     close_info.take_profit == 0 or close_info.stop_loss == 0
                 ) and atr_value > 0:
                     is_long = close_info.position_side.value == PositionSide.LONG.value
                     # 使用hl2中间价计算止盈止损，与supertrend保持一致
-                    hl2 = (kline_15[-1][2] + kline_15[-1][3]) / 2  # (high + low) / 2
+                    hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
                     tp, sl = self.calc_stop_profit_loss(
                         hl2, is_long=is_long, atr=atr_value
                     )
@@ -1505,9 +1504,7 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            supertrend_values, directions = self.calculate_trend(
-                                kline_15
-                            )
+                            supertrend_values, directions = self.calculate_trend(kline)
                             if directions and directions[-1] == -1:
                                 close_info.stop_loss = supertrend_values[-1]
                             else:
@@ -1543,9 +1540,7 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            supertrend_values, directions = self.calculate_trend(
-                                kline_15
-                            )
+                            supertrend_values, directions = self.calculate_trend(kline)
                             if directions and directions[-1] == 1:
                                 close_info.stop_loss = supertrend_values[-1]
                             else:
@@ -1571,14 +1566,12 @@ class AUTOBN:
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
-                    await get_kline_15_data()
-                    current_price = kline_close_15[-1]
+                    current_price = kline_close[-1]
                     should_open = False
                     if (
                         PositionSide.BZ in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and kline_close[-2] < current_price
-                        and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.BUY
                         should_open = True
@@ -1586,27 +1579,24 @@ class AUTOBN:
                         PositionSide.BD in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and current_price < kline_close[-2]
-                        and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.SELL
                         should_open = True
-                    elif open_side := await self.check_trend(
-                        semaphore, symbol, kline_15[:-1]
-                    ):
-                        open_info.side = (
-                            OrderSide.BUY
-                            if open_side == PositionSide.LONG.value
-                            else OrderSide.SELL
+                    elif PositionSide.Supertrend in open_info.strategy and (
+                        open_side := await self.check_trend(
+                            semaphore, symbol, kline[:-1]
                         )
+                    ):
+                        if open_side != PositionSide.SHORT.value:
+                            return
+                        open_info.side = OrderSide.SELL
                         should_open = True
                     if should_open:
                         # 使用15分钟K线的ATR计算止盈止损（与supertrend保持一致）
-                        atr_value = self.calculate_atr(kline_15)
+                        atr_value = self.calculate_atr(kline)
                         is_long = open_info.side.value == OrderSide.BUY.value
                         # 使用hl2中间价计算止盈止损，与supertrend上下轨计算方式一致
-                        hl2 = (
-                            kline_15[-1][2] + kline_15[-1][3]
-                        ) / 2  # (high + low) / 2
+                        hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
                         zy, zs = self.calc_stop_profit_loss(
                             hl2, is_long=is_long, atr=atr_value
                         )
@@ -1656,6 +1646,14 @@ class AUTOBN:
                         kline_volume[-1],
                     )["chebyshev_upper_bound"]
                     < self.CHEBYSHEV_EXTREME_THRESHOLD
+                    and await self.check_side(
+                        semaphore,
+                        symbol,
+                        PositionSide.LONG.value,
+                        kline_close,
+                        kline_volume,
+                        dtn,
+                    )
                 ):
                     is_long = True
                     open_info = Observation(
@@ -1663,23 +1661,6 @@ class AUTOBN:
                         timestamp=current_timestamp,
                         side=OrderSide.BUY,
                         strategy=[PositionSide.BZ],
-                        name=symbol,
-                    )
-
-                elif kline_close[-2] < current_price and await self.check_side(
-                    semaphore,
-                    symbol,
-                    PositionSide.LONG.value,
-                    kline_close,
-                    kline_volume,
-                    dtn,
-                ):
-                    is_long = True
-                    open_info = Observation(
-                        price=current_price,
-                        timestamp=current_timestamp,
-                        side=OrderSide.BUY,
-                        strategy=[PositionSide.DK],
                         name=symbol,
                     )
 
@@ -1701,10 +1682,11 @@ class AUTOBN:
                         name=symbol,
                     )
                 if open_info:
-                    await get_kline_15_data()
-                    atr_value = self.calculate_atr(kline_15)
+                    atr_value = self.calculate_atr(kline)
                     zy, zs = self.calc_stop_profit_loss(
-                        current_price, is_long=is_long, atr=atr_value
+                        (kline[-1][2] + kline[-1][3]) / 2,
+                        is_long=is_long,
+                        atr=atr_value,
                     )
                     if zy == 0 and zs == 0:
                         return
