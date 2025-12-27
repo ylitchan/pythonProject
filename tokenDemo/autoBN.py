@@ -251,7 +251,7 @@ class AUTOBN:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
-    STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 每分钟止盈止损衰减比例 (1%)
+    STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (1%)
 
     # ==================== 风险管理常量 ====================
     RISK_PER_TRADE = 0.005  # 每笔交易风险比例 (0.5%: 止损触发时最多损失账户的0.5%)
@@ -1504,22 +1504,19 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            supertrend_values, directions = self.calculate_trend(kline)
-                            if directions and directions[-1] == -1:
-                                close_info.stop_loss = supertrend_values[-1]
-                            else:
-                                # 止损上移(线性衰减,保护利润)
-                                initial_sl_gap = (
-                                    close_info.entry_price - close_info.stop_loss
-                                )  # 入场价到止损的初始距离
-                                sl_decay_step = (
-                                    initial_sl_gap
-                                    * self.STOP_LOSS_DECAY_PER_MINUTE
-                                    * decay_multiplier
-                                )
-                                close_info.stop_loss = min(
-                                    current_price, close_info.stop_loss + sl_decay_step
-                                )
+                            # 止损上移(线性衰减,保护利润)
+                            initial_sl_gap = (
+                                close_info.entry_price - close_info.stop_loss
+                            )  # 入场价到止损的初始距离
+                            sl_decay_step = (
+                                initial_sl_gap
+                                * self.STOP_LOSS_DECAY_PER_MINUTE
+                                * decay_multiplier
+                            )
+                            close_info.stop_loss = min(
+                                close_info.entry_price,
+                                close_info.stop_loss + sl_decay_step,
+                            )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
@@ -1540,33 +1537,33 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            supertrend_values, directions = self.calculate_trend(kline)
-                            if directions and directions[-1] == 1:
-                                close_info.stop_loss = supertrend_values[-1]
-                            else:
-                                # 止损下移(线性衰减)
-                                initial_sl_gap = (
-                                    close_info.stop_loss - close_info.entry_price
-                                )  # 止损到入场价的初始距离
-                                sl_decay_step = (
-                                    initial_sl_gap
-                                    * self.STOP_LOSS_DECAY_PER_MINUTE
-                                    * decay_multiplier
-                                )
-                                close_info.stop_loss = max(
-                                    current_price, close_info.stop_loss - sl_decay_step
-                                )
+                            # 止损下移(线性衰减)
+                            initial_sl_gap = (
+                                close_info.stop_loss - close_info.entry_price
+                            )  # 止损到入场价的初始距离
+                            sl_decay_step = (
+                                initial_sl_gap
+                                * self.STOP_LOSS_DECAY_PER_MINUTE
+                                * decay_multiplier
+                            )
+                            close_info.stop_loss = max(
+                                close_info.entry_price,
+                                close_info.stop_loss - sl_decay_step,
+                            )
 
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             elif open_info:
                 if (
-                    current_timestamp - open_info.timestamp
+                    PositionSide.Supertrend not in open_info.strategy
+                    and current_timestamp - open_info.timestamp
                     > self.OBSERVATION_TIMEOUT_SECONDS
+                    or PositionSide.Supertrend in open_info.strategy
+                    and current_timestamp - open_info.timestamp
+                    > self.OBSERVATION_TIMEOUT_SECONDS * 7
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
-                    current_price = kline_close[-1]
                     should_open = False
                     if (
                         PositionSide.BZ in open_info.strategy
@@ -1582,13 +1579,11 @@ class AUTOBN:
                     ):
                         open_info.side = OrderSide.SELL
                         should_open = True
-                    elif PositionSide.Supertrend in open_info.strategy and (
-                        open_side := await self.check_trend(
-                            semaphore, symbol, kline[:-1]
-                        )
+                    elif (
+                        PositionSide.Supertrend in open_info.strategy
+                        and (await self.check_trend(semaphore, symbol, kline[:-1]))
+                        == PositionSide.SHORT.value
                     ):
-                        if open_side != PositionSide.SHORT.value:
-                            return
                         open_info.side = OrderSide.SELL
                         should_open = True
                     if should_open:
