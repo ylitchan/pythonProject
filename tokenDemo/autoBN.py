@@ -243,7 +243,7 @@ class AUTOBN:
 
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
-    LONG_SHORT_RATIO_LONG_THRESHOLD = 4 / 6  # 多头开仓阈值（多空比 > 此值时禁止做多）
+    LONG_SHORT_RATIO_LONG_THRESHOLD = 6 / 4  # 多头开仓阈值（多空比 > 此值时禁止做多）
     LONG_SHORT_RATIO_SHORT_THRESHOLD = 4 / 6  # 空头开仓阈值（多空比 < 此值时禁止做空）
     LONG_SHORT_RATIO_CACHE_TTL = 300  # 多空比缓存过期时间（秒）
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
@@ -2487,17 +2487,12 @@ class AUTOA:
             tp_decay_step = initial_tp_gap * DECAY
             decayed_tp = close_info.take_profit - tp_decay_step
             close_info.take_profit = min(decayed_tp, current_upper)
-
-            # 止损优先取 supertrend 值
-            if directions and directions[-1] == -1:  # Up trend
-                close_info.stop_loss = supertrend_values[-1]
-            else:
-                # 止损上移（线性衰减，保护利润）
-                initial_sl_gap = close_info.entry_price - close_info.stop_loss
-                sl_decay_step = initial_sl_gap * DECAY
-                close_info.stop_loss = min(
-                    current_price, close_info.stop_loss + sl_decay_step
-                )
+            # 止损上移（线性衰减，保护利润）
+            initial_sl_gap = close_info.entry_price - close_info.stop_loss
+            sl_decay_step = initial_sl_gap * DECAY
+            close_info.stop_loss = min(
+                current_price, close_info.stop_loss + sl_decay_step
+            )
 
             cls.alert_all["POSITIONS"][code] = close_info.model_dump()
 
