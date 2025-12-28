@@ -1481,7 +1481,7 @@ class AUTOBN:
 
                 else:
                     # 计算当前supertrend上下轨，用于止盈边界限制
-                    hl2 = (kline_15[-1][2] + kline_15[-1][3]) / 2  # (high + low) / 2
+                    hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
                     current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
                     current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
 
@@ -1599,7 +1599,7 @@ class AUTOBN:
                             return
                         rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
                         self.send_msg(
-                            f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{kline_close_15[-1]}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                            f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                         )
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
