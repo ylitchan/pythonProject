@@ -1504,18 +1504,11 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            # 止损上移(线性衰减,保护利润)
-                            initial_sl_gap = (
-                                close_info.entry_price - close_info.stop_loss
-                            )  # 入场价到止损的初始距离
-                            sl_decay_step = (
-                                initial_sl_gap
-                                * self.STOP_LOSS_DECAY_PER_MINUTE
-                                * decay_multiplier
-                            )
-                            close_info.stop_loss = min(
-                                close_info.entry_price,
-                                close_info.stop_loss + sl_decay_step,
+                            # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
+                            # 取当前下轨和原止损的较大值
+                            close_info.stop_loss = max(
+                                close_info.stop_loss,
+                                current_lower,
                             )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
@@ -1537,18 +1530,11 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            # 止损下移(线性衰减)
-                            initial_sl_gap = (
-                                close_info.stop_loss - close_info.entry_price
-                            )  # 止损到入场价的初始距离
-                            sl_decay_step = (
-                                initial_sl_gap
-                                * self.STOP_LOSS_DECAY_PER_MINUTE
-                                * decay_multiplier
-                            )
-                            close_info.stop_loss = max(
-                                close_info.entry_price,
-                                close_info.stop_loss - sl_decay_step,
+                            # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
+                            # 取当前上轨和原止损的较小值
+                            close_info.stop_loss = min(
+                                close_info.stop_loss,
+                                current_upper,
                             )
 
                     # 更新回字典
@@ -1569,6 +1555,7 @@ class AUTOBN:
                         PositionSide.BZ in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and kline_close[-2] < current_price
+                        and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.BUY
                         should_open = True
@@ -1576,15 +1563,20 @@ class AUTOBN:
                         PositionSide.BD in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and current_price < kline_close[-2]
+                        and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.SELL
                         should_open = True
-                    elif (
-                        PositionSide.Supertrend in open_info.strategy
-                        and (await self.check_trend(semaphore, symbol, kline[:-1]))
-                        == PositionSide.SHORT.value
+                    elif PositionSide.Supertrend in open_info.strategy and (
+                        open_side := await self.check_trend(
+                            semaphore, symbol, kline[:-1]
+                        )
                     ):
-                        open_info.side = OrderSide.SELL
+                        open_info.side = (
+                            OrderSide.SELL
+                            if open_side == PositionSide.SHORT.value
+                            else OrderSide.BUY
+                        )
                         should_open = True
                     if should_open:
                         # 使用15分钟K线的ATR计算止盈止损（与supertrend保持一致）
@@ -1930,8 +1922,8 @@ class AUTOA:
             atr_period: ATR周期，默认使用类常量 ATR_PERIOD
 
         返回:
-            (supertrend_values, directions, atr_values, upper_values):
-            supertrend值列表、方向列表、ATR值列表、上轨值列表
+            (supertrend_values, directions, atr_values, upper_values, lower_values):
+            supertrend值列表、方向列表、ATR值列表、上轨值列表、下轨值列表
             方向: -1 表示上升趋势, 1 表示下降趋势
         """
         if factor is None:
@@ -1939,12 +1931,13 @@ class AUTOA:
         if atr_period is None:
             atr_period = cls.ATR_PERIOD
         if hist_data.empty or len(hist_data) < atr_period + 1:
-            return [], [], [], []
+            return [], [], [], [], []
 
         supertrend_values = []
         directions = []
         atr_values = []
         upper_values = []  # 上轨值列表
+        lower_values = []  # 下轨值列表
 
         # 缓存列数据加速访问
         highs = hist_data["high"].values
@@ -1969,6 +1962,7 @@ class AUTOA:
             basic_upper = hl2 + factor * atr
             basic_lower = hl2 - factor * atr
             upper_values.append(basic_upper)  # 保存当前上轨
+            lower_values.append(basic_lower)  # 保存当前下轨
 
             if len(directions) == 0:
                 if current_close > basic_upper:
@@ -2001,7 +1995,7 @@ class AUTOA:
             supertrend_values.append(supertrend)
             directions.append(direction)
 
-        return supertrend_values, directions, atr_values, upper_values
+        return supertrend_values, directions, atr_values, upper_values, lower_values
 
     @classmethod
     async def check_trend(cls, code, zt_dates=None, kline_data=None, check_at_index=-1):
@@ -2037,17 +2031,18 @@ class AUTOA:
                 )
 
             if kline_data.empty or len(kline_data) < atr_period + 1:
-                return 0, 0.0, [], 0.0
+                return 0, 0.0, [], 0.0, 0.0
 
-            supertrend_values, directions, atr_values, upper_values = (
+            supertrend_values, directions, atr_values, upper_values, lower_values = (
                 cls.calculate_trend(kline_data, factor=factor, atr_period=atr_period)
             )
 
             last_atr = atr_values[-1] if atr_values else 0.0
             current_upper = upper_values[-1] if upper_values else 0.0
+            current_lower = lower_values[-1] if lower_values else 0.0
 
             if len(directions) < 2:
-                return 0, last_atr, supertrend_values, current_upper
+                return 0, last_atr, supertrend_values, current_upper, current_lower
 
             # 转换为实际索引
             idx = (
@@ -2056,7 +2051,7 @@ class AUTOA:
                 else len(directions) + check_at_index
             )
             if idx < 1 or idx >= len(directions):
-                return 0, last_atr, supertrend_values, current_upper
+                return 0, last_atr, supertrend_values, current_upper, current_lower
 
             prev_direction = directions[idx - 1]
             curr_direction = directions[idx]
@@ -2068,6 +2063,7 @@ class AUTOA:
                     last_atr,
                     supertrend_values,
                     current_upper,
+                    current_lower,
                 )  # 做多信号
             elif prev_direction == -1 and curr_direction == 1:
                 return (
@@ -2075,9 +2071,10 @@ class AUTOA:
                     last_atr,
                     supertrend_values,
                     current_upper,
+                    current_lower,
                 )  # 做空信号
             else:
-                return 0, last_atr, supertrend_values, current_upper
+                return 0, last_atr, supertrend_values, current_upper, current_lower
 
         except Exception as e:
             cls.logger.exception(f"检查 {code} 趋势信号时发生错误")
@@ -2468,18 +2465,18 @@ class AUTOA:
             )
         else:
             # 未触及止盈止损，执行移动止损逻辑
-            supertrend_values, directions, atr_values, upper_values = (
+            supertrend_values, directions, atr_values, upper_values, lower_values = (
                 cls.calculate_trend(
                     hist, factor=cls.SUPERTREND_FACTOR, atr_period=cls.ATR_PERIOD
                 )
             )
 
             # 参照 AUTOBN 的动态止盈止损逻辑
-            current_price = price_close
             DECAY = cls.STOP_LOSS_DECAY
 
-            # 使用calculate_trend返回的当前上轨
+            # 使用 calculate_trend 返回的当前上下轨
             current_upper = upper_values[-1] if upper_values else close_info.take_profit
+            current_lower = lower_values[-1] if lower_values else close_info.stop_loss
 
             # 做多: 止盈在上方，止损在下方
             # 止盈下移: 取衰减后的值和当前上轨的较小值
@@ -2487,12 +2484,9 @@ class AUTOA:
             tp_decay_step = initial_tp_gap * DECAY
             decayed_tp = close_info.take_profit - tp_decay_step
             close_info.take_profit = min(decayed_tp, current_upper)
-            # 止损上移（线性衰减，保护利润）
-            initial_sl_gap = close_info.entry_price - close_info.stop_loss
-            sl_decay_step = initial_sl_gap * DECAY
-            close_info.stop_loss = min(
-                current_price, close_info.stop_loss + sl_decay_step
-            )
+            # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
+            # 取当前下轨和原止损的较大值
+            close_info.stop_loss = max(close_info.stop_loss, current_lower)
 
             cls.alert_all["POSITIONS"][code] = close_info.model_dump()
 
