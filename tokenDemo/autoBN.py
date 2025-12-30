@@ -1504,10 +1504,13 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            # 检测是否达到1个ATR盈利，如果是则设置止损为保护70%盈利
+                            # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                             profit = current_price - close_info.entry_price
-                            if profit >= atr_value:
-                                # 达到1ATR盈利，止损设置为当前盈利回撤30%的位置
+                            target_profit = (
+                                initial_tp_gap / self.SUPERTREND_FACTOR
+                            )  # 预期收益的1/3
+                            if profit >= target_profit:
+                                # 达到目标盈利，止损设置为当前盈利回撤30%的位置
                                 # 止损 = 入场价 + 盈利 * 70%
                                 trailing_stop = close_info.entry_price + profit * 0.7
                                 close_info.stop_loss = max(
@@ -1541,10 +1544,13 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            # 检测是否达到1个ATR盈利，如果是则设置止损为保护70%盈利
+                            # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                             profit = close_info.entry_price - current_price
-                            if profit >= atr_value:
-                                # 达到1ATR盈利，止损设置为当前盈利回撤30%的位置
+                            target_profit = (
+                                initial_tp_gap / self.SUPERTREND_FACTOR
+                            )  # 预期收益的1/3
+                            if profit >= target_profit:
+                                # 达到目标盈利，止损设置为当前盈利回撤30%的位置
                                 # 止损 = 入场价 - 盈利 * 70%
                                 trailing_stop = close_info.entry_price - profit * 0.7
                                 close_info.stop_loss = min(
@@ -2505,13 +2511,11 @@ class AUTOA:
             decayed_tp = close_info.take_profit - tp_decay_step
             close_info.take_profit = min(decayed_tp, current_upper)
 
-            # 获取当前ATR值
-            current_atr = atr_values[-1] if atr_values else 0
-
-            # 检测是否达到1个ATR盈利，如果是则设置止损为保护70%盈利
+            # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
             profit = price_close - close_info.entry_price
-            if current_atr > 0 and profit >= current_atr:
-                # 达到1ATR盈利，止损设置为当前盈利回撤30%的位置
+            target_profit = initial_tp_gap / cls.SUPERTREND_FACTOR  # 预期收益的1/3
+            if profit >= target_profit:
+                # 达到目标盈利，止损设置为当前盈利回撤30%的位置
                 # 止损 = 入场价 + 盈利 * 70%
                 trailing_stop = close_info.entry_price + profit * 0.7
                 close_info.stop_loss = max(close_info.stop_loss, trailing_stop)
