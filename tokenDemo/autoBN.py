@@ -1602,8 +1602,14 @@ class AUTOBN:
                     ):
                         open_info.side = OrderSide.SELL
                         should_open = True
-                    elif PositionSide.Supertrend in open_info.strategy and (
-                        open_side := await self.check_trend(semaphore, symbol, kline)
+                    elif (
+                        open_info_date_utc != current_date_utc
+                        and PositionSide.Supertrend in open_info.strategy
+                        and (
+                            open_side := await self.check_trend(
+                                semaphore, symbol, kline
+                            )
+                        )
                     ):
                         open_info.side = (
                             OrderSide.SELL
