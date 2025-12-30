@@ -1579,8 +1579,14 @@ class AUTOBN:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
                     should_open = False
+                    # 检查UTC0日期：如果当前时间和open_info不是同一天(UTC0)则跳过
+                    open_info_date_utc = datetime.datetime.utcfromtimestamp(
+                        open_info.timestamp
+                    ).date()
+                    current_date_utc = datetime.datetime.utcnow().date()
                     if (
-                        PositionSide.BZ in open_info.strategy
+                        open_info_date_utc == current_date_utc
+                        and PositionSide.BZ in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and kline_close[-2] < current_price
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
@@ -1588,7 +1594,8 @@ class AUTOBN:
                         open_info.side = OrderSide.BUY
                         should_open = True
                     elif (
-                        PositionSide.BD in open_info.strategy
+                        open_info_date_utc == current_date_utc
+                        and PositionSide.BD in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and current_price < kline_close[-2]
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
