@@ -2579,6 +2579,7 @@ class AUTOA:
                 current_atr,
                 supertrend_values,
                 current_upper,
+                current_lower,
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
 
             if PositionSide.BZ in open_info.strategy:
