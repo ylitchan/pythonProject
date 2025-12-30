@@ -1504,12 +1504,23 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
-                            # 取当前下轨和原止损的较大值
-                            close_info.stop_loss = max(
-                                close_info.stop_loss,
-                                current_lower,
-                            )
+                            # 检测是否达到1个ATR盈利，如果是则设置止损为保护70%盈利
+                            profit = current_price - close_info.entry_price
+                            if profit >= atr_value:
+                                # 达到1ATR盈利，止损设置为当前盈利回撤30%的位置
+                                # 止损 = 入场价 + 盈利 * 70%
+                                trailing_stop = close_info.entry_price + profit * 0.7
+                                close_info.stop_loss = max(
+                                    close_info.stop_loss,
+                                    trailing_stop,
+                                )
+                            else:
+                                # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
+                                # 取当前下轨和原止损的较大值
+                                close_info.stop_loss = max(
+                                    close_info.stop_loss,
+                                    current_lower,
+                                )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
@@ -1530,12 +1541,23 @@ class AUTOBN:
                         if close_info.tp_count > 0:
                             close_info.stop_loss = close_info.entry_price
                         else:
-                            # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
-                            # 取当前上轨和原止损的较小值
-                            close_info.stop_loss = min(
-                                close_info.stop_loss,
-                                current_upper,
-                            )
+                            # 检测是否达到1个ATR盈利，如果是则设置止损为保护70%盈利
+                            profit = close_info.entry_price - current_price
+                            if profit >= atr_value:
+                                # 达到1ATR盈利，止损设置为当前盈利回撤30%的位置
+                                # 止损 = 入场价 - 盈利 * 70%
+                                trailing_stop = close_info.entry_price - profit * 0.7
+                                close_info.stop_loss = min(
+                                    close_info.stop_loss,
+                                    trailing_stop,
+                                )
+                            else:
+                                # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
+                                # 取当前上轨和原止损的较小值
+                                close_info.stop_loss = min(
+                                    close_info.stop_loss,
+                                    current_upper,
+                                )
 
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
@@ -1808,9 +1830,9 @@ class AUTOBN:
                     self.logger.exception("获取交易对信息时发生异常")
                     await asyncio.sleep(self.RETRY_DELAY_SECONDS)
         if self.is_early_morning:
-            balance = self.um_futures_client.account()["totalWalletBalance"]
-            self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
-            self.logger.info("账户信息推送任务执行完成")
+            # balance = self.um_futures_client.account()["totalWalletBalance"]
+            # self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
+            # self.logger.info("账户信息推送任务执行完成")
             with open(self.alert_all_file, "w") as f:
                 json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
         # 创建信号量，限制最大并发数，避免API限制
@@ -2482,9 +2504,21 @@ class AUTOA:
             tp_decay_step = initial_tp_gap * DECAY
             decayed_tp = close_info.take_profit - tp_decay_step
             close_info.take_profit = min(decayed_tp, current_upper)
-            # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
-            # 取当前下轨和原止损的较大值
-            close_info.stop_loss = max(close_info.stop_loss, current_lower)
+
+            # 获取当前ATR值
+            current_atr = atr_values[-1] if atr_values else 0
+
+            # 检测是否达到1个ATR盈利，如果是则设置止损为保护70%盈利
+            profit = price_close - close_info.entry_price
+            if current_atr > 0 and profit >= current_atr:
+                # 达到1ATR盈利，止损设置为当前盈利回撤30%的位置
+                # 止损 = 入场价 + 盈利 * 70%
+                trailing_stop = close_info.entry_price + profit * 0.7
+                close_info.stop_loss = max(close_info.stop_loss, trailing_stop)
+            else:
+                # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
+                # 取当前下轨和原止损的较大值
+                close_info.stop_loss = max(close_info.stop_loss, current_lower)
 
             cls.alert_all["POSITIONS"][code] = close_info.model_dump()
 
