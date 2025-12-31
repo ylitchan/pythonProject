@@ -863,9 +863,8 @@ class AUTOBN:
                     return False
                 elif positionSide == PositionSide.SHORT.value:
                     # 做空：要求当前多空比是历史最高值（散户最疯狂）
-                    if lsrd == max(lsr_values):
-                        return True
-                    return False
+                    if lsrd != max(lsr_values):
+                        return False
 
                 # 获取持仓量历史数据（带缓存）
                 dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
@@ -1576,10 +1575,10 @@ class AUTOBN:
                 else:
                     should_open = False
                     # 检查UTC0日期：如果当前时间和open_info不是同一天(UTC0)则跳过
-                    open_info_date_utc = datetime.datetime.utcfromtimestamp(
-                        open_info.timestamp
+                    open_info_date_utc = datetime.datetime.fromtimestamp(
+                        open_info.timestamp, datetime.UTC
                     ).date()
-                    current_date_utc = datetime.datetime.utcnow().date()
+                    current_date_utc = datetime.datetime.now(datetime.UTC).date()
                     if (
                         open_info_date_utc == current_date_utc
                         and PositionSide.BZ in open_info.strategy
