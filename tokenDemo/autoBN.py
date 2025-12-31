@@ -243,15 +243,13 @@ class AUTOBN:
 
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
-    LONG_SHORT_RATIO_LONG_THRESHOLD = 6 / 4  # 多头开仓阈值（多空比 > 此值时禁止做多）
-    LONG_SHORT_RATIO_SHORT_THRESHOLD = 4 / 6  # 空头开仓阈值（多空比 < 此值时禁止做空）
-    LONG_SHORT_RATIO_CACHE_TTL = 300  # 多空比缓存过期时间（秒）
+    LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
-    STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (1%)
+    STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 每分钟止盈止损衰减比例 (1%)
 
     # ==================== 风险管理常量 ====================
     RISK_PER_TRADE = 0.005  # 每笔交易风险比例 (0.5%: 止损触发时最多损失账户的0.5%)
@@ -307,13 +305,6 @@ class AUTOBN:
         obj.leverage = kwargs.get("leverage", cls.DEFAULT_LEVERAGE)
         obj.health4open = kwargs.get("health4open", cls.DEFAULT_HEALTH_THRESHOLD)
 
-        # 多空比阈值配置（可覆盖）
-        obj.long_short_ratio_long_threshold = kwargs.get(
-            "long_short_ratio_long_threshold", cls.LONG_SHORT_RATIO_LONG_THRESHOLD
-        )
-        obj.long_short_ratio_short_threshold = kwargs.get(
-            "long_short_ratio_short_threshold", cls.LONG_SHORT_RATIO_SHORT_THRESHOLD
-        )
         # 仓位模式：'CROSSED' 全仓，'ISOLATED' 逐仓；支持大小写/中文/别名
         # 仅设置新开仓/下单前的目标模式；若该 symbol 已有仓位，交易所可能拒绝切换
         margin_mode_raw = (
@@ -857,18 +848,23 @@ class AUTOBN:
                 # 提取最新的多空人数比
                 if not long_short_ratio_data:
                     return False
-                lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
 
-                # 根据持仓方向判断多空比条件（逆势逻辑：LONG 在 lsrd<阈值，SHORT 在 lsrd>阈值）
+                # 提取所有历史多空比值
+                lsr_values = [
+                    float(item["longShortRatio"]) for item in long_short_ratio_data
+                ]
+                lsrd = lsr_values[-1]  # 当前值
+
+                # 根据持仓方向判断多空比条件（极值逻辑）
                 if positionSide == PositionSide.LONG.value:
-                    # 做多：要求多空比小于阈值（逆势做多）
-                    if lsrd < self.long_short_ratio_long_threshold:
+                    # 做多：要求当前多空比是历史最低值（散户最恐慌）
+                    if lsrd == min(lsr_values):
                         return True
                     return False
-                elif (
-                    positionSide == PositionSide.SHORT.value
-                    and lsrd <= self.long_short_ratio_short_threshold
-                ):
+                elif positionSide == PositionSide.SHORT.value:
+                    # 做空：要求当前多空比是历史最高值（散户最疯狂）
+                    if lsrd == max(lsr_values):
+                        return True
                     return False
 
                 # 获取持仓量历史数据（带缓存）
@@ -1072,7 +1068,7 @@ class AUTOBN:
             data = await asyncio.to_thread(
                 self.um_futures_client.long_short_account_ratio,
                 symbol=symbol,
-                period="5m",
+                period="15m",
                 limit=self.LONG_SHORT_RATIO_LIMIT,
             )
             # 更新缓存
@@ -1392,7 +1388,7 @@ class AUTOBN:
             )
 
             # 获取日K线数据（30天）
-            kline = await self.get_kline(semaphore, symbol, "1Dutc")
+            kline = await self.get_kline(semaphore, symbol, "15m")
             # 数据量检查
             if len(kline) < self.MIN_KLINE_FOR_ANALYSIS:
                 return
