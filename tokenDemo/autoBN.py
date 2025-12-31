@@ -1067,7 +1067,7 @@ class AUTOBN:
             data = await asyncio.to_thread(
                 self.um_futures_client.long_short_account_ratio,
                 symbol=symbol,
-                period="15m",
+                period="1h",
                 limit=self.LONG_SHORT_RATIO_LIMIT,
             )
             # 更新缓存
@@ -1387,7 +1387,7 @@ class AUTOBN:
             )
 
             # 获取日K线数据（30天）
-            kline = await self.get_kline(semaphore, symbol, "15m")
+            kline = await self.get_kline(semaphore, symbol, "1Dutc")
             # 数据量检查
             if len(kline) < self.MIN_KLINE_FOR_ANALYSIS:
                 return
