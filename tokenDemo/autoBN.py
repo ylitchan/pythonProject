@@ -920,26 +920,6 @@ class AUTOBN:
     async def check_oi(self, semaphore, symbol, open_info, dtn):
         async with semaphore:
             try:
-                # # 获取多空人数比数据（使用缓存）
-                # long_short_ratio_data = await self.get_long_short_ratio(symbol)
-                # # 提取最新的多空人数比
-                # if not long_short_ratio_data:
-                #     return False
-                # lsrd = float(long_short_ratio_data[-1]["longShortRatio"])
-                # # 做多：要求多空比小于阈值（逆势做多）
-                # if (
-                #     open_info.strategy == PositionSide.LONG
-                #     and lsrd >= self.long_short_ratio_long_threshold
-                # ):
-                #     return False
-                # # 做空：要求多空比大于阈值（逆势做空）
-                # elif (
-                #     open_info.strategy == PositionSide.SHORT
-                #     and lsrd <= self.long_short_ratio_short_threshold
-                # ):
-                #     return False
-
-                # 获取 5m 持仓量数据（带缓存，5分钟过期）
                 current_time = time.time()
                 oi_5m_cache = self._oi_5m_cache.get(symbol)
                 if (
@@ -1624,9 +1604,6 @@ class AUTOBN:
                         if zy == 0 and zs == 0:
                             return
                         rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
-                        self.send_msg(
-                            f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
-                        )
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
                         )
