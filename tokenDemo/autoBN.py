@@ -1040,28 +1040,39 @@ class AUTOBN:
             and (current_time - cache_entry["timestamp"])
             < self.LONG_SHORT_RATIO_CACHE_TTL
         ):
-            return cache_entry["data"]
-
-        # 缓存无效或强制刷新，重新获取数据
+            data = cache_entry["data"]
+        else:
+            # 缓存无效或强制刷新，重新获取数据
+            try:
+                data = await asyncio.to_thread(
+                    self.um_futures_client.long_short_account_ratio,
+                    symbol=symbol,
+                    period="1h",
+                    limit=self.LONG_SHORT_RATIO_LIMIT,
+                )
+                # 更新缓存
+                self._long_short_ratio_cache[symbol] = {
+                    "data": data,
+                    "timestamp": current_time,
+                }
+            except Exception as e:
+                self.logger.error(f"{symbol}获取多空比数据失败: {str(e)}")
+                # 如果获取失败但有旧缓存，返回旧数据
+                if cache_entry:
+                    data = cache_entry["data"]
+                else:
+                    data = []
         try:
-            data = await asyncio.to_thread(
+            data2 = await asyncio.to_thread(
                 self.um_futures_client.long_short_account_ratio,
                 symbol=symbol,
-                period="1h",
-                limit=self.LONG_SHORT_RATIO_LIMIT,
+                period="5m",
+                limit=1,
             )
-            # 更新缓存
-            self._long_short_ratio_cache[symbol] = {
-                "data": data,
-                "timestamp": current_time,
-            }
-            return data
         except Exception as e:
             self.logger.error(f"{symbol}获取多空比数据失败: {str(e)}")
-            # 如果获取失败但有旧缓存，返回旧数据
-            if cache_entry:
-                return cache_entry["data"]
-            return []
+            data2 = []
+        return data + data2
 
     async def if_basis(self):
         """
