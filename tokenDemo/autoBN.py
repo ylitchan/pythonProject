@@ -257,7 +257,7 @@ class AUTOBN:
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
 
     # ==================== 平仓相关常量 ====================
     PARTIAL_CLOSE_RATIO = 0.7  # 部分平仓比例 (止盈时使用)
@@ -858,7 +858,13 @@ class AUTOBN:
                 # 根据持仓方向判断多空比条件（极值逻辑）
                 if positionSide == PositionSide.LONG.value:
                     # 做多：要求当前多空比是历史最低值（散户最恐慌）
-                    if lsrd == min(lsr_values):
+                    if lsrd == min(lsr_values) and (
+                        self.calculate_chebyshev_probability(
+                            lsr_values[:-1],
+                            lsrd,
+                        )["chebyshev_upper_bound"]
+                        < self.CHEBYSHEV_EXTREME_THRESHOLD
+                    ):
                         return True
                     return False
                 elif positionSide == PositionSide.SHORT.value:
@@ -1575,6 +1581,14 @@ class AUTOBN:
                         and PositionSide.BZ in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and kline_close[-2] < current_price
+                        and await self.check_side(
+                            semaphore,
+                            symbol,
+                            PositionSide.LONG.value,
+                            kline_close,
+                            kline_volume,
+                            dtn,
+                        )
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.BUY
@@ -1647,22 +1661,12 @@ class AUTOBN:
             else:
                 # 做多信号判断
                 if (
-                    kline_volume[-1]
-                    > sum(kline_volume[-self.ATR_PERIOD : -1])
-                    / len(kline_volume[-self.ATR_PERIOD : -1])
+                    kline_volume[-1] == max(kline_volume[-self.ATR_PERIOD :])
                     and self.calculate_chebyshev_probability(
                         kline_volume[-self.ATR_PERIOD : -1],
                         kline_volume[-1],
                     )["chebyshev_upper_bound"]
                     < self.CHEBYSHEV_EXTREME_THRESHOLD
-                    and await self.check_side(
-                        semaphore,
-                        symbol,
-                        PositionSide.LONG.value,
-                        kline_close,
-                        kline_volume,
-                        dtn,
-                    )
                 ):
                     is_long = True
                     open_info = Observation(
@@ -1864,7 +1868,7 @@ class AUTOA:
     ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 20 * 24 * 60 * 60  # 观察记录超时时间（20天）
@@ -2582,7 +2586,9 @@ class AUTOA:
                 current_lower,
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
 
-            if PositionSide.BZ in open_info.strategy:
+            if PositionSide.BZ in open_info.strategy and hist_volume[-1] == max(
+                hist_volume[-cls.ATR_PERIOD :]
+            ):
                 # 计算最近成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
                     hist_volume[-cls.ATR_PERIOD : -1], hist_volume[-1]
