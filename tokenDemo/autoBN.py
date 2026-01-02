@@ -2586,8 +2586,15 @@ class AUTOA:
                 current_lower,
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
 
-            if PositionSide.BZ in open_info.strategy and hist_volume[-1] == max(
-                hist_volume[-cls.ATR_PERIOD :]
+            # 获取开盘价和收盘价序列用于高开判断
+            hist_open = hist["open"].values
+            hist_close = hist["close"].values
+
+            if (
+                PositionSide.BZ in open_info.strategy
+                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD :])
+                and hist_open[-1]
+                > hist_close[-2]  # 添加高开条件：今日开盘价 > 昨日收盘价
             ):
                 # 计算最近成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
