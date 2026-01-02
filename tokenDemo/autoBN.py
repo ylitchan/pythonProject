@@ -227,7 +227,7 @@ class AUTOBN:
     MAX_CONCURRENT_REQUESTS = 10  # 最大并发请求数
 
     # ==================== 时间常量 ====================
-    OBSERVATION_TIMEOUT_SECONDS = 96 * 15 * 60  # 观察记录超时时间（约24小时）
+    OBSERVATION_TIMEOUT_SECONDS = 7 * 96 * 15 * 60  # 观察记录超时时间（约7天）
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
 
@@ -257,7 +257,7 @@ class AUTOBN:
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 平仓相关常量 ====================
     PARTIAL_CLOSE_RATIO = 0.7  # 部分平仓比例 (止盈时使用)
@@ -378,8 +378,8 @@ class AUTOBN:
         # 初始化多空比缓存: {symbol: {"data": [...], "timestamp": float}}
         obj._long_short_ratio_cache = {}
         # 初始化持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
-        # target_date 是当天8点的时间戳(毫秒)，用于判断缓存是否过期
-        obj._oi_1d_cache = {}
+        # target_date 是当前整点的时间戳(毫秒)，用于判断缓存是否过期
+        obj._oi_1h_cache = {}
         # 初始化5分钟持仓量缓存: {symbol: {"data": [...], "timestamp": float}}
         obj._oi_5m_cache = {}
 
@@ -945,24 +945,24 @@ class AUTOBN:
                         "timestamp": current_time,
                     }
 
-                # 获取 1d 持仓量数据（复用 _oi_1d_cache，需检查 target_date）
-                dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
+                # 获取 1h 持仓量数据（复用 _oi_1h_cache，需检查 target_date）
+                dtn_target = dtn.replace(minute=0, second=0, microsecond=0)
                 target_ts = int(dtn_target.timestamp() * 1000)
 
-                oi_1d_cache = self._oi_1d_cache.get(symbol)
-                if oi_1d_cache and oi_1d_cache.get("target_date") == target_ts:
-                    oi_1d = oi_1d_cache["data"]
+                oi_1h_cache = self._oi_1h_cache.get(symbol)
+                if oi_1h_cache and oi_1h_cache.get("target_date") == target_ts:
+                    oi_1h = oi_1h_cache["data"]
                 else:
-                    oi_1d = await asyncio.to_thread(
+                    oi_1h = await asyncio.to_thread(
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
-                        period="1d",
+                        period="1h",
                         limit=self.LONG_SHORT_RATIO_LIMIT,
                     )
                     # 如果数据时间戳匹配，也更新缓存
-                    if oi_1d and oi_1d[-1]["timestamp"] == target_ts:
-                        self._oi_1d_cache[symbol] = {
-                            "data": oi_1d,
+                    if oi_1h and oi_1h[-1]["timestamp"] == target_ts:
+                        self._oi_1h_cache[symbol] = {
+                            "data": oi_1h,
                             "target_date": target_ts,
                         }
 
@@ -973,21 +973,21 @@ class AUTOBN:
                     float(i["sumOpenInterest"]) for i in oi_5m
                 ]  # 持仓数量（合约数）
 
-                sumOpenInterestValue_1d = [
-                    float(i["sumOpenInterestValue"]) for i in oi_1d
+                sumOpenInterestValue_1h = [
+                    float(i["sumOpenInterestValue"]) for i in oi_1h
                 ]  # 持仓价值（美元）
-                sumOpenInterest_1d = [
-                    float(i["sumOpenInterest"]) for i in oi_1d
+                sumOpenInterest_1h = [
+                    float(i["sumOpenInterest"]) for i in oi_1h
                 ]  # 持仓数量（合约数）
 
                 if PositionSide.BZ in open_info.strategy and (
-                    sumOpenInterest_5m[-1] <= min(sumOpenInterest_1d[-2:])
-                    or sumOpenInterestValue_5m[-1] <= min(sumOpenInterestValue_1d[-2:])
+                    sumOpenInterest_5m[-1] <= max(sumOpenInterest_1h)
+                    or sumOpenInterestValue_5m[-1] <= max(sumOpenInterestValue_1h)
                 ):
                     return False
                 elif (
                     PositionSide.BD in open_info.strategy
-                    and sumOpenInterest_5m[-1] >= sumOpenInterest_1d[-1]
+                    and sumOpenInterest_5m[-1] >= sumOpenInterest_1h[-1]
                 ):
                     return False
                 return True
@@ -1560,25 +1560,23 @@ class AUTOBN:
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             elif open_info:
+                # 检查UTC0日期：如果当前时间和open_info不是同一天(UTC0)则跳过
+                open_info_date_utc = datetime.datetime.fromtimestamp(
+                    open_info.timestamp, datetime.UTC
+                ).date()
+                current_date_utc = datetime.datetime.now(datetime.UTC).date()
                 if (
                     PositionSide.Supertrend not in open_info.strategy
-                    and current_timestamp - open_info.timestamp
-                    > self.OBSERVATION_TIMEOUT_SECONDS
+                    and open_info_date_utc != current_date_utc
                     or PositionSide.Supertrend in open_info.strategy
                     and current_timestamp - open_info.timestamp
-                    > self.OBSERVATION_TIMEOUT_SECONDS * 7
+                    > self.OBSERVATION_TIMEOUT_SECONDS
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                 else:
                     should_open = False
-                    # 检查UTC0日期：如果当前时间和open_info不是同一天(UTC0)则跳过
-                    open_info_date_utc = datetime.datetime.fromtimestamp(
-                        open_info.timestamp, datetime.UTC
-                    ).date()
-                    current_date_utc = datetime.datetime.now(datetime.UTC).date()
                     if (
-                        open_info_date_utc == current_date_utc
-                        and PositionSide.BZ in open_info.strategy
+                        PositionSide.BZ in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and kline_close[-2] < current_price
                         and await self.check_side(
@@ -1594,8 +1592,7 @@ class AUTOBN:
                         open_info.side = OrderSide.BUY
                         should_open = True
                     elif (
-                        open_info_date_utc == current_date_utc
-                        and PositionSide.BD in open_info.strategy
+                        PositionSide.BD in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and current_price < kline_close[-2]
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
@@ -1660,13 +1657,8 @@ class AUTOBN:
 
             else:
                 # 做多信号判断
-                if (
-                    kline_volume[-1] == max(kline_volume[-self.ATR_PERIOD :])
-                    and self.calculate_chebyshev_probability(
-                        kline_volume[-self.ATR_PERIOD : -1],
-                        kline_volume[-1],
-                    )["chebyshev_upper_bound"]
-                    < self.CHEBYSHEV_EXTREME_THRESHOLD
+                if kline_close[-2] < current_price and kline_volume[-1] == max(
+                    kline_volume[-self.ATR_PERIOD :]
                 ):
                     is_long = True
                     open_info = Observation(
@@ -1868,7 +1860,7 @@ class AUTOA:
     ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 20 * 24 * 60 * 60  # 观察记录超时时间（20天）
