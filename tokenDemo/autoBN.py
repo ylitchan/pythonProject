@@ -377,8 +377,11 @@ class AUTOBN:
         obj.is_early_morning = False
         # 初始化多空比缓存: {symbol: {"data": [...], "timestamp": float}}
         obj._long_short_ratio_cache = {}
-        # 初始化持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
-        # target_date 是当前整点的时间戳(毫秒)，用于判断缓存是否过期
+        # 初始化1d持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
+        # target_date 是当天8点的时间戳(毫秒)，用于判断缓存是否过期（用于 check_side）
+        obj._oi_1d_cache = {}
+        # 初始化1h持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
+        # target_date 是当前整点的时间戳(毫秒)，用于判断缓存是否过期（用于 check_oi）
         obj._oi_1h_cache = {}
         # 初始化5分钟持仓量缓存: {symbol: {"data": [...], "timestamp": float}}
         obj._oi_5m_cache = {}
