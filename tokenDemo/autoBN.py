@@ -863,7 +863,7 @@ class AUTOBN:
                     # 做多：要求当前多空比是历史最低值（散户最恐慌）
                     if lsrd == min(lsr_values) and (
                         self.calculate_chebyshev_probability(
-                            lsr_values[:-1],
+                            lsr_values[: -self.ATR_PERIOD],
                             lsrd,
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
