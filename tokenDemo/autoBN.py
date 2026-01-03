@@ -2593,9 +2593,7 @@ class AUTOA:
             ):
                 # 计算最近成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
-                    hist_volume[
-                        -cls.ATR_PERIOD * cls.SUPERTREND_FACTOR : -cls.ATR_PERIOD
-                    ],
+                    hist_volume[-cls.ATR_PERIOD : -1],
                     hist_volume[-1],
                 )
                 # 如果成交量是极端异常值（满足放量条件），则开仓
