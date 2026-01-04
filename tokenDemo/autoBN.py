@@ -249,7 +249,7 @@ class AUTOBN:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
-    STOP_LOSS_DECAY_PER_MINUTE = 0.01  # 每分钟止盈止损衰减比例 (1%)
+    STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
     # ==================== 风险管理常量 ====================
     RISK_PER_TRADE = 0.005  # 每笔交易风险比例 (0.5%: 止损触发时最多损失账户的0.5%)
