@@ -2565,14 +2565,14 @@ class AUTOA:
             frequency="d",
             adjustflag="3",  # 前复权
         )
+        if hist.empty:
+            return
         # 获取开盘价和收盘价序列用于高开判断
         hist_open = hist["open"].values
         hist_close = hist["close"].values
         # 数据校验：无历史数据则跳过，或当前价格不高于昨日最高价则跳过
-        if (
-            hist.empty
-            or hist_open[-1] <= hist_close[-2]
-            or hist_close[-1] <= max(hist.iloc[-2]["high"], hist_open[-1])
+        if hist_open[-1] <= hist_close[-2] or hist_close[-1] <= max(
+            hist.iloc[-2]["high"], hist_open[-1]
         ):
             return
 
