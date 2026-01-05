@@ -2570,10 +2570,9 @@ class AUTOA:
         # 获取开盘价和收盘价序列用于高开判断
         hist_open = hist["open"].values
         hist_close = hist["close"].values
+        hist_high = hist["high"].values
         # 数据校验：无历史数据则跳过，或当前价格不高于昨日最高价则跳过
-        if hist_open[-1] <= hist_close[-2] or hist_close[-1] <= max(
-            hist.iloc[-2]["high"], hist_open[-1]
-        ):
+        if hist_open[-1] <= hist_high[-2] or hist_close[-1] <= hist_open[-1]:
             return
 
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
@@ -2603,7 +2602,10 @@ class AUTOA:
                     < cls.CHEBYSHEV_EXTREME_THRESHOLD
                 ):
                     should_open = True
-            elif trend_signal == PositionSide.LONG.value:
+            elif (
+                PositionSide.Supertrend in open_info.strategy
+                and trend_signal == PositionSide.LONG.value
+            ):
                 should_open = True
 
             if should_open and current_atr > 0:
