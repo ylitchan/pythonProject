@@ -1576,6 +1576,7 @@ class AUTOBN:
                     > self.OBSERVATION_TIMEOUT_SECONDS
                 ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
+                    self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
                 else:
                     should_open = False
                     if (
@@ -2562,9 +2563,14 @@ class AUTOA:
             frequency="d",
             adjustflag="3",  # 前复权
         )
+        # 获取开盘价和收盘价序列用于高开判断
+        hist_open = hist["open"].values
+        hist_close = hist["close"].values
         # 数据校验：无历史数据则跳过，或当前价格不高于昨日最高价则跳过
-        if hist.empty or float(hist.iloc[-1]["close"]) <= max(
-            float(hist.iloc[-2]["high"]), float(hist.iloc[-1]["open"])
+        if (
+            hist.empty
+            or hist_open[-1] <= hist_close[-2]
+            or hist_close[-1] <= max(hist.iloc[-2]["high"], hist_open[-1])
         ):
             return
 
@@ -2581,15 +2587,8 @@ class AUTOA:
                 current_lower,
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
 
-            # 获取开盘价和收盘价序列用于高开判断
-            hist_open = hist["open"].values
-            hist_close = hist["close"].values
-
-            if (
-                PositionSide.BZ in open_info.strategy
-                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD :])
-                and hist_open[-1]
-                > hist_close[-2]  # 添加高开条件：今日开盘价 > 昨日收盘价
+            if PositionSide.BZ in open_info.strategy and hist_volume[-1] == max(
+                hist_volume[-cls.ATR_PERIOD :]
             ):
                 # 计算最近成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
