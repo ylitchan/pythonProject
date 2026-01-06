@@ -257,7 +257,7 @@ class AUTOBN:
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 平仓相关常量 ====================
     PARTIAL_CLOSE_RATIO = 0.7  # 部分平仓比例 (止盈时使用)
@@ -1865,7 +1865,7 @@ class AUTOA:
     ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 20 * 24 * 60 * 60  # 观察记录超时时间（20天）
