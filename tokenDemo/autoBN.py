@@ -34,6 +34,7 @@ class PositionSide(str, Enum):
     BD = "BD"
     DK = "DK"
     Supertrend = "Supertrend"
+    Grid = "Grid"
 
 
 class OrderSide(str, Enum):
@@ -1482,84 +1483,120 @@ class AUTOBN:
                     current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
 
                     if close_info.position_side.value == PositionSide.LONG.value:
-                        # 做多: 基于入场价格计算初始距离，线性衰减
-                        # 衰减系数 = 1 + tp_count (每次止盈后加速)
-                        decay_multiplier = 1 + close_info.tp_count
-                        initial_tp_gap = (
-                            close_info.take_profit - close_info.entry_price
-                        )  # 止盈到入场价的初始距离
-                        tp_decay_step = (
-                            initial_tp_gap
-                            * self.STOP_LOSS_DECAY_PER_MINUTE
-                            * decay_multiplier
-                        )
-                        # 止盈下移: 取衰减后的值和当前上轨的较大值（止盈不低于当前上轨）
-                        decayed_tp = close_info.take_profit - tp_decay_step
-                        close_info.take_profit = min(decayed_tp, current_upper)
-
-                        if close_info.tp_count > 0:
-                            close_info.stop_loss = close_info.entry_price
+                        if current_price < close_info.entry_price - atr_value:
+                            open_info.strategy.append(PositionSide.Grid)
+                            await self.open_bn_position(
+                                symbol,
+                                OrderSide.BUY.value,
+                                PositionSide.LONG.value,
+                                close_info.stop_loss,  # 止损价用于计算风险仓位
+                                open_info,
+                            )
+                            self.alert_all["OBSERVATIONS"][symbol] = (
+                                open_info.model_dump()
+                            )
+                            close_info.entry_price = current_price
                         else:
-                            # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
-                            profit = current_price - close_info.entry_price
-                            target_profit = (
-                                initial_tp_gap / self.SUPERTREND_FACTOR
-                            )  # 预期收益的1/3
-                            if profit >= target_profit:
-                                # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                                # 止损 = 入场价 + 盈利 * 70%
-                                trailing_stop = close_info.entry_price + profit * 0.7
-                                close_info.stop_loss = max(
-                                    close_info.stop_loss,
-                                    trailing_stop,
-                                )
+                            # 做多: 基于入场价格计算初始距离，线性衰减
+                            # 衰减系数 = 1 + tp_count (每次止盈后加速)
+                            decay_multiplier = 1 + close_info.tp_count
+                            initial_tp_gap = (
+                                close_info.take_profit
+                                - close_info.entry_price
+                                - atr_value
+                            )  # 止盈到入场价的初始距离
+                            tp_decay_step = (
+                                initial_tp_gap
+                                * self.STOP_LOSS_DECAY_PER_MINUTE
+                                * decay_multiplier
+                            )
+                            # 止盈下移: 取衰减后的值和当前上轨的较大值（止盈不低于当前上轨）
+                            decayed_tp = close_info.take_profit - tp_decay_step
+                            close_info.take_profit = min(decayed_tp, current_upper)
+
+                            if close_info.tp_count > 0:
+                                close_info.stop_loss = close_info.entry_price
                             else:
-                                # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
-                                # 取当前下轨和原止损的较大值
-                                close_info.stop_loss = max(
-                                    close_info.stop_loss,
-                                    current_lower,
-                                )
+                                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
+                                profit = current_price - close_info.entry_price
+                                target_profit = (
+                                    initial_tp_gap / self.SUPERTREND_FACTOR
+                                )  # 预期收益的1/3
+                                if profit >= target_profit:
+                                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
+                                    # 止损 = 入场价 + 盈利 * 70%
+                                    trailing_stop = (
+                                        close_info.entry_price + profit * 0.7
+                                    )
+                                    close_info.stop_loss = max(
+                                        close_info.stop_loss,
+                                        trailing_stop,
+                                    )
+                                else:
+                                    # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
+                                    # 取当前下轨和原止损的较大值
+                                    close_info.stop_loss = max(
+                                        close_info.stop_loss,
+                                        current_lower,
+                                    )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
-                        # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
-                        # 衰减系数 = 1 + tp_count (每次止盈后加速)
-                        decay_multiplier = 1 + close_info.tp_count
-                        initial_tp_gap = (
-                            close_info.entry_price - close_info.take_profit
-                        )  # 入场价到止盈的初始距离
-                        tp_decay_step = (
-                            initial_tp_gap
-                            * self.STOP_LOSS_DECAY_PER_MINUTE
-                            * decay_multiplier
-                        )
-                        # 止盈上移: 取衰减后的值和当前下轨的较小值（止盈不高于当前下轨）
-                        decayed_tp = close_info.take_profit + tp_decay_step
-                        close_info.take_profit = max(decayed_tp, current_lower)
-
-                        if close_info.tp_count > 0:
-                            close_info.stop_loss = close_info.entry_price
+                        if current_price > close_info.entry_price + atr_value:
+                            open_info.strategy.append(PositionSide.Grid)
+                            await self.open_bn_position(
+                                symbol,
+                                OrderSide.SELL.value,
+                                PositionSide.SHORT.value,
+                                close_info.stop_loss,  # 止损价用于计算风险仓位
+                                open_info,
+                            )
+                            self.alert_all["OBSERVATIONS"][symbol] = (
+                                open_info.model_dump()
+                            )
+                            close_info.entry_price = current_price
                         else:
-                            # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
-                            profit = close_info.entry_price - current_price
-                            target_profit = (
-                                initial_tp_gap / self.SUPERTREND_FACTOR
-                            )  # 预期收益的1/3
-                            if profit >= target_profit:
-                                # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                                # 止损 = 入场价 - 盈利 * 70%
-                                trailing_stop = close_info.entry_price - profit * 0.7
-                                close_info.stop_loss = min(
-                                    close_info.stop_loss,
-                                    trailing_stop,
-                                )
+                            # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
+                            # 衰减系数 = 1 + tp_count (每次止盈后加速)
+                            decay_multiplier = 1 + close_info.tp_count
+                            initial_tp_gap = (
+                                close_info.entry_price
+                                - atr_value
+                                - close_info.take_profit
+                            )  # 入场价到止盈的初始距离
+                            tp_decay_step = (
+                                initial_tp_gap
+                                * self.STOP_LOSS_DECAY_PER_MINUTE
+                                * decay_multiplier
+                            )
+                            # 止盈上移: 取衰减后的值和当前下轨的较小值（止盈不高于当前下轨）
+                            decayed_tp = close_info.take_profit + tp_decay_step
+                            close_info.take_profit = max(decayed_tp, current_lower)
+
+                            if close_info.tp_count > 0:
+                                close_info.stop_loss = close_info.entry_price
                             else:
-                                # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
-                                # 取当前上轨和原止损的较小值
-                                close_info.stop_loss = min(
-                                    close_info.stop_loss,
-                                    current_upper,
-                                )
+                                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
+                                profit = close_info.entry_price - current_price
+                                target_profit = (
+                                    initial_tp_gap / self.SUPERTREND_FACTOR
+                                )  # 预期收益的1/3
+                                if profit >= target_profit:
+                                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
+                                    # 止损 = 入场价 - 盈利 * 70%
+                                    trailing_stop = (
+                                        close_info.entry_price - profit * 0.7
+                                    )
+                                    close_info.stop_loss = min(
+                                        close_info.stop_loss,
+                                        trailing_stop,
+                                    )
+                                else:
+                                    # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
+                                    # 取当前上轨和原止损的较小值
+                                    close_info.stop_loss = min(
+                                        close_info.stop_loss,
+                                        current_upper,
+                                    )
 
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
