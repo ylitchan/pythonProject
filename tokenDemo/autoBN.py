@@ -641,7 +641,7 @@ class AUTOBN:
             # 发送成功通知
             # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
             rate_show = price_gap * self.SUPERTREND_FACTOR / markPrice
-            msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n仓位比例:{notional / total_balance:.2%}\n收益率:{rate_show:.2%}"
+            msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n账户余额:{total_balance:.2f}\n仓位比例:{notional / total_balance:.2%}\n收益率:{rate_show:.2%}"
             self.send_msg(msg)
             return account_data
         except Exception as e:
@@ -2571,9 +2571,8 @@ class AUTOA:
         # 获取开盘价和收盘价序列用于高开判断
         hist_open = hist["open"].values
         hist_close = hist["close"].values
-        hist_high = hist["high"].values
         # 数据校验：无历史数据则跳过，或当前价格不高于昨日最高价则跳过
-        if hist_open[-1] <= hist_high[-2] or hist_close[-1] <= hist_open[-1]:
+        if hist_close[-1] <= hist_open[-1]:
             return
 
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
@@ -2588,9 +2587,10 @@ class AUTOA:
                 current_upper,
                 current_lower,
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
-
-            if PositionSide.BZ in open_info.strategy and hist_volume[-1] == max(
-                hist_volume[-cls.ATR_PERIOD :]
+            if (
+                PositionSide.BZ in open_info.strategy
+                and hist_open[-1] > hist_close[-2]
+                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD :])
             ):
                 # 计算最近成交量相对于历史成交量的切比雪夫概率
                 chebyshev_result = cls.calculate_chebyshev_probability(
