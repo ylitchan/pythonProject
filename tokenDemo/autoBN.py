@@ -1484,16 +1484,14 @@ class AUTOBN:
 
                     if close_info.position_side.value == PositionSide.LONG.value:
                         if current_price < close_info.entry_price - atr_value:
-                            open_info.strategy.append(PositionSide.Grid)
+                            if PositionSide.Grid not in close_info.strategy:
+                                close_info.strategy.append(PositionSide.Grid)
                             await self.open_bn_position(
                                 symbol,
                                 OrderSide.BUY.value,
                                 PositionSide.LONG.value,
                                 close_info.stop_loss,  # 止损价用于计算风险仓位
-                                open_info,
-                            )
-                            self.alert_all["OBSERVATIONS"][symbol] = (
-                                open_info.model_dump()
+                                close_info,
                             )
                             close_info.entry_price = current_price
                         else:
@@ -1542,16 +1540,14 @@ class AUTOBN:
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         if current_price > close_info.entry_price + atr_value:
-                            open_info.strategy.append(PositionSide.Grid)
+                            if PositionSide.Grid not in close_info.strategy:
+                                close_info.strategy.append(PositionSide.Grid)
                             await self.open_bn_position(
                                 symbol,
                                 OrderSide.SELL.value,
                                 PositionSide.SHORT.value,
                                 close_info.stop_loss,  # 止损价用于计算风险仓位
-                                open_info,
-                            )
-                            self.alert_all["OBSERVATIONS"][symbol] = (
-                                open_info.model_dump()
+                                close_info,
                             )
                             close_info.entry_price = current_price
                         else:
