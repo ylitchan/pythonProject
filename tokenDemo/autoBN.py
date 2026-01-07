@@ -2536,25 +2536,46 @@ class AUTOA:
             current_upper = upper_values[-1] if upper_values else close_info.take_profit
             current_lower = lower_values[-1] if lower_values else close_info.stop_loss
 
-            # 做多: 止盈在上方，止损在下方
-            # 止盈下移: 取衰减后的值和当前上轨的较小值
-            initial_tp_gap = close_info.take_profit - close_info.entry_price
-            tp_decay_step = initial_tp_gap * DECAY
-            decayed_tp = close_info.take_profit - tp_decay_step
-            close_info.take_profit = min(decayed_tp, current_upper)
-
-            # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
-            profit = price_close - close_info.entry_price
-            target_profit = initial_tp_gap / cls.SUPERTREND_FACTOR  # 预期收益的1/3
-            if profit >= target_profit:
-                # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                # 止损 = 入场价 + 盈利 * 70%
-                trailing_stop = close_info.entry_price + profit * 0.7
-                close_info.stop_loss = max(close_info.stop_loss, trailing_stop)
+            atr_value = atr_values[-1] if atr_values else 0.0
+            if (
+                atr_value > 0
+                and close_info.entry_price > 0
+                and price_close < close_info.entry_price - atr_value
+            ):
+                if PositionSide.Grid not in close_info.strategy:
+                    close_info.strategy.append(PositionSide.Grid)
+                strategy_tag = ",".join([ps.value for ps in close_info.strategy])
+                msg = (
+                    f"{close_info.name} 加仓\n"
+                    f"策略:{strategy_tag}\n"
+                    f"委托价格:{price_close:.2f}\n"
+                    f"止盈:{close_info.take_profit:.2f}\n"
+                    f"止损:{close_info.stop_loss:.2f}"
+                )
+                cls.send_msg(msg)
+                close_info.entry_price = price_close
             else:
-                # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
-                # 取当前下轨和原止损的较大值
-                close_info.stop_loss = max(close_info.stop_loss, current_lower)
+                # 做多: 止盈在上方，止损在下方
+                # 止盈下移: 取衰减后的值和当前上轨的较小值
+                initial_tp_gap = (
+                    close_info.take_profit - close_info.entry_price - atr_value
+                )
+                tp_decay_step = initial_tp_gap * DECAY
+                decayed_tp = close_info.take_profit - tp_decay_step
+                close_info.take_profit = min(decayed_tp, current_upper)
+
+                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
+                profit = price_close - close_info.entry_price
+                target_profit = initial_tp_gap / cls.SUPERTREND_FACTOR  # 预期收益的1/3
+                if profit >= target_profit:
+                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
+                    # 止损 = 入场价 + 盈利 * 70%
+                    trailing_stop = close_info.entry_price + profit * 0.7
+                    close_info.stop_loss = max(close_info.stop_loss, trailing_stop)
+                else:
+                    # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
+                    # 取当前下轨和原止损的较大值
+                    close_info.stop_loss = max(close_info.stop_loss, current_lower)
 
             cls.alert_all["POSITIONS"][code] = close_info.model_dump()
 
