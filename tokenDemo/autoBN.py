@@ -512,9 +512,10 @@ class AUTOBN:
                 self.um_futures_client.get_position_risk
             )
             position = {
-                k["symbol"]: abs(float(k["positionAmt"])) for k in position_risk
+                k["symbol"]: [abs(float(k["positionAmt"])), float(k["entryPrice"])]
+                for k in position_risk
             }
-            return position.get(symbol, 0)  # 返回指定交易对的持仓数量
+            return position.get(symbol, [0, 0])  # 返回指定交易对的持仓数量
         except Exception:
             # 异常时返回0，避免程序崩溃
             return 0
@@ -673,7 +674,8 @@ class AUTOBN:
             成功返回symbol，失败返回None
         """
         # 获取当前持仓数量 (异步)
-        amount = await self.get_amount_close(symbol)
+        amount_price = await self.get_amount_close(symbol)
+        amount = amount_price[0]
         if not amount:  # 0表示无持仓
             return
         close_ratio = (
@@ -706,9 +708,7 @@ class AUTOBN:
                 )
                 # 尝试获取开仓价格，使用 close_info 对象的 entry_price
                 entryPrice = (
-                    close_info.entry_price
-                    if close_info.entry_price > 0
-                    else price_close
+                    amount_price[1] if amount_price[1] > 0 else close_info.entry_price
                 )
 
                 # 发送成功通知
@@ -738,7 +738,8 @@ class AUTOBN:
                 )
 
                 # 检查平仓后是否仍有该symbol的仓位，若无则从POSITIONS中移除 (异步)
-                remaining_amount = await self.get_amount_close(symbol)
+                remaining_amount_price = await self.get_amount_close(symbol)
+                remaining_amount = remaining_amount_price[0]
                 if remaining_amount == 0 and symbol in self.alert_all["POSITIONS"]:
                     self.alert_all["POSITIONS"].pop(symbol)
                 elif atr_value > 0:
@@ -766,8 +767,8 @@ class AUTOBN:
                 msg = f"bn平仓{symbol}失败，当前价格:{price_close}"
                 self.send_msg(msg)
                 # 重新获取持仓数量，可能部分平仓成功 (异步)
-                current_amount = await self.get_amount_close(symbol)
-                close_amount = current_amount * close_ratio
+                current_amount_price = await self.get_amount_close(symbol)
+                close_amount = current_amount_price[0] * close_ratio
                 close_amount = float(
                     Decimal(str(close_amount)).quantize(
                         self.symbols_info.get(symbol)["quantityPrecision"],
@@ -1486,14 +1487,15 @@ class AUTOBN:
                         if current_price < close_info.entry_price - atr_value:
                             if PositionSide.Grid not in close_info.strategy:
                                 close_info.strategy.append(PositionSide.Grid)
-                            await self.open_bn_position(
+                            if await self.open_bn_position(
                                 symbol,
                                 OrderSide.BUY.value,
                                 PositionSide.LONG.value,
                                 close_info.stop_loss,  # 止损价用于计算风险仓位
                                 close_info,
-                            )
-                            close_info.entry_price = current_price
+                            ):
+                                amount_price = await self.get_amount_close(symbol)
+                                close_info.entry_price = amount_price[1]
                         else:
                             # 做多: 基于入场价格计算初始距离，线性衰减
                             # 衰减系数 = 1 + tp_count (每次止盈后加速)
@@ -1542,14 +1544,15 @@ class AUTOBN:
                         if current_price > close_info.entry_price + atr_value:
                             if PositionSide.Grid not in close_info.strategy:
                                 close_info.strategy.append(PositionSide.Grid)
-                            await self.open_bn_position(
+                            if await self.open_bn_position(
                                 symbol,
                                 OrderSide.SELL.value,
                                 PositionSide.SHORT.value,
                                 close_info.stop_loss,  # 止损价用于计算风险仓位
                                 close_info,
-                            )
-                            close_info.entry_price = current_price
+                            ):
+                                amount_price = await self.get_amount_close(symbol)
+                                close_info.entry_price = amount_price[1]
                         else:
                             # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
                             # 衰减系数 = 1 + tp_count (每次止盈后加速)
