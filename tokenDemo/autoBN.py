@@ -600,17 +600,17 @@ class AUTOBN:
 
             # 最小交易额检查
             if notional < self.MIN_NOTIONAL:
-                self.send_msg(
-                    f"{symbol} 开仓失败：交易额 {notional} 低于最小要求 {self.MIN_NOTIONAL} USDT"
-                )
+                # self.send_msg(
+                #     f"{symbol} 开仓失败：交易额 {notional} 低于最小要求 {self.MIN_NOTIONAL} USDT"
+                # )
                 return None
 
             # 保证金充足性检查：确保所需保证金不超过可用余额
             required_margin = notional / self.leverage
             if required_margin > balance:
-                self.send_msg(
-                    f"{symbol} 开仓失败：所需保证金 {required_margin:.2f} 超过可用余额 {balance:.2f}"
-                )
+                # self.send_msg(
+                #     f"{symbol} 开仓失败：所需保证金 {required_margin:.2f} 超过可用余额 {balance:.2f}"
+                # )
                 return None
 
             # 风险控制：检查"账户级健康度"（逐仓建议额外结合仓位强平距离/保证金冗余）
@@ -618,9 +618,9 @@ class AUTOBN:
             # 目的：确保开仓后不会导致全局账户风险过高
             account_health = self.calculate_health_bn(notional)
             if account_health < self.health4open:
-                self.send_msg(
-                    f"{symbol} 开仓失败：预计健康度 {account_health}% 低于要求 {self.health4open}%"
-                )
+                # self.send_msg(
+                #     f"{symbol} 开仓失败：预计健康度 {account_health}% 低于要求 {self.health4open}%"
+                # )
                 return None
 
             # 设置杠杆倍数 (异步)
