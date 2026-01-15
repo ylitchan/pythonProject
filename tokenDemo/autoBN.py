@@ -521,7 +521,13 @@ class AUTOBN:
             return 0
 
     async def open_bn_position(
-        self, symbol, side, positionSide, stop_loss_price=None, open_info=None
+        self,
+        symbol,
+        side,
+        positionSide,
+        take_profit_price=None,
+        stop_loss_price=None,
+        open_info=None,
     ):
         """
         在币安期货市场开仓 (风险定仓位模型) - 异步版本
@@ -642,7 +648,7 @@ class AUTOBN:
             )
             # 发送成功通知
             # 提示：逐仓模式下本次下单会并入同一方向同一 symbol 的逐仓仓位，逐仓保证金与强平价随之重算
-            rate_show = price_gap * self.SUPERTREND_FACTOR / markPrice
+            rate_show = abs(take_profit_price - markPrice) / markPrice
             msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n账户余额:{total_balance:.2f}\n仓位比例:{notional / total_balance:.2%}\n收益率:{rate_show:.2%}"
             self.send_msg(msg)
             return account_data
@@ -760,7 +766,7 @@ class AUTOBN:
 
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                 return symbol  # 成功平仓，退出循环
-            except Exception as e:
+            except Exception:
                 # 平仓失败，等待后重试 (异步)
                 await asyncio.sleep(self.CLOSE_RETRY_DELAY)
                 self.logger.exception(f"平仓 {symbol} 失败，当前价格: {price_close}")
@@ -831,7 +837,7 @@ class AUTOBN:
                     # 趋势未变化,返回当前趋势方向
                     return 0
 
-            except Exception as e:
+            except Exception:
                 self.logger.exception("检查趋势信号时发生错误")
                 return 0
 
@@ -925,7 +931,7 @@ class AUTOBN:
                     )
                     for index in range(-1, max(-self.ATR_PERIOD, -len(kline_close)), -1)
                 )
-            except Exception as e:
+            except Exception:
                 self.logger.exception("检查增仓信号时发生错误")
                 return False
 
@@ -997,7 +1003,7 @@ class AUTOBN:
                 ):
                     return False
                 return True
-            except Exception as e:
+            except Exception:
                 self.logger.exception("检查OI信号时发生错误")
                 return False
 
@@ -1143,7 +1149,7 @@ class AUTOBN:
                         self.send_msg(
                             f"{p['symbol']} 基差异常：{basis * 100 - 100:.2%}", True
                         )
-            except Exception as e:
+            except Exception:
                 # 异常处理：记录错误信息但不中断监控
                 self.logger.exception("监控基差异常时发生错误")
             finally:
@@ -1491,6 +1497,7 @@ class AUTOBN:
                                 symbol,
                                 OrderSide.BUY.value,
                                 PositionSide.LONG.value,
+                                close_info.take_profit,
                                 close_info.stop_loss,  # 止损价用于计算风险仓位
                                 close_info,
                             ):
@@ -1548,6 +1555,7 @@ class AUTOBN:
                                 symbol,
                                 OrderSide.SELL.value,
                                 PositionSide.SHORT.value,
+                                close_info.take_profit,
                                 close_info.stop_loss,  # 止损价用于计算风险仓位
                                 close_info,
                             ):
@@ -1666,7 +1674,7 @@ class AUTOBN:
                         )
                         if zy == 0 and zs == 0:
                             return
-                        rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
+
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
                         )
@@ -1674,6 +1682,7 @@ class AUTOBN:
                             symbol,
                             OrderSide.BUY.value if is_long else OrderSide.SELL.value,
                             position_side.value,
+                            zy,
                             zs,  # 止损价用于计算风险仓位
                             open_info,
                         )
@@ -1741,7 +1750,7 @@ class AUTOBN:
                         f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
                     )
                     self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
-        except Exception as e:
+        except Exception:
             self.logger.exception("处理持仓信息时发生异常")
             return
 
@@ -1869,9 +1878,9 @@ class AUTOBN:
                     self.logger.exception("获取交易对信息时发生异常")
                     await asyncio.sleep(self.RETRY_DELAY_SECONDS)
         if self.is_early_morning:
-            # balance = self.um_futures_client.account()["totalWalletBalance"]
-            # self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
-            # self.logger.info("账户信息推送任务执行完成")
+            balance = self.um_futures_client.account()["totalWalletBalance"]
+            self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
+            self.logger.info("账户信息推送任务执行完成")
             with open(self.alert_all_file, "w") as f:
                 json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
         # 创建信号量，限制最大并发数，避免API限制
@@ -2135,7 +2144,7 @@ class AUTOA:
             else:
                 return 0, last_atr, supertrend_values, current_upper, current_lower
 
-        except Exception as e:
+        except Exception:
             cls.logger.exception(f"检查 {code} 趋势信号时发生错误")
             return 0, 0.0, []
 
@@ -2455,7 +2464,7 @@ class AUTOA:
             hist["preclose"] = pd.to_numeric(hist["preclose"], errors="coerce")
             hist["涨跌幅"] = (hist["close"] - hist["preclose"]) / hist["preclose"]
             return hist
-        except Exception as e:
+        except Exception:
             cls.logger.exception("获取股票历史数据时发生异常")
             return pd.DataFrame()
 
