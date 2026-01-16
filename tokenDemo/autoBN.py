@@ -262,6 +262,7 @@ class AUTOBN:
 
     # ==================== 平仓相关常量 ====================
     PARTIAL_CLOSE_RATIO = 0.7  # 部分平仓比例 (止盈时使用)
+    TRAILING_STOP_PROFIT_RATIO = 0.7  # 追踪止损盈利保护比例 (保护70%盈利，允许30%回撤)
     MIN_NOTIONAL = 10  # 最小交易金额 (USDT)
 
     # ==================== 任务控制常量 ====================
@@ -1531,9 +1532,10 @@ class AUTOBN:
                                 )  # 预期收益的1/3
                                 if profit >= target_profit:
                                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                                    # 止损 = 入场价 + 盈利 * 70%
+                                    # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
                                     trailing_stop = (
-                                        close_info.entry_price + profit * 0.7
+                                        close_info.entry_price
+                                        + profit * self.TRAILING_STOP_PROFIT_RATIO
                                     )
                                     close_info.stop_loss = max(
                                         close_info.stop_loss,
@@ -1589,9 +1591,10 @@ class AUTOBN:
                                 )  # 预期收益的1/3
                                 if profit >= target_profit:
                                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                                    # 止损 = 入场价 - 盈利 * 70%
+                                    # 止损 = 入场价 - 盈利 * TRAILING_STOP_PROFIT_RATIO
                                     trailing_stop = (
-                                        close_info.entry_price - profit * 0.7
+                                        close_info.entry_price
+                                        - profit * self.TRAILING_STOP_PROFIT_RATIO
                                     )
                                     close_info.stop_loss = min(
                                         close_info.stop_loss,
@@ -1921,6 +1924,7 @@ class AUTOA:
     # ==================== Trading Configuration ====================
     TRADING_DAYS_LOOKBACK = 60
     STOP_LOSS_DECAY = 0.001  # 止损衰减系数 (1‰)
+    TRAILING_STOP_PROFIT_RATIO = 0.7  # 追踪止损盈利保护比例 (保护70%盈利，允许30%回撤)
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
     MARKET_CLOSE_MINUTE = 5  # A股收盘分钟
     MONITOR_TIMEOUT = 600  # 股票监控超时时间（秒）
@@ -2581,8 +2585,10 @@ class AUTOA:
                 target_profit = initial_tp_gap / cls.SUPERTREND_FACTOR  # 预期收益的1/3
                 if profit >= target_profit:
                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                    # 止损 = 入场价 + 盈利 * 70%
-                    trailing_stop = close_info.entry_price + profit * 0.7
+                    # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
+                    trailing_stop = (
+                        close_info.entry_price + profit * cls.TRAILING_STOP_PROFIT_RATIO
+                    )
                     close_info.stop_loss = max(close_info.stop_loss, trailing_stop)
                 else:
                     # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
