@@ -1,4 +1,4 @@
-﻿# ==================== 标准库导入 ====================
+# ==================== 标准库导入 ====================
 import asyncio
 import atexit
 import copy
@@ -2565,7 +2565,7 @@ class AUTOA:
                     f"止损:{close_info.stop_loss:.2f}"
                 )
                 cls.send_msg(msg)
-                close_info.entry_price = price_close
+                close_info.entry_price = (close_info.entry_price + price_close) / 2
             else:
                 # 做多: 止盈在上方，止损在下方
                 # 止盈下移: 取衰减后的值和当前上轨的较小值
