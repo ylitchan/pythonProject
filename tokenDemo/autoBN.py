@@ -2683,15 +2683,14 @@ class AUTOA:
 
             if should_open and current_atr > 0:
                 price_close = float(hist.iloc[-1]["close"])
-                atr_percent = (
-                    (current_atr * cls.SUPERTREND_FACTOR / price_close)
-                    if price_close > 0
-                    else 0
-                )
-
                 # 止盈使用check_trend返回的当前上轨
                 take_profit = current_upper
                 stop_loss = supertrend_values[-1]
+                atr_percent = (
+                    abs(take_profit - price_close) / price_close
+                    if price_close > 0
+                    else 0
+                )
                 # 4. 记录到持仓列表
                 cls.alert_all["POSITIONS"][code] = Position(
                     take_profit=take_profit,
