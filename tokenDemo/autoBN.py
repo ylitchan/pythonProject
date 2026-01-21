@@ -1656,7 +1656,7 @@ class AUTOBN:
                         and PositionSide.Supertrend in open_info.strategy
                         and (
                             open_side := await self.check_trend(
-                                semaphore, symbol, kline
+                                semaphore, symbol, kline[:-1]
                             )
                         )
                     ):
@@ -1808,7 +1808,7 @@ class AUTOBN:
                         entry_price=entryPrice,
                         name=p["symbol"],
                         date=int(datetime.datetime.now().strftime("%Y%m%d")),
-                        strategy=[PositionSide.LONG],
+                        strategy=[PositionSide.DK],
                     )
                     self.alert_all["POSITIONS"][p["symbol"]] = close_info.model_dump()
                 else:
@@ -1820,7 +1820,7 @@ class AUTOBN:
                         entry_price=entryPrice,
                         name=p["symbol"],
                         date=int(datetime.datetime.now().strftime("%Y%m%d")),
-                        strategy=[PositionSide.SHORT],
+                        strategy=[PositionSide.DK],
                     )
                     self.alert_all["POSITIONS"][p["symbol"]] = close_info.model_dump()
             else:
