@@ -1656,7 +1656,7 @@ class AUTOBN:
                         and PositionSide.Supertrend in open_info.strategy
                         and (
                             open_side := await self.check_trend(
-                                semaphore, symbol, kline
+                                semaphore, symbol, kline[:-1]
                             )
                         )
                     ):
