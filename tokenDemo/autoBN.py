@@ -271,7 +271,7 @@ class AUTOBN:
     MARKET_ANALYSIS_TIMEOUT = 300  # 市场分析超时时间（秒）
 
     # ==================== 交易配置常量 ====================
-    DEFAULT_LEVERAGE = 1  # 默认杠杆倍数
+    DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
 
     @classmethod
