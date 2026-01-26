@@ -1793,8 +1793,15 @@ class AUTOBN:
         positions_data = []
         for p in position_risk:
             entryPrice = float(p["entryPrice"])
+            # 获取策略信息
+            strategy_tag = ""
+            if p["symbol"] in self.alert_all["POSITIONS"]:
+                pos_data = self.alert_all["POSITIONS"][p["symbol"]]
+                if isinstance(pos_data, dict) and "strategy" in pos_data:
+                    strategy_list = pos_data["strategy"]
+                    strategy_tag = ",".join(strategy_list) if strategy_list else ""
             positions_data.append(
-                f"==={p['symbol']}===\n开仓价格:{entryPrice} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unRealizedProfit']} USDT\n持仓收益:{float(p['unRealizedProfit']) / abs(float(p['notional'])):.2%}"
+                f"==={p['symbol']}===\n策略:{strategy_tag}\n开仓价格:{entryPrice} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unRealizedProfit']} USDT\n持仓收益:{float(p['unRealizedProfit']) / abs(float(p['notional'])):.2%}"
             )
 
             if p["symbol"] not in self.alert_all["POSITIONS"]:
