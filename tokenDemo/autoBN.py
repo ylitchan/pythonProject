@@ -1702,9 +1702,9 @@ class AUTOBN:
                             strategy=open_info.strategy,
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
-                        # 重置策略列表：设置方向 + 添加触发策略
+                        # 更新timestamp为当前时间，确保同一天(UTC)内不会再次触发Supertrend开仓
+                        open_info.timestamp = current_timestamp
                         if PositionSide.Supertrend not in open_info.strategy:
-                            open_info.timestamp = current_timestamp
                             open_info.strategy.append(PositionSide.Supertrend)
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
