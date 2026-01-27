@@ -254,6 +254,7 @@ class AUTOBN:
 
     # ==================== 风险管理常量 ====================
     RISK_PER_TRADE = 0.005  # 每笔交易风险比例 (0.5%: 止损触发时最多损失账户的0.5%)
+    TARGET_PROFIT_RATIO = 0.005  # 每笔交易目标盈利比例 (0.5%: 止盈触发时赚取账户的0.5%)
     MAX_POSITION_RATIO = 0.1  # 单币种最大持仓比例 (防止极端杠杆)
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
@@ -568,21 +569,32 @@ class AUTOBN:
                 return None
 
             # ==================== 风险定仓位计算 ====================
-            # 公式: 开仓数量 = (账户余额 * 风险比例) / |入场价 - 止损价|
+            # 公式: 开仓数量 = (止损仓位 + 止盈仓位) / 2
+            # 止损仓位 = (账户余额 * 风险比例) / |入场价 - 止损价|
+            # 止盈仓位 = (账户余额 * 盈利比例) / |止盈价 - 入场价|
             if stop_loss_price is None or stop_loss_price <= 0:
                 self.send_msg(f"{symbol} 开仓失败：未提供有效止损价格")
                 return None
-
-            price_gap = abs(markPrice - stop_loss_price)
-            if price_gap <= 0:
-                self.send_msg(f"{symbol} 开仓失败：止损距离为零")
+            if take_profit_price is None or take_profit_price <= 0:
+                self.send_msg(f"{symbol} 开仓失败：未提供有效止盈价格")
                 return None
+
+            stop_loss_gap = abs(markPrice - stop_loss_price)
+            take_profit_gap = abs(take_profit_price - markPrice)
+
+            if stop_loss_gap <= 0 or take_profit_gap <= 0:
+                self.send_msg(f"{symbol} 开仓失败：止损/止盈距离为零")
+                return None
+
             total_balance = float(account_data["totalWalletBalance"])
-            # 计算风险金额和理论仓位
-            risk_amount = (
-                total_balance * self.RISK_PER_TRADE
-            )  # e.g., 1000 * 0.02 = 20 USDT
-            amount_raw = risk_amount / price_gap
+            # 计算风险金额和目标盈利金额
+            risk_amount = total_balance * self.RISK_PER_TRADE
+            target_profit = total_balance * self.TARGET_PROFIT_RATIO
+
+            # 按止损和止盈分别计算仓位，取均值
+            amount_by_sl = risk_amount / stop_loss_gap
+            amount_by_tp = target_profit / take_profit_gap
+            amount_raw = (amount_by_sl + amount_by_tp) / 2
 
             # 安全兜底：持仓名义价值(算上杠杆后)不超过账户的 MAX_POSITION_RATIO
             # 例: 账户1000U, MAX=50% -> 最大开仓名义价值 500U
