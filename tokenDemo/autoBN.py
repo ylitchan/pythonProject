@@ -1671,6 +1671,17 @@ class AUTOBN:
                                 semaphore, symbol, kline
                             )
                         )
+                        # Supertrend开多需要有BZ策略，开空需要有BD策略
+                        and (
+                            (
+                                open_side == PositionSide.LONG.value
+                                and PositionSide.BZ in open_info.strategy
+                            )
+                            or (
+                                open_side == PositionSide.SHORT.value
+                                and PositionSide.BD in open_info.strategy
+                            )
+                        )
                     ):
                         open_info.side = (
                             OrderSide.SELL
