@@ -245,6 +245,7 @@ class AUTOBN:
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
     LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
+    LONG_SHORT_RATIO_BZ_MAX = 4 / 6  # BZ做多多空比上限
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
 
     # ==================== ATR风控常量 ====================
@@ -882,6 +883,8 @@ class AUTOBN:
 
                 # 根据持仓方向判断多空比条件（极值逻辑）
                 if positionSide == PositionSide.LONG.value:
+                    if lsrd > self.LONG_SHORT_RATIO_BZ_MAX:
+                        return False
                     # 做多：要求当前多空比是历史最低值（散户最恐慌）
                     if lsrd == min(lsr_values) and (
                         self.calculate_chebyshev_probability(
