@@ -11,7 +11,7 @@ import signal
 import sys
 import threading
 import time
-from decimal import Decimal, ROUND_DOWN
+from decimal import ROUND_DOWN, Decimal
 from enum import Enum
 from typing import List, Optional
 
@@ -235,12 +235,6 @@ class AUTOBN:
     # ==================== K线相关常量 ====================
     KLINE_LIMIT = 96  # K线数据条数
     MIN_KLINE_FOR_ANALYSIS = 4  # 分析所需最小K线数量
-
-    # ==================== 基差监控常量 ====================
-    BASIS_WARNING_THRESHOLD = 1.02  # 基差警告阈值（2%）
-    BASIS_ALERT_THRESHOLD = 1.015  # 基差异常阈值（1.5%）
-    BASIS_WARNING_COOLDOWN = 60  # 基差警告冷却时间（秒）
-    BASIS_ALERT_COOLDOWN = 180  # 基差异常冷却时间（秒）
 
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
@@ -546,18 +540,18 @@ class AUTOBN:
             成功返回account_data，失败返回None
         """
         try:
-            # 获取账户可用余额 (异步)
-            account_data = await asyncio.to_thread(self.um_futures_client.account)
+            # 并行获取账户数据和标记价格（优化：减少API延迟）
+            account_data, mark_price_data = await asyncio.gather(
+                asyncio.to_thread(self.um_futures_client.account),
+                asyncio.to_thread(self.um_futures_client.mark_price, symbol),
+            )
+
             balance = float(account_data["availableBalance"])
             # 风险控制：检查可用余额
             if balance <= 0:
                 self.send_msg(f"{symbol} 开仓失败：可用余额为零")
                 return None
 
-            # 获取当前标记价格（用于计算开仓数量）(异步)
-            mark_price_data = await asyncio.to_thread(
-                self.um_futures_client.mark_price, symbol
-            )
             if not mark_price_data:
                 self.send_msg(f"{symbol} 开仓失败：无法获取标记价格")
                 return None
@@ -1142,70 +1136,6 @@ class AUTOBN:
             self.logger.error(f"{symbol} 获取基差率失败: {str(e)}")
             return 0.0
 
-    async def if_basis(self):
-        """
-        监控基差异常
-
-        功能：实时监控期货与现货的基差，基差过大时发送警告
-        基差 = 指数价格 / 市场价格
-        - 基差 > 1：期货升水（期货价格高于现货）
-        - 基差 < 1：期货贴水（期货价格低于现货）
-        """
-        BASIS = {}  # 记录每个交易对上次通知的时间
-        while True:
-            try:
-                # 获取指数价格（现货价格）
-                index_price = await asyncio.to_thread(
-                    session.get,
-                    url="https://fapi.binance.com/fapi/v1/premiumIndex",
-                )
-                index_price = {
-                    ip["symbol"]: float(ip["indexPrice"]) for ip in index_price.json()
-                }
-
-                # 获取期货市场价格
-                market_price = (
-                    await asyncio.to_thread(
-                        session.get,
-                        url="https://fapi.binance.com/fapi/v2/ticker/price",
-                    )
-                ).json()
-                time_now = time.time()
-
-                # 遍历所有交易对，检查基差
-                for p in market_price:
-                    # 计算基差：指数价格 / 市场价格
-                    # 基差 > 1 表示期货价格高于现货价格（升水）
-                    # 基差 < 1 表示期货价格低于现货价格（贴水）
-                    if (
-                        basis := index_price.get(p["symbol"], float(p["price"]))
-                        / float(p["price"])
-                    ) > self.BASIS_WARNING_THRESHOLD and time_now - BASIS.get(
-                        p["symbol"], 0
-                    ) > self.BASIS_WARNING_COOLDOWN:
-                        # 基差超过警告阈值且距离上次通知超过冷却时间，发送警告
-                        BASIS[p["symbol"]] = time.time()
-                        self.send_msg(
-                            f"{p['symbol']} 基差超过{(self.BASIS_WARNING_THRESHOLD - 1) * 100:.1f}%：{basis * 100 - 100:.2%}",
-                            True,
-                        )
-                    elif (
-                        basis >= self.BASIS_ALERT_THRESHOLD
-                        and time_now - BASIS.get(p["symbol"], 0)
-                        > self.BASIS_ALERT_COOLDOWN
-                    ):
-                        # 基差超过异常阈值且距离上次通知超过冷却时间，发送异常提醒
-                        BASIS[p["symbol"]] = time.time()
-                        self.send_msg(
-                            f"{p['symbol']} 基差异常：{basis * 100 - 100:.2%}", True
-                        )
-            except Exception:
-                # 异常处理：记录错误信息但不中断监控
-                self.logger.exception("监控基差异常时发生错误")
-            finally:
-                # 每2秒检查一次
-                await asyncio.sleep(self.RETRY_DELAY_SECONDS)
-
     def calculate_trend(self, kline_data, factor=3.0, atr_period=10):
         """
         计算 Supertrend 指标
@@ -1225,12 +1155,30 @@ class AUTOBN:
         supertrend_values = []
         directions = []
 
+        # 预计算所有 TR 值
+        tr_list = []
+        for i in range(1, len(kline_data)):
+            high = kline_data[i][2]
+            low = kline_data[i][3]
+            prev_close = kline_data[i - 1][4]
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            tr_list.append(tr)
+
+        # 使用 Wilder's Smoothing (RMA) 增量计算所有 ATR 值
+        # atr_for_kline[i] 表示截止到 kline_data[i] 的 ATR 值
+        atr_for_kline = {}
+        atr = sum(tr_list[:atr_period]) / atr_period
+        atr_for_kline[atr_period] = atr
+        for j in range(atr_period, len(tr_list)):
+            atr = (atr * (atr_period - 1) + tr_list[j]) / atr_period
+            atr_for_kline[j + 1] = atr
+
         for i in range(atr_period, len(kline_data)):
             kline = kline_data[i]
             close = kline[4]
 
-            # 计算截止到当前K线的ATR
-            atr = self.calculate_atr(kline_data[: i + 1], period=atr_period)
+            # 使用预计算的 ATR 值
+            atr = atr_for_kline[i]
             hl2 = (kline[2] + kline[3]) / 2  # (high + low) / 2
 
             # 计算基础上下轨
@@ -1457,19 +1405,6 @@ class AUTOBN:
             # 预计算常用值
             current_price = kline_close[-1]
             current_timestamp = dtn.timestamp()
-
-            # 延迟获取15分钟K线
-            kline_15 = None
-            kline_close_15 = None
-            kline_volume_15 = None
-
-            async def get_kline_15_data():
-                nonlocal kline_15, kline_close_15, kline_volume_15
-                if kline_15 is None:
-                    kline_15 = await self.get_kline(semaphore, symbol, "15m")
-                    kline_close_15 = [k[4] for k in kline_15]
-                    kline_volume_15 = [k[5] for k in kline_15]
-                return kline_15, kline_close_15, kline_volume_15
 
             # 检查现有持仓是否需要平仓
             if close_info:
@@ -1700,10 +1635,9 @@ class AUTOBN:
                     ):
                         open_info.side = OrderSide.SELL
                         should_open = True
-                    elif (
-                        (lsr_cache := self._long_short_ratio_cache.get(symbol))
-                        and (basis_rate := await self.get_basis_rate(symbol)) != 0
-                    ):
+                    elif (lsr_cache := self._long_short_ratio_cache.get(symbol)) and (
+                        basis_rate := await self.get_basis_rate(symbol)
+                    ) != 0:
                         lsr_value = float(lsr_cache["data"][-1]["longShortRatio"])
                         # BZ下做多：基差率 < -2% 且多空比 < 4/6
                         if (
@@ -1971,8 +1905,6 @@ class AUTOBN:
 class AUTOA:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
-    ATR_STOP_LOSS_MULTIPLIER = 0.5  # ATR止损倍数
-    ATR_TAKE_PROFIT_MULTIPLIER = 1.0  # ATR止盈倍数 (盈亏比1:2)
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -2078,11 +2010,30 @@ class AUTOA:
         lows = hist_data["low"].values
         closes = hist_data["close"].values
 
+        # 预计算所有 TR 值
+        tr_list = []
+        for i in range(1, len(hist_data)):
+            h = float(highs[i])
+            low_price = float(lows[i])
+            pc = float(closes[i - 1])
+            tr = max(h - low_price, abs(h - pc), abs(low_price - pc))
+            tr_list.append(tr)
+
+        if not tr_list or len(tr_list) < atr_period:
+            return [], [], [], [], []
+
+        # 使用 Wilder's Smoothing (RMA) 增量计算所有 ATR 值
+        # atr_for_index[i] 表示截止到 hist_data[i] 的 ATR 值
+        atr_for_index = {}
+        atr = sum(tr_list[:atr_period]) / atr_period
+        atr_for_index[atr_period] = atr
+        for j in range(atr_period, len(tr_list)):
+            atr = (atr * (atr_period - 1) + tr_list[j]) / atr_period
+            atr_for_index[j + 1] = atr
+
         for i in range(atr_period, len(hist_data)):
-            # 截取截至当前的DataFrame切片用于计算ATR
-            # 注意：calculate_atr 需要包含前 atr_period 天的数据
-            current_data = hist_data.iloc[: i + 1]
-            atr = cls.calculate_atr(current_data, period=atr_period)
+            # 使用预计算的 ATR 值
+            atr = atr_for_index[i]
             atr_values.append(atr)
 
             # 当前K线数据
@@ -2762,9 +2713,9 @@ class AUTOA:
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
             if (
                 hist_open[-1] > hist_high[-2]
-                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD*2 : ])
+                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD * 2 :])
                 and cls.calculate_chebyshev_probability(
-                    hist_volume[-cls.ATR_PERIOD *2: -cls.ATR_PERIOD ],
+                    hist_volume[-cls.ATR_PERIOD * 2 : -cls.ATR_PERIOD],
                     hist_volume[-1],
                 )["chebyshev_upper_bound"]
                 < cls.CHEBYSHEV_EXTREME_THRESHOLD
