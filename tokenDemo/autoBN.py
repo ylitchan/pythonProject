@@ -1108,6 +1108,40 @@ class AUTOBN:
             data2 = []
         return data + data2
 
+    async def get_basis_rate(self, symbol: str) -> float:
+        """
+        获取指定交易对的基差率
+
+        基差率 = (期货价格 - 指数价格) / 指数价格
+        - 基差率 > 0：期货升水（期货价格高于现货）
+        - 基差率 < 0：期货贴水（期货价格低于现货）
+
+        参数:
+            symbol: 交易对符号，如'BTCUSDT'
+        返回:
+            基差率（浮点数），获取失败返回0
+        """
+        try:
+            # 获取指数价格和标记价格
+            premium_index = await asyncio.to_thread(
+                self.um_futures_client.mark_price, symbol
+            )
+            if not premium_index:
+                return 0.0
+
+            index_price = float(premium_index.get("indexPrice", 0))
+            mark_price = float(premium_index.get("markPrice", 0))
+
+            if index_price <= 0:
+                return 0.0
+
+            # 基差率 = (期货价格 - 指数价格) / 指数价格
+            basis_rate = (mark_price - index_price) / index_price
+            return basis_rate
+        except Exception as e:
+            self.logger.error(f"{symbol} 获取基差率失败: {str(e)}")
+            return 0.0
+
     async def if_basis(self):
         """
         监控基差异常
@@ -1667,31 +1701,26 @@ class AUTOBN:
                         open_info.side = OrderSide.SELL
                         should_open = True
                     elif (
-                        open_info_date_utc != current_date_utc
-                        and PositionSide.Supertrend in open_info.strategy
-                        and (
-                            open_side := await self.check_trend(
-                                semaphore, symbol, kline
-                            )
-                        )
-                        # Supertrend开多需要有BZ策略，开空需要有BD策略
-                        and (
-                            (
-                                open_side == PositionSide.LONG.value
-                                and PositionSide.BZ in open_info.strategy
-                            )
-                            or (
-                                open_side == PositionSide.SHORT.value
-                                and PositionSide.BD in open_info.strategy
-                            )
-                        )
+                        (lsr_cache := self._long_short_ratio_cache.get(symbol))
+                        and (basis_rate := await self.get_basis_rate(symbol)) != 0
                     ):
-                        open_info.side = (
-                            OrderSide.SELL
-                            if open_side == PositionSide.SHORT.value
-                            else OrderSide.BUY
-                        )
-                        should_open = True
+                        lsr_value = float(lsr_cache["data"][-1]["longShortRatio"])
+                        # BZ下做多：基差率 < -2% 且多空比 < 4/6
+                        if (
+                            PositionSide.BZ in open_info.strategy
+                            and basis_rate < -0.02
+                            and lsr_value < self.LONG_SHORT_RATIO_BZ_MAX
+                        ):
+                            open_info.side = OrderSide.BUY
+                            should_open = True
+                        # BD下做空：基差率 > 2% 且多空比 > 6/4
+                        elif (
+                            PositionSide.BD in open_info.strategy
+                            and basis_rate > 0.02
+                            and lsr_value > 1 / self.LONG_SHORT_RATIO_BZ_MAX
+                        ):
+                            open_info.side = OrderSide.SELL
+                            should_open = True
                     if should_open:
                         # 使用15分钟K线的ATR计算止盈止损（与supertrend保持一致）
                         atr_value = self.calculate_atr(kline)
