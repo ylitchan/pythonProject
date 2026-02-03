@@ -2186,6 +2186,44 @@ class AUTOA:
             return 0, 0.0, []
 
     @classmethod
+    def check_gap_up_after_break_ma10(cls, hist: pd.DataFrame) -> bool:
+        """
+        检查是否满足"跌破十日线之后5个交易日内跳空高开"
+
+        条件：
+        1. 最近5个交易日内有收盘价跌破10日均线
+        2. 今天跳空高开（开盘价 > 昨日最高价）
+
+        参数:
+            hist: K线数据DataFrame，需包含 open, high, close 列
+        返回:
+            bool: 是否满足条件
+        """
+        if len(hist) < 10:
+            return False
+
+        # 计算10日均线
+        ma10 = hist["close"].rolling(window=10).mean()
+
+        # 检查最近5个交易日内（不含今天）是否有跌破十日线
+        # 跌破定义：收盘价 < 10日均线
+        broke_ma10 = False
+        for i in range(-6, -1):  # 检查 -6 到 -2 的位置（5个交易日）
+            if i >= -len(hist) and pd.notna(ma10.iloc[i]):
+                if float(hist.iloc[i]["close"]) < float(ma10.iloc[i]):
+                    broke_ma10 = True
+                    break
+
+        if not broke_ma10:
+            return False
+
+        # 今天跳空高开：开盘价 > 昨日最高价
+        today_open = float(hist.iloc[-1]["open"])
+        yesterday_high = float(hist.iloc[-2]["high"])
+
+        return today_open > yesterday_high
+
+    @classmethod
     def calculate_chebyshev_probability(cls, data, value):
         """
         计算给定数值对应的切比雪夫概率 (支持 pandas Series/DataFrame 和 list)
@@ -2673,9 +2711,10 @@ class AUTOA:
         )
         if hist.empty:
             return
-        # 获取开盘价和收盘价序列用于高开判断
+        # 获取开盘价、收盘价、最高价序列用于高开判断
         hist_open = hist["open"].values
         hist_close = hist["close"].values
+        hist_high = hist["high"].values
         # 数据校验：无历史数据则跳过，或当前价格不高于昨日最高价则跳过
         if hist_close[-1] <= hist_open[-1]:
             return
@@ -2694,7 +2733,7 @@ class AUTOA:
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
             if (
                 PositionSide.BZ in open_info.strategy
-                and hist_open[-1] > hist_close[-2]
+                and hist_open[-1] > hist_high[-2]
                 and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD :])
             ):
                 # 计算最近成交量相对于历史成交量的切比雪夫概率
@@ -2710,7 +2749,7 @@ class AUTOA:
                     should_open = True
             elif (
                 PositionSide.Supertrend in open_info.strategy
-                and trend_signal == PositionSide.LONG.value
+                and cls.check_gap_up_after_break_ma10(hist)
             ):
                 should_open = True
 
