@@ -2761,25 +2761,20 @@ class AUTOA:
                 current_lower,
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
             if (
-                PositionSide.BZ in open_info.strategy
-                and hist_open[-1] > hist_high[-2]
-                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD :])
-            ):
-                # 计算最近成交量相对于历史成交量的切比雪夫概率
-                chebyshev_result = cls.calculate_chebyshev_probability(
-                    hist_volume[-cls.ATR_PERIOD : -1],
+                hist_open[-1] > hist_high[-2]
+                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD*2 : ])
+                and cls.calculate_chebyshev_probability(
+                    hist_volume[-cls.ATR_PERIOD *2: -cls.ATR_PERIOD ],
                     hist_volume[-1],
-                )
-                # 如果成交量是极端异常值（满足放量条件），则开仓
-                if (
-                    chebyshev_result["chebyshev_upper_bound"]
-                    < cls.CHEBYSHEV_EXTREME_THRESHOLD
-                ):
-                    should_open = True
-            elif (
-                PositionSide.Supertrend in open_info.strategy
-                and cls.check_gap_up_after_break_ma10(hist)
+                )["chebyshev_upper_bound"]
+                < cls.CHEBYSHEV_EXTREME_THRESHOLD
             ):
+                if PositionSide.BZ not in open_info.strategy:
+                    open_info.strategy.append(PositionSide.BZ)
+                should_open = True
+            elif cls.check_gap_up_after_break_ma10(hist):
+                if PositionSide.Supertrend not in open_info.strategy:
+                    open_info.strategy.append(PositionSide.Supertrend)
                 should_open = True
 
             if should_open and current_atr > 0:
@@ -2815,8 +2810,6 @@ class AUTOA:
                 cls.send_msg(msg)
 
                 # 6. 从观察列表移除
-                open_info.strategy.clear()
-                open_info.strategy.append(PositionSide.Supertrend)
                 cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
         else:
             return
@@ -2874,7 +2867,7 @@ class AUTOA:
                         price=float(price_close),
                         timestamp=today.timestamp(),
                         side=OrderSide.BUY,
-                        strategy=[PositionSide.BZ],
+                        strategy=[],
                         name=code[1],  # 股票名称
                     ).model_dump()
 
