@@ -261,10 +261,11 @@ class AUTOBN:
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
 
     # ==================== 基差率常量 ====================
     BASIS_RATE_THRESHOLD = 0.02  # 基差率开仓阈值（2%）
+    BASIS_RATE_CACHE_TTL = 300  # 基差率缓存过期时间（秒，5分钟）
 
     # ==================== 平仓相关常量 ====================
     PARTIAL_CLOSE_RATIO = 0.7  # 部分平仓比例 (止盈时使用)
@@ -393,6 +394,8 @@ class AUTOBN:
         obj._oi_1h_cache = {}
         # 初始化5分钟持仓量缓存: {symbol: {"data": [...], "timestamp": float}}
         obj._oi_5m_cache = {}
+        # 初始化基差率缓存: {symbol: {"data": float, "timestamp": float}}
+        obj._basis_rate_cache = {}
 
         # 注册退出处理函数,在脚本退出时保存数据
         def save_on_exit():
@@ -1114,7 +1117,7 @@ class AUTOBN:
 
     async def get_basis_rate(self, symbol: str) -> float:
         """
-        获取指定交易对的基差率
+        获取指定交易对的基差率（带5分钟缓存）
 
         基差率 = (期货价格 - 指数价格) / 指数价格
         - 基差率 > 0：期货升水（期货价格高于现货）
@@ -1126,6 +1129,15 @@ class AUTOBN:
             基差率（浮点数），获取失败返回0
         """
         try:
+            # 检查缓存是否有效
+            current_time = time.time()
+            cache_entry = self._basis_rate_cache.get(symbol)
+            if (
+                cache_entry
+                and (current_time - cache_entry["timestamp"]) < self.BASIS_RATE_CACHE_TTL
+            ):
+                return cache_entry["data"]
+
             # 获取指数价格和标记价格
             premium_index = await asyncio.to_thread(
                 self.um_futures_client.mark_price, symbol
@@ -1141,6 +1153,13 @@ class AUTOBN:
 
             # 基差率 = (期货价格 - 指数价格) / 指数价格
             basis_rate = (mark_price - index_price) / index_price
+
+            # 更新缓存
+            self._basis_rate_cache[symbol] = {
+                "data": basis_rate,
+                "timestamp": current_time,
+            }
+
             return basis_rate
         except Exception as e:
             self.logger.error(f"{symbol} 获取基差率失败: {str(e)}")
@@ -1625,6 +1644,7 @@ class AUTOBN:
                         PositionSide.BZ in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and kline_close[-2] < current_price
+                        and await self.get_basis_rate(symbol) < -self.BASIS_RATE_THRESHOLD
                         and await self.check_side(
                             semaphore,
                             symbol,
@@ -1641,30 +1661,11 @@ class AUTOBN:
                         PositionSide.BD in open_info.strategy
                         and PositionSide.Supertrend not in open_info.strategy
                         and current_price < kline_close[-2]
+                        and await self.get_basis_rate(symbol) > self.BASIS_RATE_THRESHOLD
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.SELL
                         should_open = True
-                    elif (lsr_cache := self._long_short_ratio_cache.get(symbol)) and (
-                        basis_rate := await self.get_basis_rate(symbol)
-                    ) != 0:
-                        lsr_value = float(lsr_cache["data"][-1]["longShortRatio"])
-                        # BZ下做多：基差率 < -2% 且多空比 < 4/6
-                        if (
-                            PositionSide.BZ in open_info.strategy
-                            and basis_rate < -self.BASIS_RATE_THRESHOLD
-                            and lsr_value < self.LONG_SHORT_RATIO_BZ_MAX
-                        ):
-                            open_info.side = OrderSide.BUY
-                            should_open = True
-                        # BD下做空：基差率 > 2% 且多空比 > 6/4
-                        elif (
-                            PositionSide.BD in open_info.strategy
-                            and basis_rate > self.BASIS_RATE_THRESHOLD
-                            and lsr_value > 1 / self.LONG_SHORT_RATIO_BZ_MAX
-                        ):
-                            open_info.side = OrderSide.SELL
-                            should_open = True
                     if should_open:
                         # 使用15分钟K线的ATR计算止盈止损（与supertrend保持一致）
                         atr_value = self.calculate_atr(kline)
@@ -1703,8 +1704,6 @@ class AUTOBN:
                         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                         # 更新timestamp为当前时间，确保同一天(UTC)内不会再次触发Supertrend开仓
                         open_info.timestamp = current_timestamp
-                        if PositionSide.Supertrend not in open_info.strategy:
-                            open_info.strategy.append(PositionSide.Supertrend)
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
             else:
