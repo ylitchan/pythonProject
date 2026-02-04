@@ -1624,18 +1624,7 @@ class AUTOBN:
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             elif open_info:
-                # 检查UTC0日期：如果当前时间和open_info不是同一天(UTC0)则跳过
-                open_info_date_utc = datetime.datetime.fromtimestamp(
-                    open_info.timestamp, datetime.UTC
-                ).date()
-                current_date_utc = datetime.datetime.now(datetime.UTC).date()
-                if (
-                    PositionSide.Supertrend not in open_info.strategy
-                    and open_info_date_utc != current_date_utc
-                    or PositionSide.Supertrend in open_info.strategy
-                    and current_timestamp - open_info.timestamp
-                    > self.OBSERVATION_TIMEOUT_SECONDS
-                ):
+                if current_timestamp - open_info.timestamp > self.OBSERVATION_TIMEOUT_SECONDS:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                     self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
                 else:
