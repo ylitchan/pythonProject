@@ -1629,10 +1629,17 @@ class AUTOBN:
                     self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
                 else:
                     should_open = False
+                    # 获取多空比和基差率用于开仓条件判断
+                    lsr_cache = self._long_short_ratio_cache.get(symbol)
+                    lsr_value = float(lsr_cache["data"][-1]["longShortRatio"]) if lsr_cache else 0
+                    basis_rate = await self.get_basis_rate(symbol)
+
                     if (
                         PositionSide.BZ in open_info.strategy
                         and kline_close[-2] < current_price
-                        and await self.get_basis_rate(symbol) < -self.BASIS_RATE_THRESHOLD
+                        and basis_rate < -self.BASIS_RATE_THRESHOLD
+                        and lsr_value > 0
+                        and lsr_value < self.LONG_SHORT_RATIO_BZ_MAX
                         and await self.check_side(
                             semaphore,
                             symbol,
@@ -1648,7 +1655,9 @@ class AUTOBN:
                     elif (
                         PositionSide.BD in open_info.strategy
                         and current_price < kline_close[-2]
-                        and await self.get_basis_rate(symbol) > self.BASIS_RATE_THRESHOLD
+                        and basis_rate > self.BASIS_RATE_THRESHOLD
+                        and lsr_value > 0
+                        and lsr_value > 1 / self.LONG_SHORT_RATIO_BZ_MAX
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         open_info.side = OrderSide.SELL
