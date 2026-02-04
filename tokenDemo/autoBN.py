@@ -261,7 +261,7 @@ class AUTOBN:
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 基差率常量 ====================
     BASIS_RATE_THRESHOLD = 0.02  # 基差率开仓阈值（2%）
