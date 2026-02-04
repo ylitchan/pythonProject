@@ -1937,7 +1937,7 @@ class AUTOA:
     MA_PERIOD = 10  # 均线周期
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
-    VOLUME_LOOKBACK_MULTIPLIER = 2  # 成交量回溯倍数
+    VOLUME_LOOKBACK_MULTIPLIER = 3  # 成交量回溯倍数
     ZT_BOARD_COUNT = 1  # 筛选连板数（1=首板）
     VOLUME_LOOKBACK_PERIOD = 10  # 成交量检查回溯周期
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
