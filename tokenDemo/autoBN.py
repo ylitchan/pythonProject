@@ -247,14 +247,24 @@ class AUTOBN:
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
+    # ==================== 回溯周期常量 ====================
+    LSR_LOOKBACK_PERIOD = 10  # 多空比切比雪夫计算回溯周期
+    OI_LOOKBACK_PERIOD = 10  # 持仓量检查回溯周期
+    VOLUME_LOOKBACK_PERIOD = 10  # 成交量检查回溯周期
+    OI_QUERY_LIMIT = 30  # 持仓量数据查询数量限制
+    TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
+
     # ==================== 风险管理常量 ====================
-    RISK_PER_TRADE = 0.005  # 每笔交易风险比例 (0.5%: 止损触发时最多损失账户的0.5%)
-    TARGET_PROFIT_RATIO = 0.005  # 每笔交易目标盈利比例 (0.5%: 止盈触发时赚取账户的0.5%)
+    RISK_PER_TRADE = 0.1  # 每笔交易风险比例 (10%: 止损触发时最多损失账户的10%)
+    TARGET_PROFIT_RATIO = 0.1  # 每笔交易目标盈利比例 (10%: 止盈触发时赚取账户的10%)
     MAX_POSITION_RATIO = 0.1  # 单币种最大持仓比例 (防止极端杠杆)
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
+
+    # ==================== 基差率常量 ====================
+    BASIS_RATE_THRESHOLD = 0.02  # 基差率开仓阈值（2%）
 
     # ==================== 平仓相关常量 ====================
     PARTIAL_CLOSE_RATIO = 0.7  # 部分平仓比例 (止盈时使用)
@@ -882,7 +892,7 @@ class AUTOBN:
                     # 做多：要求当前多空比是历史最低值（散户最恐慌）
                     if lsrd == min(lsr_values) and (
                         self.calculate_chebyshev_probability(
-                            lsr_values[: -self.ATR_PERIOD],
+                            lsr_values[: -self.LSR_LOOKBACK_PERIOD],
                             lsrd,
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
@@ -909,7 +919,7 @@ class AUTOBN:
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
                         period="1d",
-                        limit=self.LONG_SHORT_RATIO_LIMIT,
+                        limit=self.OI_QUERY_LIMIT,
                     )
                     # 检查数据是否满足条件
                     if oi_1d[-1]["timestamp"] != target_ts:
@@ -939,7 +949,7 @@ class AUTOBN:
                         and max(kline_volume[-3:-1]) == max(kline_volume)
                         and sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
                     )
-                    for index in range(-1, max(-self.ATR_PERIOD, -len(kline_close)), -1)
+                    for index in range(-1, max(-self.OI_LOOKBACK_PERIOD, -len(kline_close)), -1)
                 )
             except Exception:
                 self.logger.exception("检查增仓信号时发生错误")
@@ -960,7 +970,7 @@ class AUTOBN:
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
                         period="5m",
-                        limit=self.LONG_SHORT_RATIO_LIMIT,
+                        limit=self.OI_QUERY_LIMIT,
                     )
                     self._oi_5m_cache[symbol] = {
                         "data": oi_5m,
@@ -979,7 +989,7 @@ class AUTOBN:
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
                         period="1h",
-                        limit=self.LONG_SHORT_RATIO_LIMIT,
+                        limit=self.OI_QUERY_LIMIT,
                     )
                     # 如果数据时间戳匹配，也更新缓存
                     if oi_1h and oi_1h[-1]["timestamp"] == target_ts:
@@ -1512,7 +1522,7 @@ class AUTOBN:
                                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                                 profit = current_price - close_info.entry_price
                                 target_profit = (
-                                    initial_tp_gap / self.SUPERTREND_FACTOR
+                                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR
                                 )  # 预期收益的1/3
                                 if profit >= target_profit:
                                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
@@ -1571,7 +1581,7 @@ class AUTOBN:
                                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                                 profit = close_info.entry_price - current_price
                                 target_profit = (
-                                    initial_tp_gap / self.SUPERTREND_FACTOR
+                                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR
                                 )  # 预期收益的1/3
                                 if profit >= target_profit:
                                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
@@ -1642,7 +1652,7 @@ class AUTOBN:
                         # BZ下做多：基差率 < -2% 且多空比 < 4/6
                         if (
                             PositionSide.BZ in open_info.strategy
-                            and basis_rate < -0.02
+                            and basis_rate < -self.BASIS_RATE_THRESHOLD
                             and lsr_value < self.LONG_SHORT_RATIO_BZ_MAX
                         ):
                             open_info.side = OrderSide.BUY
@@ -1650,7 +1660,7 @@ class AUTOBN:
                         # BD下做空：基差率 > 2% 且多空比 > 6/4
                         elif (
                             PositionSide.BD in open_info.strategy
-                            and basis_rate > 0.02
+                            and basis_rate > self.BASIS_RATE_THRESHOLD
                             and lsr_value > 1 / self.LONG_SHORT_RATIO_BZ_MAX
                         ):
                             open_info.side = OrderSide.SELL
@@ -1700,7 +1710,7 @@ class AUTOBN:
             else:
                 # 做多信号判断
                 if kline_close[-2] < current_price and kline_volume[-1] == max(
-                    kline_volume[-self.ATR_PERIOD :]
+                    kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
                 ):
                     is_long = True
                     open_info = Observation(
@@ -1907,7 +1917,7 @@ class AUTOA:
     ATR_PERIOD = 10  # ATR计算周期
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 20 * 24 * 60 * 60  # 观察记录超时时间（20天）
@@ -1922,6 +1932,15 @@ class AUTOA:
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
     MARKET_CLOSE_MINUTE = 5  # A股收盘分钟
     MONITOR_TIMEOUT = 600  # 股票监控超时时间（秒）
+
+    # ==================== 均线与筛选常量 ====================
+    MA_PERIOD = 10  # 均线周期
+    BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
+    DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
+    VOLUME_LOOKBACK_MULTIPLIER = 2  # 成交量回溯倍数
+    ZT_BOARD_COUNT = 1  # 筛选连板数（1=首板）
+    VOLUME_LOOKBACK_PERIOD = 10  # 成交量检查回溯周期
+    TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = os.path.join(
@@ -2179,16 +2198,16 @@ class AUTOA:
         返回:
             bool: 是否满足条件
         """
-        if len(hist) < 10:
+        if len(hist) < cls.MA_PERIOD:
             return False
 
         # 计算10日均线
-        ma10 = hist["close"].rolling(window=10).mean()
+        ma10 = hist["close"].rolling(window=cls.MA_PERIOD).mean()
 
         # 检查最近5个交易日内（不含今天）是否有跌破十日线
         # 跌破定义：收盘价 < 10日均线
         broke_ma10 = False
-        for i in range(-6, -1):  # 检查 -6 到 -2 的位置（5个交易日）
+        for i in range(-(cls.BREAK_MA_LOOKBACK_DAYS + 1), -1):  # 检查 -6 到 -2 的位置（5个交易日）
             if i >= -len(hist) and pd.notna(ma10.iloc[i]):
                 if float(hist.iloc[i]["close"]) < float(ma10.iloc[i]):
                     broke_ma10 = True
@@ -2326,10 +2345,9 @@ class AUTOA:
         """
         发送消息通知函数
 
-        功能：通过企业微信或微信发送交易通知消息
+        功能：通过企业微信发送交易通知消息
         参数：
             msg: 要发送的消息内容
-            wx: 是否使用微信发送（True=微信，False=企业微信）
         """
         try:
             # 记录发送时间，便于调试和追踪
@@ -2358,7 +2376,7 @@ class AUTOA:
             today: 指定日期，默认为当前日期
             days: 获取最近交易日的天数，默认为 TRADING_DAYS_LOOKBACK
         返回：
-            (start_date, end_date, zt_date): 起始日期、结束日期、涨停股查询日期列表
+            交易日期字符串列表（按时间降序排列）
         """
         # 设置默认日期为今天
         if not today:
@@ -2570,7 +2588,7 @@ class AUTOA:
                 close_info.entry_price if close_info.entry_price > 0 else price_close
             )
             profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
-            realized_pnl = (price_close - entry_price) * 100  # 假设持仓100股
+            realized_pnl = (price_close - entry_price) * cls.DEFAULT_POSITION_SHARES
             strategy_tag = ",".join([ps.value for ps in close_info.strategy])
             msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}"
             cls.send_msg(msg)
@@ -2582,7 +2600,7 @@ class AUTOA:
                 position_side="LONG",  # A股默认做多
                 entry_price=entry_price,
                 close_price=price_close,
-                close_amount=100,
+                close_amount=cls.DEFAULT_POSITION_SHARES,
                 realized_pnl=realized_pnl,
                 pnl_percent=profit_rate,
                 close_ratio=1.0,
@@ -2633,7 +2651,7 @@ class AUTOA:
 
                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                 profit = price_close - close_info.entry_price
-                target_profit = initial_tp_gap / cls.SUPERTREND_FACTOR  # 预期收益的1/3
+                target_profit = initial_tp_gap / cls.TARGET_PROFIT_DIVISOR  # 预期收益的1/3
                 if profit >= target_profit:
                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
                     # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
@@ -2713,9 +2731,9 @@ class AUTOA:
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
             if (
                 hist_open[-1] > hist_high[-2]
-                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD * 2 :])
+                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD * cls.VOLUME_LOOKBACK_MULTIPLIER :])
                 and cls.calculate_chebyshev_probability(
-                    hist_volume[-cls.ATR_PERIOD * 2 : -cls.ATR_PERIOD],
+                    hist_volume[-cls.ATR_PERIOD * cls.VOLUME_LOOKBACK_MULTIPLIER : -cls.ATR_PERIOD],
                     hist_volume[-1],
                 )["chebyshev_upper_bound"]
                 < cls.CHEBYSHEV_EXTREME_THRESHOLD
@@ -2798,7 +2816,7 @@ class AUTOA:
             stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
             for code in stock_codes:
                 if (
-                    code[2] == 1
+                    code[2] == cls.ZT_BOARD_COUNT
                     and code[0] not in cls.alert_all["POSITIONS"]
                     and code[0] not in cls.alert_all["OBSERVATIONS"]
                 ):
