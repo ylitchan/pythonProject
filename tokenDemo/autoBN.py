@@ -1642,7 +1642,6 @@ class AUTOBN:
                     should_open = False
                     if (
                         PositionSide.BZ in open_info.strategy
-                        and PositionSide.Supertrend not in open_info.strategy
                         and kline_close[-2] < current_price
                         and await self.get_basis_rate(symbol) < -self.BASIS_RATE_THRESHOLD
                         and await self.check_side(
@@ -1659,7 +1658,6 @@ class AUTOBN:
                         should_open = True
                     elif (
                         PositionSide.BD in open_info.strategy
-                        and PositionSide.Supertrend not in open_info.strategy
                         and current_price < kline_close[-2]
                         and await self.get_basis_rate(symbol) > self.BASIS_RATE_THRESHOLD
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
