@@ -2187,10 +2187,10 @@ class AUTOA:
     @classmethod
     def check_gap_up_after_break_ma10(cls, hist: pd.DataFrame) -> bool:
         """
-        检查是否满足"跌破十日线之后5个交易日内跳空高开"
+        检查是否满足"10日线下跳空高开"
 
         条件：
-        1. 最近5个交易日内有收盘价跌破10日均线
+        1. 前两根K线（不含今天）收盘都在10日均线下方
         2. 今天跳空高开（开盘价 > 昨日最高价）
 
         参数:
@@ -2198,22 +2198,24 @@ class AUTOA:
         返回:
             bool: 是否满足条件
         """
-        if len(hist) < cls.MA_PERIOD:
+        if len(hist) < cls.MA_PERIOD + 2:
             return False
 
         # 计算10日均线
         ma10 = hist["close"].rolling(window=cls.MA_PERIOD).mean()
 
-        # 检查最近5个交易日内（不含今天）是否有跌破十日线
-        # 跌破定义：收盘价 < 10日均线
-        broke_ma10 = False
-        for i in range(-(cls.BREAK_MA_LOOKBACK_DAYS + 1), -1):  # 检查 -6 到 -2 的位置（5个交易日）
-            if i >= -len(hist) and pd.notna(ma10.iloc[i]):
-                if float(hist.iloc[i]["close"]) < float(ma10.iloc[i]):
-                    broke_ma10 = True
-                    break
+        # 检查前两根K线（不含今天）是否都收盘在10日均线下方
+        # 即 hist.iloc[-2] 和 hist.iloc[-3] 的收盘价都 < 10日均线
+        yesterday_below_ma10 = (
+            pd.notna(ma10.iloc[-2])
+            and float(hist.iloc[-2]["close"]) < float(ma10.iloc[-2])
+        )
+        day_before_below_ma10 = (
+            pd.notna(ma10.iloc[-3])
+            and float(hist.iloc[-3]["close"]) < float(ma10.iloc[-3])
+        )
 
-        if not broke_ma10:
+        if not (yesterday_below_ma10 and day_before_below_ma10):
             return False
 
         # 今天跳空高开：开盘价 > 昨日最高价
