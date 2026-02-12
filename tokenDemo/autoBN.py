@@ -1626,7 +1626,7 @@ class AUTOBN:
             elif open_info:
                 if current_timestamp - open_info.timestamp > self.OBSERVATION_TIMEOUT_SECONDS:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
-                    self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
+                    open_info = None
                 else:
                     should_open = False
                     # 获取多空比和基差率用于开仓条件判断
@@ -1702,51 +1702,54 @@ class AUTOBN:
                         open_info.timestamp = current_timestamp
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
-            else:
-                # 做多信号判断
-                if kline_close[-2] < current_price and kline_volume[-1] == max(
-                    kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
-                ):
-                    is_long = True
-                    open_info = Observation(
-                        price=current_price,
-                        timestamp=current_timestamp,
-                        side=OrderSide.BUY,
-                        strategy=[PositionSide.BZ],
-                        name=symbol,
-                    )
+            # 无论是否有仓位，都执行“加入观察”判定逻辑；命中时直接覆盖观察记录
+            new_open_info = None
+            is_long = False
 
-                # 做空信号判断
-                elif await self.check_side(
-                    semaphore,
-                    symbol,
-                    PositionSide.SHORT.value,
-                    kline_close,
-                    kline_volume,
-                    dtn,
-                ):
-                    is_long = False
-                    open_info = Observation(
-                        price=current_price,
-                        timestamp=current_timestamp,
-                        side=OrderSide.SELL,
-                        strategy=[PositionSide.BD],
-                        name=symbol,
-                    )
-                if open_info:
-                    atr_value = self.calculate_atr(kline)
-                    zy, zs = self.calc_stop_profit_loss(
-                        (kline[-1][2] + kline[-1][3]) / 2,
-                        is_long=is_long,
-                        atr=atr_value,
-                    )
-                    if zy == 0 and zs == 0:
-                        return
-                    rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
-                    self.send_msg(
-                        f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
-                    )
-                    self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
+            # 做多信号判断
+            if kline_close[-2] < current_price and kline_volume[-1] == max(
+                kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
+            ):
+                is_long = True
+                new_open_info = Observation(
+                    price=current_price,
+                    timestamp=current_timestamp,
+                    side=OrderSide.BUY,
+                    strategy=[PositionSide.BZ],
+                    name=symbol,
+                )
+
+            # 做空信号判断
+            elif await self.check_side(
+                semaphore,
+                symbol,
+                PositionSide.SHORT.value,
+                kline_close,
+                kline_volume,
+                dtn,
+            ):
+                is_long = False
+                new_open_info = Observation(
+                    price=current_price,
+                    timestamp=current_timestamp,
+                    side=OrderSide.SELL,
+                    strategy=[PositionSide.BD],
+                    name=symbol,
+                )
+            if new_open_info:
+                atr_value = self.calculate_atr(kline)
+                zy, zs = self.calc_stop_profit_loss(
+                    (kline[-1][2] + kline[-1][3]) / 2,
+                    is_long=is_long,
+                    atr=atr_value,
+                )
+                if zy == 0 and zs == 0:
+                    return
+                rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
+                self.send_msg(
+                    f"==={symbol}**{','.join([ps.value for ps in new_open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                )
+                self.alert_all["OBSERVATIONS"][symbol] = new_open_info.model_dump()
         except Exception:
             self.logger.exception("处理持仓信息时发生异常")
             return
@@ -1933,7 +1936,6 @@ class AUTOA:
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
     VOLUME_LOOKBACK_MULTIPLIER = 3  # 成交量回溯倍数
-    ZT_BOARD_COUNT = 1  # 筛选连板数（1=首板）
     VOLUME_LOOKBACK_PERIOD = 10  # 成交量检查回溯周期
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
@@ -2812,30 +2814,36 @@ class AUTOA:
             zt_df = ak.stock_zt_pool_em(date=cls.zt_dates[0].replace("-", ""))
             stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
             for code in stock_codes:
-                if (
-                    code[2] == cls.ZT_BOARD_COUNT
-                    and code[0] not in cls.alert_all["POSITIONS"]
-                    and code[0] not in cls.alert_all["OBSERVATIONS"]
-                ):
-                    hist = await cls.stock_zh_a_hist(
-                        code[0],  # 股票代码
-                        "date,code,open,high,low,close,preclose,volume,amount",
-                        start_date=cls.zt_dates[-1],
-                        end_date=cls.zt_dates[0],
-                        frequency="d",  # 日K
-                        adjustflag="3",  # 3：前复权；1：不复权；2：后复权
+                hist = await cls.stock_zh_a_hist(
+                    code[0],  # 股票代码
+                    "date,code,open,high,low,close,preclose,volume,amount",
+                    start_date=cls.zt_dates[-1],
+                    end_date=cls.zt_dates[0],
+                    frequency="d",  # 日K
+                    adjustflag="3",  # 3：前复权；1：不复权；2：后复权
+                )
+                if hist.empty:
+                    continue
+                price_close = hist.iloc[-1]["close"]
+
+                # 已在观察列表且当日再次涨停：刷新观察时间（即使在持仓也允许更新）
+                if code[0] in cls.alert_all["OBSERVATIONS"]:
+                    open_info = Observation.model_validate(
+                        cls.alert_all["OBSERVATIONS"][code[0]]
                     )
-                    if hist.empty:
-                        continue
-                    price_close = hist.iloc[-1]["close"]
-                    selected.add(f"{code[1]}")
-                    cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
-                        price=float(price_close),
-                        timestamp=today.timestamp(),
-                        side=OrderSide.BUY,
-                        strategy=[],
-                        name=code[1],  # 股票名称
-                    ).model_dump()
+                    open_info.price = float(price_close)
+                    open_info.timestamp = today.timestamp()
+                    cls.alert_all["OBSERVATIONS"][code[0]] = open_info.model_dump()
+                    continue
+
+                selected.add(f"{code[1]}")
+                cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
+                    price=float(price_close),
+                    timestamp=today.timestamp(),
+                    side=OrderSide.BUY,
+                    strategy=[],
+                    name=code[1],  # 股票名称
+                ).model_dump()
 
             cls.zt_dates.clear()
             cls.hist_cache.clear()
