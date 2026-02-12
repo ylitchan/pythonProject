@@ -1702,54 +1702,65 @@ class AUTOBN:
                         open_info.timestamp = current_timestamp
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
-            # 无论是否有仓位，都执行“加入观察”判定逻辑；命中时直接覆盖观察记录
-            new_open_info = None
-            is_long = False
+            # 无论是否有仓位，都执行“加入观察”判定逻辑；同一UTC日仅记录一次，避免重复告警
+            can_set_observation = True
+            if open_info:
+                observation_date = datetime.datetime.fromtimestamp(
+                    open_info.timestamp, datetime.timezone.utc
+                ).date()
+                current_date = datetime.datetime.fromtimestamp(
+                    current_timestamp, datetime.timezone.utc
+                ).date()
+                can_set_observation = observation_date != current_date
 
-            # 做多信号判断
-            if kline_close[-2] < current_price and kline_volume[-1] == max(
-                kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
-            ):
-                is_long = True
-                new_open_info = Observation(
-                    price=current_price,
-                    timestamp=current_timestamp,
-                    side=OrderSide.BUY,
-                    strategy=[PositionSide.BZ],
-                    name=symbol,
-                )
-
-            # 做空信号判断
-            elif await self.check_side(
-                semaphore,
-                symbol,
-                PositionSide.SHORT.value,
-                kline_close,
-                kline_volume,
-                dtn,
-            ):
+            if can_set_observation:
+                new_open_info = None
                 is_long = False
-                new_open_info = Observation(
-                    price=current_price,
-                    timestamp=current_timestamp,
-                    side=OrderSide.SELL,
-                    strategy=[PositionSide.BD],
-                    name=symbol,
-                )
-            if new_open_info:
-                atr_value = self.calculate_atr(kline)
-                zy, zs = self.calc_stop_profit_loss(
-                    (kline[-1][2] + kline[-1][3]) / 2,
-                    is_long=is_long,
-                    atr=atr_value,
-                )
-                if zy == 0 and zs == 0:
-                    return
-                rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
-                self.send_msg(
-                    f"==={symbol}**{','.join([ps.value for ps in new_open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
-                )
-                self.alert_all["OBSERVATIONS"][symbol] = new_open_info.model_dump()
+
+                # 做多信号判断
+                if kline_close[-2] < current_price and kline_volume[-1] == max(
+                    kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
+                ):
+                    is_long = True
+                    new_open_info = Observation(
+                        price=current_price,
+                        timestamp=current_timestamp,
+                        side=OrderSide.BUY,
+                        strategy=[PositionSide.BZ],
+                        name=symbol,
+                    )
+
+                # 做空信号判断
+                elif await self.check_side(
+                    semaphore,
+                    symbol,
+                    PositionSide.SHORT.value,
+                    kline_close,
+                    kline_volume,
+                    dtn,
+                ):
+                    is_long = False
+                    new_open_info = Observation(
+                        price=current_price,
+                        timestamp=current_timestamp,
+                        side=OrderSide.SELL,
+                        strategy=[PositionSide.BD],
+                        name=symbol,
+                    )
+                if new_open_info:
+                    atr_value = self.calculate_atr(kline)
+                    zy, zs = self.calc_stop_profit_loss(
+                        (kline[-1][2] + kline[-1][3]) / 2,
+                        is_long=is_long,
+                        atr=atr_value,
+                    )
+                    if zy == 0 and zs == 0:
+                        return
+                    rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
+                    self.send_msg(
+                        f"==={symbol}**{','.join([ps.value for ps in new_open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
+                    )
+                    self.alert_all["OBSERVATIONS"][symbol] = new_open_info.model_dump()
         except Exception:
             self.logger.exception("处理持仓信息时发生异常")
             return
