@@ -1472,11 +1472,12 @@ class AUTOBN:
                 # 多头: take_profit=高价, stop_loss=低价
                 # 空头: take_profit=低价, stop_loss=高价
                 is_long = close_info.position_side.value == PositionSide.LONG.value
+                prev_close_price = kline_close[-2]
 
-                # 止损触发条件
-                sl_triggered = (is_long and current_price <= close_info.stop_loss) or (
-                    not is_long and current_price >= close_info.stop_loss
-                )
+                # 止损触发条件（使用昨日收盘价）
+                sl_triggered = (
+                    is_long and prev_close_price <= close_info.stop_loss
+                ) or (not is_long and prev_close_price >= close_info.stop_loss)
                 # 止盈触发条件
                 tp_triggered = (
                     is_long and current_price >= close_info.take_profit
@@ -1637,7 +1638,6 @@ class AUTOBN:
                     if (
                         PositionSide.BZ in open_info.strategy
                         and kline_close[-2] < current_price
-                        and basis_rate < -self.BASIS_RATE_THRESHOLD
                         and lsr_value > 0
                         and lsr_value < self.LONG_SHORT_RATIO_BZ_MAX
                         and await self.check_side(
@@ -1650,18 +1650,49 @@ class AUTOBN:
                         )
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
-                        open_info.side = OrderSide.BUY
-                        should_open = True
+                        # 在基差率判断前发送观察信号
+                        atr_value_msg = self.calculate_atr(kline)
+                        zy_msg, zs_msg = self.calc_stop_profit_loss(
+                            (kline[-1][2] + kline[-1][3]) / 2,
+                            is_long=True,
+                            atr=atr_value_msg,
+                        )
+                        if not (zy_msg == 0 and zs_msg == 0):
+                            rate_show = (
+                                atr_value_msg * self.SUPERTREND_FACTOR / current_price
+                            )
+                            self.send_msg(
+                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
+                            )
+
+                        if basis_rate < -self.BASIS_RATE_THRESHOLD:
+                            open_info.side = OrderSide.BUY
+                            should_open = True
                     elif (
                         PositionSide.BD in open_info.strategy
                         and current_price < kline_close[-2]
-                        and basis_rate > self.BASIS_RATE_THRESHOLD
                         and lsr_value > 0
                         and lsr_value > 1 / self.LONG_SHORT_RATIO_BZ_MAX
                         and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
-                        open_info.side = OrderSide.SELL
-                        should_open = True
+                        # 在基差率判断前发送观察信号
+                        atr_value_msg = self.calculate_atr(kline)
+                        zy_msg, zs_msg = self.calc_stop_profit_loss(
+                            (kline[-1][2] + kline[-1][3]) / 2,
+                            is_long=False,
+                            atr=atr_value_msg,
+                        )
+                        if not (zy_msg == 0 and zs_msg == 0):
+                            rate_show = (
+                                atr_value_msg * self.SUPERTREND_FACTOR / current_price
+                            )
+                            self.send_msg(
+                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
+                            )
+
+                        if basis_rate > self.BASIS_RATE_THRESHOLD:
+                            open_info.side = OrderSide.SELL
+                            should_open = True
                     if should_open:
                         # 使用15分钟K线的ATR计算止盈止损（与supertrend保持一致）
                         atr_value = self.calculate_atr(kline)
@@ -1748,18 +1779,6 @@ class AUTOBN:
                         name=symbol,
                     )
                 if new_open_info:
-                    atr_value = self.calculate_atr(kline)
-                    zy, zs = self.calc_stop_profit_loss(
-                        (kline[-1][2] + kline[-1][3]) / 2,
-                        is_long=is_long,
-                        atr=atr_value,
-                    )
-                    if zy == 0 and zs == 0:
-                        return
-                    rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
-                    self.send_msg(
-                        f"==={symbol}**{','.join([ps.value for ps in new_open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy}\n止损:{zs}\n收益率:{rate_show:.2%}"
-                    )
                     self.alert_all["OBSERVATIONS"][symbol] = new_open_info.model_dump()
         except Exception:
             self.logger.exception("处理持仓信息时发生异常")
