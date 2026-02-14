@@ -20,6 +20,7 @@ import akshare as ak
 import baostock as bs
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from binance.um_futures import UMFutures
 from pydantic import BaseModel
@@ -377,6 +378,9 @@ class AUTOBN:
         # 初始化币安期货客户端
         obj.um_futures_client = UMFutures(key=api_key, secret=api_secret)
         obj._api_semaphore = asyncio.Semaphore(obj.MAX_CONCURRENT_REQUESTS)
+        adapter = HTTPAdapter(pool_connections=32, pool_maxsize=32)
+        obj.um_futures_client.session.mount("https://", adapter)
+        obj.um_futures_client.session.mount("http://", adapter)
 
         # 加载持仓记录
         with open(obj.alert_all_file, "r") as f:
@@ -467,7 +471,7 @@ class AUTOBN:
             # 异常处理：记录错误但不中断程序运行
             self.logger.error(f"消息发送异常: {str(e)}")
 
-    def calculate_health_bn(self, notional) -> int:
+    async def calculate_health_bn(self, notional, account_data=None) -> int:
         """
         计算币安账户健康度
 
@@ -476,15 +480,17 @@ class AUTOBN:
         说明：逐仓仓位的维保同样计入维持保证金，但逐仓强平风险需另行计算
         参数：
             notional: 新增头寸的名义价值（USDT）
+            account_data: 可选，已获取的账户数据，用于减少重复请求
         返回：
             健康度百分比（0-100），100表示最健康，0表示已爆仓
         """
         # 获取账户基本信息
-        account_data = self.um_futures_client.account()
+        if account_data is None:
+            account_data = await self._call_um(self.um_futures_client.account)
         total_balance = float(account_data["totalMarginBalance"])  # 账户总余额
 
         # 获取所有持仓信息
-        position_data = self.um_futures_client.get_position_risk()
+        position_data = await self._call_um(self.um_futures_client.get_position_risk)
         total_maintenance_margin = 0.0  # 维持保证金总额
 
         # 计算现有持仓的维持保证金
@@ -529,7 +535,7 @@ class AUTOBN:
             # 获取所有持仓信息，转换为字典格式
             # positionAmt: 持仓数量（正数=多头，负数=空头）
             # 使用abs()取绝对值，统一处理多空持仓
-            position_risk = await asyncio.to_thread(
+            position_risk = await self._call_um(
                 self.um_futures_client.get_position_risk
             )
             position = {
@@ -654,7 +660,7 @@ class AUTOBN:
             # 风险控制：检查"账户级健康度"（逐仓建议额外结合仓位强平距离/保证金冗余）
             # 健康度 = (1 - 维持保证金/总余额) * 100%
             # 目的：确保开仓后不会导致全局账户风险过高
-            account_health = self.calculate_health_bn(notional)
+            account_health = await self.calculate_health_bn(notional, account_data)
             if account_health < self.health4open:
                 # self.send_msg(
                 #     f"{symbol} 开仓失败：预计健康度 {account_health}% 低于要求 {self.health4open}%"
@@ -662,7 +668,7 @@ class AUTOBN:
                 return None
 
             # 设置杠杆倍数 (异步)
-            leverage_result = await asyncio.to_thread(
+            leverage_result = await self._call_um(
                 self.um_futures_client.change_leverage,
                 symbol=symbol,
                 leverage=self.leverage,
@@ -670,7 +676,7 @@ class AUTOBN:
             actual_leverage = leverage_result.get("leverage", self.leverage)
 
             # 执行市价单开仓 (异步)
-            tx = await asyncio.to_thread(
+            tx = await self._call_um(
                 self.um_futures_client.new_order,
                 symbol=symbol,
                 side=side,  # 'BUY'或'SELL'
@@ -736,7 +742,7 @@ class AUTOBN:
         while close_amount > 0:
             try:
                 # 执行市价单平仓 (异步)
-                tx = await asyncio.to_thread(
+                tx = await self._call_um(
                     self.um_futures_client.new_order,
                     symbol=symbol,
                     side=side,  # 平仓方向
@@ -929,7 +935,7 @@ class AUTOBN:
                     oi_1d = cache_entry["data"]
                 else:
                     # 缓存无效或不存在，获取新数据
-                    oi_1d = await asyncio.to_thread(
+                    oi_1d = await self._call_um(
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
                         period="1d",
@@ -980,7 +986,7 @@ class AUTOBN:
                 ):
                     oi_5m = oi_5m_cache["data"]
                 else:
-                    oi_5m = await asyncio.to_thread(
+                    oi_5m = await self._call_um(
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
                         period="5m",
@@ -999,7 +1005,7 @@ class AUTOBN:
                 if oi_1h_cache and oi_1h_cache.get("target_date") == target_ts:
                     oi_1h = oi_1h_cache["data"]
                 else:
-                    oi_1h = await asyncio.to_thread(
+                    oi_1h = await self._call_um(
                         self.um_futures_client.open_interest_hist,
                         symbol=symbol,
                         period="1h",
@@ -1058,7 +1064,7 @@ class AUTOBN:
             interval = t.replace("utc", "").lower()
             try:
                 # 异步获取K线数据
-                kline = await asyncio.to_thread(
+                kline = await self._call_um(
                     self.um_futures_client.klines,
                     symbol=symbol,
                     interval=interval,
@@ -1096,7 +1102,7 @@ class AUTOBN:
         else:
             # 缓存无效或强制刷新，重新获取数据
             try:
-                data = await asyncio.to_thread(
+                data = await self._call_um(
                     self.um_futures_client.long_short_account_ratio,
                     symbol=symbol,
                     period="1h",
@@ -1115,7 +1121,7 @@ class AUTOBN:
                 else:
                     data = []
         try:
-            data2 = await asyncio.to_thread(
+            data2 = await self._call_um(
                 self.um_futures_client.long_short_account_ratio,
                 symbol=symbol,
                 period="5m",
@@ -1795,9 +1801,10 @@ class AUTOBN:
             self.logger.exception("处理持仓信息时发生异常")
             return
 
-    def get_symbols_info(self):
+    def get_symbols_info(self, exchange_info=None):
         # 获取交易所信息
-        exchange_info = self.um_futures_client.exchange_info()
+        if exchange_info is None:
+            exchange_info = self.um_futures_client.exchange_info()
 
         # 计算数量精度：根据quantityPrecision生成对应的Decimal精度
         sp = {
@@ -1818,9 +1825,10 @@ class AUTOBN:
             if "USDT" in symbol["quoteAsset"] and "TRADING" in symbol["status"]
         }
 
-    def get_position_risk(self):
+    def get_position_risk(self, position_risk=None):
         # 获取当前持仓信息，用于清理无效持仓
-        position_risk = self.um_futures_client.get_position_risk()
+        if position_risk is None:
+            position_risk = self.um_futures_client.get_position_risk()
         position_risk_symbol = [i["symbol"] for i in position_risk]
         # 只保留当前有持仓的交易对记录
         self.alert_all["POSITIONS"] = {
@@ -1917,8 +1925,12 @@ class AUTOBN:
         if now.minute % 15 == 0 or not self.symbols:
             for i in range(self.MAX_RETRY_COUNT):
                 try:
-                    positions_data = self.get_position_risk()
-                    self.get_symbols_info()
+                    position_risk_data = await self._call_um(
+                        self.um_futures_client.get_position_risk
+                    )
+                    positions_data = self.get_position_risk(position_risk_data)
+                    exchange_info = await self._call_um(self.um_futures_client.exchange_info)
+                    self.get_symbols_info(exchange_info)
                     self.symbols = list(self.symbols_info.keys())
                     break  # 成功获取，退出重试循环
                 except Exception:
@@ -1926,7 +1938,8 @@ class AUTOBN:
                     self.logger.exception("获取交易对信息时发生异常")
                     await asyncio.sleep(self.RETRY_DELAY_SECONDS)
         if self.is_early_morning:
-            balance = self.um_futures_client.account()["totalWalletBalance"]
+            balance_info = await self._call_um(self.um_futures_client.account)
+            balance = balance_info["totalWalletBalance"]
             self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
             self.logger.info("账户信息推送任务执行完成")
             with open(self.alert_all_file, "w") as f:
