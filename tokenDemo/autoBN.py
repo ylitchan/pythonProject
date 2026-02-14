@@ -276,6 +276,8 @@ class AUTOBN:
     MAX_RETRY_COUNT = 10  # 最大重试次数
     EARLY_MORNING_HOUR = 8  # 早盘检测小时
     MARKET_ANALYSIS_TIMEOUT = 300  # 市场分析超时时间（秒）
+    BATCH_WINDOW_MINUTES = 5  # 分批窗口时长（分钟）
+    BATCH_SLOT_COUNT = 5  # 窗口内批次数（每分钟一批）
 
     # ==================== 交易配置常量 ====================
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
@@ -396,6 +398,9 @@ class AUTOBN:
         obj._oi_5m_cache = {}
         # 初始化基差率缓存: {symbol: {"data": float, "timestamp": float}}
         obj._basis_rate_cache = {}
+        # 分批扫描窗口状态：每个窗口固定一份symbols快照，避免窗口内漂移
+        obj._batch_window_id = None
+        obj._batch_symbols_snapshot = []
 
         # 注册退出处理函数,在脚本退出时保存数据
         def save_on_exit():
@@ -1922,22 +1927,43 @@ class AUTOBN:
                 json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
         # 创建信号量，限制最大并发数，避免API限制
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
-        self.logger.info(f"{market}任务开始 - 总交易对数量: {len(self.symbols)}")
 
-        success = set()  # 记录成功处理的交易对
+        # 5分钟窗口分批：每分钟仅处理一个slot，降低单分钟请求量
+        window_seconds = self.BATCH_WINDOW_MINUTES * 60
+        window_id = int(now.timestamp() // window_seconds)
+        slot = now.minute % self.BATCH_SLOT_COUNT
 
-        # 优化：移除 chunk 分批逻辑，改用全量任务提交 + Semaphore 控制并发
-        # 这样可以避免"最慢任务拖慢整批进度"的问题，大幅提高整体吞吐量
-        tasks = [
-            self.rzq_token(semaphore, symbol, success, now) for symbol in self.symbols
+        # 新窗口时冻结symbols快照，确保窗口内分片稳定
+        if self._batch_window_id != window_id:
+            self._batch_window_id = window_id
+            self._batch_symbols_snapshot = sorted(self.symbols)
+
+        snapshot_symbols = self._batch_symbols_snapshot
+        batch_symbols = [
+            symbol
+            for index, symbol in enumerate(snapshot_symbols)
+            if index % self.BATCH_SLOT_COUNT == slot
         ]
 
-        # 等待所有任务完成
+        self.logger.info(
+            f"{market}任务开始 - window:{window_id} slot:{slot}/{self.BATCH_SLOT_COUNT} "
+            f"快照数量:{len(snapshot_symbols)} 批次数量:{len(batch_symbols)}"
+        )
+
+        success = set()  # 记录成功处理的交易对
+        tasks = [
+            self.rzq_token(semaphore, symbol, success, now) for symbol in batch_symbols
+        ]
+
+        # 等待当前批次任务完成
         if tasks:
             await asyncio.gather(*tasks)
 
         # 打印任务完成信息
-        self.logger.info(f"{market}任务结束 - 总交易对数量: {len(success)}")
+        self.logger.info(
+            f"{market}任务结束 - window:{window_id} slot:{slot}/{self.BATCH_SLOT_COUNT} "
+            f"批次成功数量:{len(success)}"
+        )
 
 
 class AUTOA:
