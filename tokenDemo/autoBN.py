@@ -225,7 +225,7 @@ class AUTOBN:
     """币安期货自动交易类"""
 
     # ==================== 并发控制常量 ====================
-    MAX_CONCURRENT_REQUESTS = 10  # 最大并发请求数
+    MAX_CONCURRENT_REQUESTS = 8  # 最大并发请求数
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 7 * 96 * 15 * 60  # 观察记录超时时间（约7天）
@@ -376,6 +376,7 @@ class AUTOBN:
 
         # 初始化币安期货客户端
         obj.um_futures_client = UMFutures(key=api_key, secret=api_secret)
+        obj._api_semaphore = asyncio.Semaphore(obj.MAX_CONCURRENT_REQUESTS)
 
         # 加载持仓记录
         with open(obj.alert_all_file, "r") as f:
@@ -508,6 +509,11 @@ class AUTOBN:
                 min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100))
             )
 
+    async def _call_um(self, method, *args, **kwargs):
+        """统一的UMFutures异步调用入口，受全局并发闸门约束"""
+        async with self._api_semaphore:
+            return await asyncio.to_thread(method, *args, **kwargs)
+
     async def get_amount_close(self, symbol):
         """
         获取指定交易对的持仓数量 (异步)
@@ -558,10 +564,10 @@ class AUTOBN:
             成功返回account_data，失败返回None
         """
         try:
-            # 并行获取账户数据和标记价格（优化：减少API延迟）
+            # 并行获取账户数据和标记价格（统一受全局并发闸门约束）
             account_data, mark_price_data = await asyncio.gather(
-                asyncio.to_thread(self.um_futures_client.account),
-                asyncio.to_thread(self.um_futures_client.mark_price, symbol),
+                self._call_um(self.um_futures_client.account),
+                self._call_um(self.um_futures_client.mark_price, symbol),
             )
 
             balance = float(account_data["availableBalance"])
@@ -1143,8 +1149,8 @@ class AUTOBN:
             ):
                 return cache_entry["data"]
 
-            # 获取指数价格和标记价格
-            premium_index = await asyncio.to_thread(
+            # 获取指数价格和标记价格（统一受全局并发闸门约束）
+            premium_index = await self._call_um(
                 self.um_futures_client.mark_price, symbol
             )
             if not premium_index:
