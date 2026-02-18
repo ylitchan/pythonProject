@@ -240,7 +240,7 @@ class AUTOBN:
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
     LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
-    LONG_SHORT_RATIO_BZ_MAX = 4 / 6  # BZ做多多空比上限
+    LONG_SHORT_RATIO_BZ_MAX = 1  # BZ做多多空比上限
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
 
     # ==================== ATR风控常量 ====================
@@ -262,7 +262,7 @@ class AUTOBN:
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 基差率常量 ====================
     BASIS_RATE_THRESHOLD = 0.02  # 基差率开仓阈值（2%）
@@ -1990,7 +1990,7 @@ class AUTOA:
     ATR_PERIOD = 10  # ATR计算周期
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 20 * 24 * 60 * 60  # 观察记录超时时间（20天）
