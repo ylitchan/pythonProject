@@ -249,7 +249,6 @@ class AUTOBN:
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
     # ==================== 回溯周期常量 ====================
-    LSR_LOOKBACK_PERIOD = 10  # 多空比切比雪夫计算回溯周期
     OI_LOOKBACK_PERIOD = 10  # 持仓量检查回溯周期
     VOLUME_LOOKBACK_PERIOD = 10  # 成交量检查回溯周期
     OI_QUERY_LIMIT = 30  # 持仓量数据查询数量限制
@@ -912,7 +911,7 @@ class AUTOBN:
                     # 做多：要求当前多空比是历史最低值（散户最恐慌）
                     if lsrd == min(lsr_values) and (
                         self.calculate_chebyshev_probability(
-                            lsr_values[: -self.LSR_LOOKBACK_PERIOD],
+                            lsr_values[:-1],
                             lsrd,
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
@@ -2011,7 +2010,6 @@ class AUTOA:
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
     VOLUME_LOOKBACK_MULTIPLIER = 3  # 成交量回溯倍数
-    VOLUME_LOOKBACK_PERIOD = 10  # 成交量检查回溯周期
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
@@ -2807,7 +2805,7 @@ class AUTOA:
                 hist_open[-1] > hist_high[-2]
                 and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD * cls.VOLUME_LOOKBACK_MULTIPLIER :])
                 and cls.calculate_chebyshev_probability(
-                    hist_volume[-cls.ATR_PERIOD * cls.VOLUME_LOOKBACK_MULTIPLIER : -cls.ATR_PERIOD],
+                    hist_volume[:-1],
                     hist_volume[-1],
                 )["chebyshev_upper_bound"]
                 < cls.CHEBYSHEV_EXTREME_THRESHOLD
