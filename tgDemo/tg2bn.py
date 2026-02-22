@@ -16,7 +16,7 @@ import sys
 
 # 添加项目根目录到系统路径
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from tokenDemo.autoBN import AUTOBN, AUTOA
+from tokenDemo.autoTrade import AUTOBN, AUTOA
 
 
 # Telegram API凭证 - 用于连接到Telegram客户端

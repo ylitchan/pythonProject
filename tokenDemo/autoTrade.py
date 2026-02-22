@@ -20,10 +20,10 @@ import akshare as ak
 import baostock as bs
 import pandas as pd
 import requests
-from requests.adapters import HTTPAdapter
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from binance.um_futures import UMFutures
 from pydantic import BaseModel
+from requests.adapters import HTTPAdapter
 
 # ==================== 类型定义 ====================
 
@@ -240,7 +240,6 @@ class AUTOBN:
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
     LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
-    LONG_SHORT_RATIO_BZ_MAX = 1  # BZ做多多空比上限
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
 
     # ==================== ATR风控常量 ====================
@@ -820,71 +819,12 @@ class AUTOBN:
                 )
         return None
 
-    async def check_trend(
-        self,
-        semaphore,
-        symbol,
-        kline_data=None,
-    ):
-        """
-        检查趋势信号 - 基于 Supertrend 指标
-
-        功能: 使用 Supertrend 指标判断市场趋势方向
-        参数:
-            semaphore: 异步信号量
-            symbol: 交易对符号
-            kline_data: K线数据(可选,如果不提供则获取)
-        返回:
-            'LONG': 做多趋势
-            'SHORT': 做空趋势
-            0: 无明确趋势或数据不足
-        """
-        async with semaphore:
-            try:
-                # 获取 4 小时 K 线数据(如果未提供)
-                if kline_data is None:
-                    kline_data = await self.get_kline(semaphore, symbol, "15m")
-                    if (
-                        len(kline_data) < self.ATR_PERIOD + 1
-                    ):  # 至少需要 ATR周期+1 根K线
-                        return 0
-
-                # 计算 Supertrend
-                supertrend_values, directions = self.calculate_trend(
-                    kline_data,
-                    factor=self.SUPERTREND_FACTOR,
-                    atr_period=self.ATR_PERIOD,
-                )
-
-                # 获取最近两根K线的方向
-                if len(directions) < 2:
-                    return 0
-
-                prev_direction = directions[-2]
-                curr_direction = directions[-1]
-
-                # 检测趋势变化
-                # 从下降趋势转为上升趋势: prev_direction=1, curr_direction=-1
-                if prev_direction == 1 and curr_direction == -1:
-                    return PositionSide.LONG.value  # 做多信号
-                # 从上升趋势转为下降趋势: prev_direction=-1, curr_direction=1
-                elif prev_direction == -1 and curr_direction == 1:
-                    return PositionSide.SHORT.value  # 做空信号
-                else:
-                    # 趋势未变化,返回当前趋势方向
-                    return 0
-
-            except Exception:
-                self.logger.exception("检查趋势信号时发生错误")
-                return 0
-
     async def check_side(
         self,
         semaphore,
         symbol,
         positionSide,
         kline_close=None,
-        kline_volume=None,
         dtn: datetime = None,
     ):
         """
@@ -906,24 +846,74 @@ class AUTOBN:
 
                 # 根据持仓方向判断多空比条件（极值逻辑）
                 if positionSide == PositionSide.LONG.value:
-                    if lsrd > self.LONG_SHORT_RATIO_BZ_MAX:
+                    if len(lsr_values) < 2:
                         return False
-                    # 做多：要求当前多空比是历史最低值（散户最恐慌）
-                    if lsrd == min(lsr_values) and (
-                        self.calculate_chebyshev_probability(
-                            lsr_values[:-1],
-                            lsrd,
-                        )["chebyshev_upper_bound"]
-                        < self.CHEBYSHEV_EXTREME_THRESHOLD
-                    ):
-                        return True
-                    return False
+                    # 做多：仅要求多空比严格创新低（不含当前值做比较）
+                    if lsrd >= min(lsr_values[:-1]):
+                        return False
                 elif positionSide == PositionSide.SHORT.value:
                     # 做空：要求当前多空比是历史最高值（散户最疯狂）
                     if lsrd != max(lsr_values):
                         return False
+                current_time_5m = time.time()
+                oi_5m_cache = self._oi_5m_cache.get(symbol)
+                if (
+                    oi_5m_cache
+                    and (current_time_5m - oi_5m_cache["timestamp"])
+                    < self.OI_5M_CACHE_TTL
+                ):
+                    oi_5m = oi_5m_cache["data"]
+                else:
+                    oi_5m = await self._call_um(
+                        self.um_futures_client.open_interest_hist,
+                        symbol=symbol,
+                        period="5m",
+                        limit=self.OI_QUERY_LIMIT,
+                    )
+                    self._oi_5m_cache[symbol] = {
+                        "data": oi_5m,
+                        "timestamp": current_time_5m,
+                    }
 
-                # 获取持仓量历史数据（带缓存）
+                if not oi_5m:
+                    return False
+                oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
+                if positionSide == PositionSide.LONG.value:
+                    dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
+                    target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
+
+                    oi_1h_cache = self._oi_1h_cache.get(symbol)
+                    if oi_1h_cache and oi_1h_cache.get("target_date") == target_ts_1h:
+                        oi_1h = oi_1h_cache["data"]
+                    else:
+                        oi_1h = await self._call_um(
+                            self.um_futures_client.open_interest_hist,
+                            symbol=symbol,
+                            period="1h",
+                            limit=self.OI_QUERY_LIMIT,
+                        )
+                        if oi_1h and oi_1h[-1]["timestamp"] == target_ts_1h:
+                            self._oi_1h_cache[symbol] = {
+                                "data": oi_1h,
+                                "target_date": target_ts_1h,
+                            }
+
+                    if not oi_1h:
+                        return False
+                    sumOpenInterest_1h = [float(i["sumOpenInterest"]) for i in oi_1h]
+
+                    if len(sumOpenInterest_1h) < 1:
+                        return False
+                    return (
+                        oi_5m_last > max(sumOpenInterest_1h)
+                        and self.calculate_chebyshev_probability(
+                            sumOpenInterest_1h,
+                            oi_5m_last,
+                        )["chebyshev_upper_bound"]
+                        < self.CHEBYSHEV_EXTREME_THRESHOLD
+                    )
+
+                # 获取持仓量历史数据（带缓存，仅做空使用）
                 dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
                 target_ts = int(dtn_target.timestamp() * 1000)
 
@@ -957,93 +947,22 @@ class AUTOBN:
 
                 # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
                 # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
+                max_kline_close = max(kline_close)
+                max_oi_value_1d = max(sumOpenInterestValue_1d)
+                max_recent_oi_value = max(sumOpenInterestValue_1d[-3:-1])
                 return any(
                     (
-                        kline_close[index - 1] == max(kline_close)
-                        and sumOpenInterestValue_1d[index]
-                        == max(sumOpenInterestValue_1d)
-                        and kline_close[-2] > max(kline_close[-4:-2])
-                        and sumOpenInterestValue_1d[-1]
-                        > max(sumOpenInterestValue_1d[-3:-1])
-                        and max(kline_volume[-3:-1]) == max(kline_volume)
-                        and sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
+                        kline_close[index - 1] == max_kline_close
+                        and sumOpenInterestValue_1d[index] == max_oi_value_1d
+                        and sumOpenInterestValue_1d[-1] > max_recent_oi_value
+                        and oi_5m_last < sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
                     )
-                    for index in range(-1, max(-self.OI_LOOKBACK_PERIOD, -len(kline_close)), -1)
+                    for index in range(
+                        -1, max(-self.OI_LOOKBACK_PERIOD, -len(kline_close)), -1
+                    )
                 )
             except Exception:
                 self.logger.exception("检查增仓信号时发生错误")
-                return False
-
-    async def check_oi(self, semaphore, symbol, open_info, dtn):
-        async with semaphore:
-            try:
-                current_time = time.time()
-                oi_5m_cache = self._oi_5m_cache.get(symbol)
-                if (
-                    oi_5m_cache
-                    and (current_time - oi_5m_cache["timestamp"]) < self.OI_5M_CACHE_TTL
-                ):
-                    oi_5m = oi_5m_cache["data"]
-                else:
-                    oi_5m = await self._call_um(
-                        self.um_futures_client.open_interest_hist,
-                        symbol=symbol,
-                        period="5m",
-                        limit=self.OI_QUERY_LIMIT,
-                    )
-                    self._oi_5m_cache[symbol] = {
-                        "data": oi_5m,
-                        "timestamp": current_time,
-                    }
-
-                # 获取 1h 持仓量数据（复用 _oi_1h_cache，需检查 target_date）
-                dtn_target = dtn.replace(minute=0, second=0, microsecond=0)
-                target_ts = int(dtn_target.timestamp() * 1000)
-
-                oi_1h_cache = self._oi_1h_cache.get(symbol)
-                if oi_1h_cache and oi_1h_cache.get("target_date") == target_ts:
-                    oi_1h = oi_1h_cache["data"]
-                else:
-                    oi_1h = await self._call_um(
-                        self.um_futures_client.open_interest_hist,
-                        symbol=symbol,
-                        period="1h",
-                        limit=self.OI_QUERY_LIMIT,
-                    )
-                    # 如果数据时间戳匹配，也更新缓存
-                    if oi_1h and oi_1h[-1]["timestamp"] == target_ts:
-                        self._oi_1h_cache[symbol] = {
-                            "data": oi_1h,
-                            "target_date": target_ts,
-                        }
-
-                sumOpenInterestValue_5m = [
-                    float(i["sumOpenInterestValue"]) for i in oi_5m
-                ]  # 持仓价值（美元）
-                sumOpenInterest_5m = [
-                    float(i["sumOpenInterest"]) for i in oi_5m
-                ]  # 持仓数量（合约数）
-
-                sumOpenInterestValue_1h = [
-                    float(i["sumOpenInterestValue"]) for i in oi_1h
-                ]  # 持仓价值（美元）
-                sumOpenInterest_1h = [
-                    float(i["sumOpenInterest"]) for i in oi_1h
-                ]  # 持仓数量（合约数）
-
-                if PositionSide.BZ in open_info.strategy and (
-                    sumOpenInterest_5m[-1] <= max(sumOpenInterest_1h)
-                    or sumOpenInterestValue_5m[-1] <= max(sumOpenInterestValue_1h)
-                ):
-                    return False
-                elif (
-                    PositionSide.BD in open_info.strategy
-                    and sumOpenInterest_5m[-1] >= sumOpenInterest_1h[-1]
-                ):
-                    return False
-                return True
-            except Exception:
-                self.logger.exception("检查OI信号时发生错误")
                 return False
 
     async def get_kline(self, semaphore, symbol, t: str):
@@ -1150,7 +1069,8 @@ class AUTOBN:
             cache_entry = self._basis_rate_cache.get(symbol)
             if (
                 cache_entry
-                and (current_time - cache_entry["timestamp"]) < self.BASIS_RATE_CACHE_TTL
+                and (current_time - cache_entry["timestamp"])
+                < self.BASIS_RATE_CACHE_TTL
             ):
                 return cache_entry["data"]
 
@@ -1180,98 +1100,6 @@ class AUTOBN:
         except Exception as e:
             self.logger.error(f"{symbol} 获取基差率失败: {str(e)}")
             return 0.0
-
-    def calculate_trend(self, kline_data, factor=3.0, atr_period=10):
-        """
-        计算 Supertrend 指标
-
-        参数:
-            kline_data: K线数据列表
-            factor: 因子，默认3.0
-            atr_period: ATR周期，默认10
-
-        返回:
-            (supertrend_values, directions): supertrend值列表和方向列表
-            方向: -1 表示上升趋势, 1 表示下降趋势
-        """
-        if not kline_data or len(kline_data) < atr_period + 1:
-            return [], []
-
-        supertrend_values = []
-        directions = []
-
-        # 预计算所有 TR 值
-        tr_list = []
-        for i in range(1, len(kline_data)):
-            high = kline_data[i][2]
-            low = kline_data[i][3]
-            prev_close = kline_data[i - 1][4]
-            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
-            tr_list.append(tr)
-
-        # 使用 Wilder's Smoothing (RMA) 增量计算所有 ATR 值
-        # atr_for_kline[i] 表示截止到 kline_data[i] 的 ATR 值
-        atr_for_kline = {}
-        atr = sum(tr_list[:atr_period]) / atr_period
-        atr_for_kline[atr_period] = atr
-        for j in range(atr_period, len(tr_list)):
-            atr = (atr * (atr_period - 1) + tr_list[j]) / atr_period
-            atr_for_kline[j + 1] = atr
-
-        for i in range(atr_period, len(kline_data)):
-            kline = kline_data[i]
-            close = kline[4]
-
-            # 使用预计算的 ATR 值
-            atr = atr_for_kline[i]
-            hl2 = (kline[2] + kline[3]) / 2  # (high + low) / 2
-
-            # 计算基础上下轨
-            basic_upper = hl2 + factor * atr
-            basic_lower = hl2 - factor * atr
-
-            # 初始化第一次迭代的方向
-            if len(directions) == 0:
-                if close > basic_upper:
-                    direction = -1  # 上升趋势
-                    supertrend = basic_lower
-                else:
-                    direction = 1  # 下降趋势
-                    supertrend = basic_upper
-            else:
-                prev_direction = directions[-1]
-                prev_supertrend = supertrend_values[-1]
-
-                # Supertrend 核心逻辑
-                if prev_direction == -1:  # 之前是上升趋势
-                    # 上升趋势中使用下轨，下轨只能上移或持平
-                    final_lower = max(basic_lower, prev_supertrend)
-
-                    if close <= final_lower:
-                        # 收盘价跌破下轨，趋势反转为下降
-                        direction = 1
-                        supertrend = basic_upper
-                    else:
-                        # 继续上升趋势
-                        direction = -1
-                        supertrend = final_lower
-                else:  # 之前是下降趋势 (direction == 1)
-                    # 下降趋势中使用上轨，上轨只能下移或持平
-                    final_upper = min(basic_upper, prev_supertrend)
-
-                    if close >= final_upper:
-                        # 收盘价突破上轨，趋势反转为上升
-                        direction = -1
-                        supertrend = basic_lower
-                    else:
-                        # 继续下降趋势
-                        direction = 1
-                        supertrend = final_upper
-
-            supertrend_values.append(supertrend)
-            directions.append(direction)
-
-        return supertrend_values, directions
 
     def calculate_atr(self, kline_data, period=None):
         """
@@ -1641,80 +1469,85 @@ class AUTOBN:
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             elif open_info:
-                if current_timestamp - open_info.timestamp > self.OBSERVATION_TIMEOUT_SECONDS:
+                if (
+                    current_timestamp - open_info.timestamp
+                    > self.OBSERVATION_TIMEOUT_SECONDS
+                ):
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                     open_info = None
                 else:
                     should_open = False
-                    # 获取多空比和基差率用于开仓条件判断
-                    lsr_cache = self._long_short_ratio_cache.get(symbol)
-                    lsr_value = float(lsr_cache["data"][-1]["longShortRatio"]) if lsr_cache else 0
-                    basis_rate = await self.get_basis_rate(symbol)
+                    atr_value = None
+                    hl2 = None
 
                     if (
                         PositionSide.BZ in open_info.strategy
                         and kline_close[-2] < current_price
-                        and lsr_value > 0
-                        and lsr_value < self.LONG_SHORT_RATIO_BZ_MAX
                         and await self.check_side(
                             semaphore,
                             symbol,
                             PositionSide.LONG.value,
                             kline_close,
-                            kline_volume,
                             dtn,
                         )
-                        and await self.check_oi(semaphore, symbol, open_info, dtn)
                     ):
                         # 在基差率判断前发送观察信号
-                        atr_value_msg = self.calculate_atr(kline)
+                        hl2 = (kline[-1][2] + kline[-1][3]) / 2
+                        atr_value = self.calculate_atr(kline)
                         zy_msg, zs_msg = self.calc_stop_profit_loss(
-                            (kline[-1][2] + kline[-1][3]) / 2,
+                            hl2,
                             is_long=True,
-                            atr=atr_value_msg,
+                            atr=atr_value,
                         )
                         if not (zy_msg == 0 and zs_msg == 0):
+                            basis_rate = await self.get_basis_rate(symbol)
+                            if basis_rate < -self.BASIS_RATE_THRESHOLD:
+                                open_info.strategy.append(PositionSide.Supertrend)
                             rate_show = (
-                                atr_value_msg * self.SUPERTREND_FACTOR / current_price
+                                atr_value * self.SUPERTREND_FACTOR / current_price
                             )
                             self.send_msg(
                                 f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
-
-                        if basis_rate < -self.BASIS_RATE_THRESHOLD:
                             open_info.side = OrderSide.BUY
                             should_open = True
                     elif (
                         PositionSide.BD in open_info.strategy
                         and current_price < kline_close[-2]
-                        and lsr_value > 0
-                        and lsr_value > 1 / self.LONG_SHORT_RATIO_BZ_MAX
-                        and await self.check_oi(semaphore, symbol, open_info, dtn)
+                        and await self.check_side(
+                            semaphore,
+                            symbol,
+                            PositionSide.SHORT.value,
+                            kline_close,
+                            dtn,
+                        )
                     ):
                         # 在基差率判断前发送观察信号
-                        atr_value_msg = self.calculate_atr(kline)
+                        hl2 = (kline[-1][2] + kline[-1][3]) / 2
+                        atr_value = self.calculate_atr(kline)
                         zy_msg, zs_msg = self.calc_stop_profit_loss(
-                            (kline[-1][2] + kline[-1][3]) / 2,
+                            hl2,
                             is_long=False,
-                            atr=atr_value_msg,
+                            atr=atr_value,
                         )
                         if not (zy_msg == 0 and zs_msg == 0):
+                            basis_rate = await self.get_basis_rate(symbol)
+                            if basis_rate > self.BASIS_RATE_THRESHOLD:
+                                open_info.strategy.append(PositionSide.Supertrend)
                             rate_show = (
-                                atr_value_msg * self.SUPERTREND_FACTOR / current_price
+                                atr_value * self.SUPERTREND_FACTOR / current_price
                             )
                             self.send_msg(
                                 f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
-
-                        if basis_rate > self.BASIS_RATE_THRESHOLD:
                             open_info.side = OrderSide.SELL
                             should_open = True
                     if should_open:
-                        # 使用15分钟K线的ATR计算止盈止损（与supertrend保持一致）
-                        atr_value = self.calculate_atr(kline)
                         is_long = open_info.side.value == OrderSide.BUY.value
-                        # 使用hl2中间价计算止盈止损，与supertrend上下轨计算方式一致
-                        hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
+                        if atr_value is None or hl2 is None:
+                            # 兜底：确保后续止盈止损计算可用
+                            hl2 = (kline[-1][2] + kline[-1][3]) / 2
+                            atr_value = self.calculate_atr(kline)
                         zy, zs = self.calc_stop_profit_loss(
                             hl2, is_long=is_long, atr=atr_value
                         )
@@ -1762,13 +1595,11 @@ class AUTOBN:
 
             if can_set_observation:
                 new_open_info = None
-                is_long = False
 
                 # 做多信号判断
                 if kline_close[-2] < current_price and kline_volume[-1] == max(
                     kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
                 ):
-                    is_long = True
                     new_open_info = Observation(
                         price=current_price,
                         timestamp=current_timestamp,
@@ -1778,15 +1609,9 @@ class AUTOBN:
                     )
 
                 # 做空信号判断
-                elif await self.check_side(
-                    semaphore,
-                    symbol,
-                    PositionSide.SHORT.value,
-                    kline_close,
-                    kline_volume,
-                    dtn,
-                ):
-                    is_long = False
+                elif kline_close[-2] > max(kline_close[-4:-2]) and max(
+                    kline_volume[-3:-1]
+                ) == max(kline_volume):
                     new_open_info = Observation(
                         price=current_price,
                         timestamp=current_timestamp,
@@ -1928,7 +1753,9 @@ class AUTOBN:
                         self.um_futures_client.get_position_risk
                     )
                     positions_data = self.get_position_risk(position_risk_data)
-                    exchange_info = await self._call_um(self.um_futures_client.exchange_info)
+                    exchange_info = await self._call_um(
+                        self.um_futures_client.exchange_info
+                    )
                     self.get_symbols_info(exchange_info)
                     self.symbols = list(self.symbols_info.keys())
                     break  # 成功获取，退出重试循环
@@ -2276,14 +2103,12 @@ class AUTOA:
 
         # 检查前两根K线（不含今天）是否都收盘在10日均线下方
         # 即 hist.iloc[-2] 和 hist.iloc[-3] 的收盘价都 < 10日均线
-        yesterday_below_ma10 = (
-            pd.notna(ma10.iloc[-2])
-            and float(hist.iloc[-2]["close"]) < float(ma10.iloc[-2])
-        )
-        day_before_below_ma10 = (
-            pd.notna(ma10.iloc[-3])
-            and float(hist.iloc[-3]["close"]) < float(ma10.iloc[-3])
-        )
+        yesterday_below_ma10 = pd.notna(ma10.iloc[-2]) and float(
+            hist.iloc[-2]["close"]
+        ) < float(ma10.iloc[-2])
+        day_before_below_ma10 = pd.notna(ma10.iloc[-3]) and float(
+            hist.iloc[-3]["close"]
+        ) < float(ma10.iloc[-3])
 
         if not (yesterday_below_ma10 and day_before_below_ma10):
             return False
@@ -2723,7 +2548,9 @@ class AUTOA:
 
                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                 profit = price_close - close_info.entry_price
-                target_profit = initial_tp_gap / cls.TARGET_PROFIT_DIVISOR  # 预期收益的1/3
+                target_profit = (
+                    initial_tp_gap / cls.TARGET_PROFIT_DIVISOR
+                )  # 预期收益的1/3
                 if profit >= target_profit:
                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
                     # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
@@ -2803,7 +2630,8 @@ class AUTOA:
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
             if (
                 hist_open[-1] > hist_high[-2]
-                and hist_volume[-1] == max(hist_volume[-cls.ATR_PERIOD * cls.VOLUME_LOOKBACK_MULTIPLIER :])
+                and hist_volume[-1]
+                == max(hist_volume[-cls.ATR_PERIOD * cls.VOLUME_LOOKBACK_MULTIPLIER :])
                 and cls.calculate_chebyshev_probability(
                     hist_volume[:-1],
                     hist_volume[-1],
