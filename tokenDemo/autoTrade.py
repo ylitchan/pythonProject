@@ -1836,7 +1836,7 @@ class AUTOA:
     MA_PERIOD = 10  # 均线周期
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
-    VOLUME_LOOKBACK_MULTIPLIER = 3  # 成交量回溯倍数
+    VOLUME_CHEB_LOOKBACK_DAYS = 20  # 成交量切比雪夫窗口（不含最后一根）
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
@@ -2618,8 +2618,10 @@ class AUTOA:
 
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
         hist_volume = hist["volume"].values
-        if len(hist_volume) >= 3:
+        if len(hist_volume) >= cls.VOLUME_CHEB_LOOKBACK_DAYS:
             should_open = False
+            volume_sample = hist_volume[-cls.VOLUME_CHEB_LOOKBACK_DAYS:-1]
+            current_volume = hist_volume[-1]
             # 先计算 supertrend 和 ATR（两种策略都需要）
             (
                 trend_signal,
@@ -2630,11 +2632,10 @@ class AUTOA:
             ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
             if (
                 hist_open[-1] > hist_high[-2]
-                and hist_volume[-1]
-                == max(hist_volume[-cls.ATR_PERIOD * cls.VOLUME_LOOKBACK_MULTIPLIER :])
+                and current_volume == max(volume_sample)
                 and cls.calculate_chebyshev_probability(
-                    hist_volume[:-1],
-                    hist_volume[-1],
+                    volume_sample,
+                    current_volume,
                 )["chebyshev_upper_bound"]
                 < cls.CHEBYSHEV_EXTREME_THRESHOLD
             ):
