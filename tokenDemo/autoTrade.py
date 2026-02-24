@@ -229,7 +229,7 @@ class AUTOBN:
     MAX_CONCURRENT_REQUESTS = 8  # 最大并发请求数
 
     # ==================== 时间常量 ====================
-    OBSERVATION_TIMEOUT_SECONDS = 7 * 96 * 15 * 60  # 观察记录超时时间（约7天）
+    OBSERVATION_TIMEOUT_SECONDS = 24 * 60 * 60  # 观察记录超时时间（1天）
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
 
@@ -1891,7 +1891,7 @@ class AUTOA:
     MA_PERIOD = 10  # 均线周期
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
-    VOLUME_CHEB_LOOKBACK_DAYS = 20  # 成交量切比雪夫窗口（不含最后一根）
+    VOLUME_CHEB_LOOKBACK_DAYS = 10  # 成交量切比雪夫窗口（不含最后一根，切片[-10:-1]）
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
