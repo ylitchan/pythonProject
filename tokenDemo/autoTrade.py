@@ -241,6 +241,8 @@ class AUTOBN:
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
     LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
+    LONG_SHORT_RATIO_LONG_LIMIT = 3 / 7  # LONG额外放行阈值（多空比）
+    LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
     OI_DELTA_LONG_RATIO_WEIGHT = 0.5  # LONG融合公式中(oi_5m-oi_1h)项权重
 
     # ==================== ATR风控常量 ====================
@@ -855,9 +857,12 @@ class AUTOBN:
                         return None
                     return lsr / (1 + lsr)
 
-                # SHORT 逻辑保持不变：要求当前多空比是历史最高值（散户最疯狂）
-                if positionSide == PositionSide.SHORT.value and lsrd != max(lsr_values):
-                    return False
+                # SHORT：极值条件 或 多空比阈值条件
+                if positionSide == PositionSide.SHORT.value:
+                    short_extreme = lsrd == max(lsr_values)
+                    short_ratio_cond = lsrd > self.LONG_SHORT_RATIO_SHORT_LIMIT
+                    if not (short_extreme or short_ratio_cond):
+                        return False
                 current_time_5m = time.time()
                 oi_5m_cache = self._oi_5m_cache.get(symbol)
                 if (
@@ -882,10 +887,10 @@ class AUTOBN:
                     return False
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
-                    if len(lsr_values) < 2:
-                        return False
-                    # 做多：要求当前多空比严格创新低（不含当前值做比较）
-                    if lsrd >= min(lsr_values[:-1]):
+                    long_extreme = len(lsr_values) >= 2 and lsrd < min(lsr_values[:-1])
+                    long_ratio_cond = lsrd < self.LONG_SHORT_RATIO_LONG_LIMIT
+                    # 做多：极值条件 或 多空比阈值条件
+                    if not (long_extreme or long_ratio_cond):
                         return False
 
                     dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
