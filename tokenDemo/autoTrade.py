@@ -241,6 +241,7 @@ class AUTOBN:
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
     LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
+    OI_DELTA_LONG_RATIO_WEIGHT = 0.5  # LONG融合公式中(oi_5m-oi_1h)项权重
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
@@ -838,23 +839,25 @@ class AUTOBN:
                 if not long_short_ratio_data:
                     return False
 
-                # 提取所有历史多空比值
+                # 提取所有历史多空比值（供 SHORT 现有逻辑复用）
                 lsr_values = [
                     float(item["longShortRatio"]) for item in long_short_ratio_data
                 ]
                 lsrd = lsr_values[-1]  # 当前值
 
-                # 根据持仓方向判断多空比条件（极值逻辑）
-                if positionSide == PositionSide.LONG.value:
-                    if len(lsr_values) < 2:
-                        return False
-                    # 做多：仅要求多空比严格创新低（不含当前值做比较）
-                    if lsrd >= min(lsr_values[:-1]):
-                        return False
-                elif positionSide == PositionSide.SHORT.value:
-                    # 做空：要求当前多空比是历史最高值（散户最疯狂）
-                    if lsrd != max(lsr_values):
-                        return False
+                # 多仓比例提取：优先 longAccount，缺失时由 longShortRatio 推导
+                def _extract_long_ratio(item):
+                    long_account = item.get("longAccount")
+                    if long_account is not None:
+                        return float(long_account)
+                    lsr = float(item["longShortRatio"])
+                    if lsr <= -1:
+                        return None
+                    return lsr / (1 + lsr)
+
+                # SHORT 逻辑保持不变：要求当前多空比是历史最高值（散户最疯狂）
+                if positionSide == PositionSide.SHORT.value and lsrd != max(lsr_values):
+                    return False
                 current_time_5m = time.time()
                 oi_5m_cache = self._oi_5m_cache.get(symbol)
                 if (
@@ -879,6 +882,12 @@ class AUTOBN:
                     return False
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
+                    if len(lsr_values) < 2:
+                        return False
+                    # 做多：要求当前多空比严格创新低（不含当前值做比较）
+                    if lsrd >= min(lsr_values[:-1]):
+                        return False
+
                     dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
                     target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
 
@@ -901,9 +910,55 @@ class AUTOBN:
                     if not oi_1h:
                         return False
                     sumOpenInterest_1h = [float(i["sumOpenInterest"]) for i in oi_1h]
-
                     if len(sumOpenInterest_1h) < 1:
                         return False
+
+                    current_total_oi = oi_5m_last
+                    if current_total_oi <= 0:
+                        return False
+
+                    latest_oi_1h = float(oi_1h[-1]["sumOpenInterest"])
+                    latest_ratio_item_5m = long_short_ratio_data[-1]
+                    long_ratio_5m = _extract_long_ratio(latest_ratio_item_5m)
+                    if long_ratio_5m is None:
+                        return False
+
+                    ratio_item_1h = None
+                    for item in reversed(long_short_ratio_data):
+                        item_ts = item.get("timestamp")
+                        if item_ts is None:
+                            continue
+                        if int(item_ts) == target_ts_1h:
+                            ratio_item_1h = item
+                            break
+
+                    if ratio_item_1h is None:
+                        for item in reversed(long_short_ratio_data):
+                            item_ts = item.get("timestamp")
+                            if item_ts is None:
+                                continue
+                            try:
+                                if int(item_ts) <= target_ts_1h:
+                                    ratio_item_1h = item
+                                    break
+                            except Exception:
+                                continue
+
+                    if ratio_item_1h is None:
+                        return False
+
+                    long_ratio_1h = _extract_long_ratio(ratio_item_1h)
+                    if long_ratio_1h is None:
+                        return False
+
+                    blend = (
+                        latest_oi_1h * long_ratio_1h
+                        + (oi_5m_last - latest_oi_1h) * self.OI_DELTA_LONG_RATIO_WEIGHT
+                    ) / current_total_oi
+
+                    if blend <= long_ratio_5m:
+                        return False
+
                     return (
                         oi_5m_last > max(sumOpenInterest_1h)
                         and self.calculate_chebyshev_probability(
@@ -1819,7 +1874,7 @@ class AUTOA:
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
-    OBSERVATION_TIMEOUT_SECONDS = 20 * 24 * 60 * 60  # 观察记录超时时间（20天）
+    OBSERVATION_TIMEOUT_SECONDS = 30 * 24 * 60 * 60  # 观察记录超时时间（30天）
 
     # ==================== Supertrend Constants ====================
     SUPERTREND_FACTOR = 3.0
