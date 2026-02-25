@@ -1567,7 +1567,7 @@ class AUTOBN:
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
                             self.send_msg(
-                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
+                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.BUY
                             should_open = True
@@ -1598,7 +1598,7 @@ class AUTOBN:
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
                             self.send_msg(
-                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
+                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.SELL
                             should_open = True
@@ -1888,6 +1888,8 @@ class AUTOA:
     TRADING_DAYS_LOOKBACK = 60
     STOP_LOSS_DECAY = 0.001  # 止损衰减系数 (1‰)
     TRAILING_STOP_PROFIT_RATIO = 0.7  # 追踪止损盈利保护比例 (保护70%盈利，允许30%回撤)
+    MARKET_OPEN_HOUR = 9  # A股开盘小时
+    MARKET_OPEN_MINUTE = 30  # A股开盘分钟
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
     MARKET_CLOSE_MINUTE = 5  # A股收盘分钟
     MONITOR_TIMEOUT = 600  # 股票监控超时时间（秒）
@@ -2756,14 +2758,19 @@ class AUTOA:
         """
         # 获取交易日历信息
         today = datetime.datetime.today()
-        # 收盘后不执行：小时大于15，或者小时等于15且分钟大于0
+        # 9:30前不执行：小时小于9，或9点但分钟小于30
+        is_before_open = today.hour < cls.MARKET_OPEN_HOUR or (
+            today.hour == cls.MARKET_OPEN_HOUR
+            and today.minute < cls.MARKET_OPEN_MINUTE
+        )
+        # 收盘后不执行：小时大于15，或者小时等于15且分钟大于5
         is_after_close = today.hour > cls.MARKET_CLOSE_HOUR or (
             today.hour == cls.MARKET_CLOSE_HOUR
             and today.minute > cls.MARKET_CLOSE_MINUTE
         )
         if (
             cls.zt_dates and today.strftime("%Y-%m-%d") not in cls.zt_dates
-        ) or is_after_close:
+        ) or is_before_open or is_after_close:
             return []
         if not cls.zt_dates:
             cls.zt_dates = cls.get_last_trading_days(today)
