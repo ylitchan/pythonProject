@@ -1849,15 +1849,19 @@ class AUTOBN:
             for index, symbol in enumerate(snapshot_symbols)
             if index % self.BATCH_SLOT_COUNT == slot
         ]
+        position_symbols = list(self.alert_all["POSITIONS"].keys())
+        effective_symbols = list(dict.fromkeys(batch_symbols + position_symbols))
 
         self.logger.info(
             f"{market}任务开始 - window:{window_id} slot:{slot}/{self.BATCH_SLOT_COUNT} "
-            f"快照数量:{len(snapshot_symbols)} 批次数量:{len(batch_symbols)}"
+            f"快照数量:{len(snapshot_symbols)} 批次数量:{len(batch_symbols)} "
+            f"持仓数量:{len(position_symbols)} 实际处理数量:{len(effective_symbols)}"
         )
 
         success = set()  # 记录成功处理的交易对
         tasks = [
-            self.rzq_token(semaphore, symbol, success, now) for symbol in batch_symbols
+            self.rzq_token(semaphore, symbol, success, now)
+            for symbol in effective_symbols
         ]
 
         # 等待当前批次任务完成
