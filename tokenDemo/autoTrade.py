@@ -284,7 +284,10 @@ class AUTOBN:
     # ==================== 交易配置常量 ====================
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
-    REOPEN_COOLDOWN_SECONDS = 3600
+    REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
+    OPEN_LONG_SHORT_RATIO_THRESHOLD = 1.0
+    OI_CHEB_EXCLUDE_RECENT_COUNT = 10
+    MIN_CHEB_SAMPLE_SIZE = 2
 
     @classmethod
     def from_cfg(cls, **kwargs):
@@ -863,6 +866,8 @@ class AUTOBN:
 
                 # SHORT：极值条件 或 多空比阈值条件
                 if positionSide == PositionSide.SHORT.value:
+                    if lsrd <= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
+                        return False
                     short_extreme = lsrd == max(lsr_values)
                     short_ratio_cond = lsrd > self.LONG_SHORT_RATIO_SHORT_LIMIT
                     if not (short_extreme or short_ratio_cond):
@@ -891,6 +896,8 @@ class AUTOBN:
                     return False
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
+                    if lsrd >= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
+                        return False
                     long_extreme = len(lsr_values) >= 2 and lsrd < min(lsr_values[:-1])
                     long_ratio_cond = lsrd < self.LONG_SHORT_RATIO_LONG_LIMIT
                     # 做多：极值条件 或 多空比阈值条件
@@ -920,6 +927,11 @@ class AUTOBN:
                         return False
                     sumOpenInterest_1h = [float(i["sumOpenInterest"]) for i in oi_1h]
                     if len(sumOpenInterest_1h) < 1:
+                        return False
+                    oi_hist_for_cheb = sumOpenInterest_1h[
+                        : -self.OI_CHEB_EXCLUDE_RECENT_COUNT
+                    ]
+                    if len(oi_hist_for_cheb) < self.MIN_CHEB_SAMPLE_SIZE:
                         return False
 
                     current_total_oi = oi_5m_last
@@ -971,7 +983,7 @@ class AUTOBN:
                     return (
                         oi_5m_last > max(sumOpenInterest_1h)
                         and self.calculate_chebyshev_probability(
-                            sumOpenInterest_1h,
+                            oi_hist_for_cheb,
                             oi_5m_last,
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
@@ -1615,7 +1627,7 @@ class AUTOBN:
                             < self.REOPEN_COOLDOWN_SECONDS
                         ):
                             self.logger.info(
-                                f"{symbol} 1小时内已平仓，跳过开仓信号"
+                                f"{symbol} 24小时内已平仓，跳过开仓信号"
                             )
                             return
                         is_long = open_info.side.value == OrderSide.BUY.value
