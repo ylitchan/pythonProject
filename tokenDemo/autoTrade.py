@@ -284,6 +284,7 @@ class AUTOBN:
     # ==================== 交易配置常量 ====================
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
+    REOPEN_COOLDOWN_SECONDS = 3600
 
     @classmethod
     def from_cfg(cls, **kwargs):
@@ -386,6 +387,7 @@ class AUTOBN:
         # 加载持仓记录
         with open(obj.alert_all_file, "r") as f:
             obj.alert_all = json.load(f)
+        obj.alert_all.setdefault("CLOSE_TS", {})
 
         # 初始化资金槽位(用于资金管理)(可覆盖)
         # 含义:用于控制单次下单的资金使用上限(与 open_ratio 一起作用)
@@ -785,8 +787,10 @@ class AUTOBN:
                 # 检查平仓后是否仍有该symbol的仓位，若无则从POSITIONS中移除 (异步)
                 remaining_amount_price = await self.get_amount_close(symbol)
                 remaining_amount = remaining_amount_price[0]
-                if remaining_amount == 0 and symbol in self.alert_all["POSITIONS"]:
-                    self.alert_all["POSITIONS"].pop(symbol)
+                if remaining_amount == 0:
+                    self.alert_all.setdefault("CLOSE_TS", {})[symbol] = time.time()
+                    if symbol in self.alert_all["POSITIONS"]:
+                        self.alert_all["POSITIONS"].pop(symbol)
                 elif atr_value > 0:
                     is_long = positionSide == PositionSide.LONG.value
                     # 更新止盈止损并持久化到字典
@@ -1603,6 +1607,17 @@ class AUTOBN:
                             open_info.side = OrderSide.SELL
                             should_open = True
                     if should_open:
+                        last_close_ts = (
+                            self.alert_all.get("CLOSE_TS", {}).get(symbol, 0) or 0
+                        )
+                        if (
+                            current_timestamp - float(last_close_ts)
+                            < self.REOPEN_COOLDOWN_SECONDS
+                        ):
+                            self.logger.info(
+                                f"{symbol} 1小时内已平仓，跳过开仓信号"
+                            )
+                            return
                         is_long = open_info.side.value == OrderSide.BUY.value
                         if atr_value is None or hl2 is None:
                             # 兜底：确保后续止盈止损计算可用
