@@ -33,8 +33,9 @@ class PositionSide(str, Enum):
     SHORT = "SHORT"
     BZ = "BZ"
     BD = "BD"
+    N = "N"
     DK = "DK"
-    Supertrend = "Supertrend"
+    Basis = "Basis"
     Grid = "Grid"
 
 
@@ -285,7 +286,7 @@ class AUTOBN:
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
-    OPEN_LONG_SHORT_RATIO_THRESHOLD = 1.0
+    OPEN_LONG_SHORT_RATIO_THRESHOLD = 7 / 3
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
 
@@ -846,7 +847,7 @@ class AUTOBN:
                 long_short_ratio_data = await self.get_long_short_ratio(symbol)
                 # 提取最新的多空人数比
                 if not long_short_ratio_data:
-                    return False
+                    return False, None
 
                 # 提取所有历史多空比值（供 SHORT 现有逻辑复用）
                 lsr_values = [
@@ -866,12 +867,12 @@ class AUTOBN:
 
                 # SHORT：极值条件 或 多空比阈值条件
                 if positionSide == PositionSide.SHORT.value:
-                    if lsrd <= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
-                        return False
+                    if lsrd <= (1 / self.OPEN_LONG_SHORT_RATIO_THRESHOLD):
+                        return False, None
                     short_extreme = lsrd == max(lsr_values)
                     short_ratio_cond = lsrd > self.LONG_SHORT_RATIO_SHORT_LIMIT
                     if not (short_extreme or short_ratio_cond):
-                        return False
+                        return False, None
                 current_time_5m = time.time()
                 oi_5m_cache = self._oi_5m_cache.get(symbol)
                 if (
@@ -893,16 +894,16 @@ class AUTOBN:
                     }
 
                 if not oi_5m:
-                    return False
+                    return False, None
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
                     if lsrd >= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
-                        return False
+                        return False, None
                     long_extreme = len(lsr_values) >= 2 and lsrd < min(lsr_values[:-1])
                     long_ratio_cond = lsrd < self.LONG_SHORT_RATIO_LONG_LIMIT
                     # 做多：极值条件 或 多空比阈值条件
                     if not (long_extreme or long_ratio_cond):
-                        return False
+                        return False, None
 
                     dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
                     target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
@@ -924,25 +925,25 @@ class AUTOBN:
                             }
 
                     if not oi_1h:
-                        return False
+                        return False, None
                     sumOpenInterest_1h = [float(i["sumOpenInterest"]) for i in oi_1h]
                     if len(sumOpenInterest_1h) < 1:
-                        return False
+                        return False, None
                     oi_hist_for_cheb = sumOpenInterest_1h[
                         : -self.OI_CHEB_EXCLUDE_RECENT_COUNT
                     ]
                     if len(oi_hist_for_cheb) < self.MIN_CHEB_SAMPLE_SIZE:
-                        return False
+                        return False, None
 
                     current_total_oi = oi_5m_last
                     if current_total_oi <= 0:
-                        return False
+                        return False, None
 
                     latest_oi_1h = float(oi_1h[-1]["sumOpenInterest"])
                     latest_ratio_item_5m = long_short_ratio_data[-1]
                     long_ratio_5m = _extract_long_ratio(latest_ratio_item_5m)
                     if long_ratio_5m is None:
-                        return False
+                        return False, None
 
                     ratio_item_1h = None
                     for item in reversed(long_short_ratio_data):
@@ -966,11 +967,11 @@ class AUTOBN:
                                 continue
 
                     if ratio_item_1h is None:
-                        return False
+                        return False, None
 
                     long_ratio_1h = _extract_long_ratio(ratio_item_1h)
                     if long_ratio_1h is None:
-                        return False
+                        return False, None
 
                     blend = (
                         latest_oi_1h * long_ratio_1h
@@ -978,9 +979,9 @@ class AUTOBN:
                     ) / current_total_oi
 
                     if blend <= long_ratio_5m:
-                        return False
+                        return False, None
 
-                    return (
+                    passed = (
                         oi_5m_last > max(sumOpenInterest_1h)
                         and self.calculate_chebyshev_probability(
                             oi_hist_for_cheb,
@@ -988,6 +989,7 @@ class AUTOBN:
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
+                    return (True, lsrd) if passed else (False, None)
 
                 # 获取持仓量历史数据（带缓存，仅做空使用）
                 dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
@@ -1008,7 +1010,7 @@ class AUTOBN:
                     )
                     # 检查数据是否满足条件
                     if oi_1d[-1]["timestamp"] != target_ts:
-                        return False
+                        return False, None
                     # 数据满足条件，缓存起来
                     self._oi_1d_cache[symbol] = {
                         "data": oi_1d,
@@ -1026,7 +1028,7 @@ class AUTOBN:
                 max_kline_close = max(kline_close)
                 max_oi_value_1d = max(sumOpenInterestValue_1d)
                 max_recent_oi_value = max(sumOpenInterestValue_1d[-3:-1])
-                return any(
+                passed = any(
                     (
                         kline_close[index - 1] == max_kline_close
                         and sumOpenInterestValue_1d[index] == max_oi_value_1d
@@ -1037,9 +1039,10 @@ class AUTOBN:
                         -1, max(-self.OI_LOOKBACK_PERIOD, -len(kline_close)), -1
                     )
                 )
+                return (True, lsrd) if passed else (False, None)
             except Exception:
                 self.logger.exception("检查增仓信号时发生错误")
-                return False
+                return False, None
 
     async def get_kline(self, semaphore, symbol, t: str):
         """
@@ -1371,7 +1374,7 @@ class AUTOBN:
                     )
                     close_info.take_profit = tp
                     close_info.stop_loss = sl
-                    position_side = PositionSide.Supertrend
+                    position_side = PositionSide.Basis
                     order_side = OrderSide.BUY if is_long else OrderSide.SELL
                     # 转换为 Observation 对象并保存
                     open_info = Observation(
@@ -1556,17 +1559,19 @@ class AUTOBN:
                     atr_value = None
                     hl2 = None
 
+                    long_ok, long_lsr = False, None
                     if (
                         PositionSide.BZ in open_info.strategy
                         and kline_close[-2] < current_price
-                        and await self.check_side(
+                    ):
+                        long_ok, long_lsr = await self.check_side(
                             semaphore,
                             symbol,
                             PositionSide.LONG.value,
                             kline_close,
                             dtn,
                         )
-                    ):
+                    if long_ok:
                         # 在基差率判断前发送观察信号
                         hl2 = (kline[-1][2] + kline[-1][3]) / 2
                         atr_value = self.calculate_atr(kline)
@@ -1578,26 +1583,32 @@ class AUTOBN:
                         if not (zy_msg == 0 and zs_msg == 0):
                             basis_rate = await self.get_basis_rate(symbol)
                             if basis_rate < -self.BASIS_RATE_THRESHOLD:
-                                open_info.strategy.append(PositionSide.Supertrend)
+                                open_info.strategy.append(PositionSide.Basis)
+                            lsr_show = (
+                                f"{long_lsr:.4f}" if long_lsr is not None else "N/A"
+                            )
                             rate_show = (
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
                             self.send_msg(
-                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
+                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.BUY
                             should_open = True
-                    elif (
-                        PositionSide.BD in open_info.strategy
+                    short_ok, short_lsr = False, None
+                    if (
+                        not long_ok
+                        and PositionSide.BD in open_info.strategy
                         and current_price < kline_close[-2]
-                        and await self.check_side(
+                    ):
+                        short_ok, short_lsr = await self.check_side(
                             semaphore,
                             symbol,
                             PositionSide.SHORT.value,
                             kline_close,
                             dtn,
                         )
-                    ):
+                    if short_ok:
                         # 在基差率判断前发送观察信号
                         hl2 = (kline[-1][2] + kline[-1][3]) / 2
                         atr_value = self.calculate_atr(kline)
@@ -1609,12 +1620,15 @@ class AUTOBN:
                         if not (zy_msg == 0 and zs_msg == 0):
                             basis_rate = await self.get_basis_rate(symbol)
                             if basis_rate > self.BASIS_RATE_THRESHOLD:
-                                open_info.strategy.append(PositionSide.Supertrend)
+                                open_info.strategy.append(PositionSide.Basis)
+                            lsr_show = (
+                                f"{short_lsr:.4f}" if short_lsr is not None else "N/A"
+                            )
                             rate_show = (
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
                             self.send_msg(
-                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
+                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.SELL
                             should_open = True
@@ -1929,7 +1943,9 @@ class AUTOA:
     MA_PERIOD = 10  # 均线周期
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
-    VOLUME_CHEB_LOOKBACK_DAYS = 10  # 成交量切比雪夫窗口（不含最后一根，切片[-10:-1]）
+    VOLUME_CHEB_SAMPLE_START_OFFSET = -20  # 成交量切比雪夫样本窗口起点（含）
+    VOLUME_CHEB_SAMPLE_END_OFFSET = -5  # 成交量切比雪夫样本窗口终点（不含）
+    VOLUME_CHEB_REQUIRED_HISTORY = 20  # 切片[-20:-5]所需最少历史K线数
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
@@ -2711,9 +2727,11 @@ class AUTOA:
 
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
         hist_volume = hist["volume"].values
-        if len(hist_volume) >= cls.VOLUME_CHEB_LOOKBACK_DAYS:
+        if len(hist_volume) >= cls.VOLUME_CHEB_REQUIRED_HISTORY:
             should_open = False
-            volume_sample = hist_volume[-cls.VOLUME_CHEB_LOOKBACK_DAYS:-1]
+            volume_sample = hist_volume[
+                cls.VOLUME_CHEB_SAMPLE_START_OFFSET : cls.VOLUME_CHEB_SAMPLE_END_OFFSET
+            ]
             current_volume = hist_volume[-1]
             # 先计算 supertrend 和 ATR（两种策略都需要）
             (
@@ -2736,8 +2754,8 @@ class AUTOA:
                     open_info.strategy.append(PositionSide.BZ)
                 should_open = True
             elif cls.check_gap_up_after_break_ma10(hist):
-                if PositionSide.Supertrend not in open_info.strategy:
-                    open_info.strategy.append(PositionSide.Supertrend)
+                if PositionSide.N not in open_info.strategy:
+                    open_info.strategy.append(PositionSide.N)
                 should_open = True
 
             if should_open and current_atr > 0:
