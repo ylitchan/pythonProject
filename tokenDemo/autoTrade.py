@@ -2001,195 +2001,6 @@ class AUTOA:
         if not tr_list:
             return 0.0
         return sum(tr_list[-period:]) / min(len(tr_list), period)
-
-    @classmethod
-    def calculate_trend(cls, hist_data: pd.DataFrame, factor=None, atr_period=None):
-        """
-        计算 Supertrend 指标 (A股适配版)
-
-        参数:
-            hist_data: K线数据 DataFrame
-            factor: 因子，默认使用类常量 SUPERTREND_FACTOR
-            atr_period: ATR周期，默认使用类常量 ATR_PERIOD
-
-        返回:
-            (supertrend_values, directions, atr_values, upper_values, lower_values):
-            supertrend值列表、方向列表、ATR值列表、上轨值列表、下轨值列表
-            方向: -1 表示上升趋势, 1 表示下降趋势
-        """
-        if factor is None:
-            factor = cls.SUPERTREND_FACTOR
-        if atr_period is None:
-            atr_period = cls.ATR_PERIOD
-        if hist_data.empty or len(hist_data) < atr_period + 1:
-            return [], [], [], [], []
-
-        supertrend_values = []
-        directions = []
-        atr_values = []
-        upper_values = []  # 上轨值列表
-        lower_values = []  # 下轨值列表
-
-        # 缓存列数据加速访问
-        highs = hist_data["high"].values
-        lows = hist_data["low"].values
-        closes = hist_data["close"].values
-
-        # 预计算所有 TR 值
-        tr_list = []
-        for i in range(1, len(hist_data)):
-            h = float(highs[i])
-            low_price = float(lows[i])
-            pc = float(closes[i - 1])
-            tr = max(h - low_price, abs(h - pc), abs(low_price - pc))
-            tr_list.append(tr)
-
-        if not tr_list or len(tr_list) < atr_period:
-            return [], [], [], [], []
-
-        # 使用 Wilder's Smoothing (RMA) 增量计算所有 ATR 值
-        # atr_for_index[i] 表示截止到 hist_data[i] 的 ATR 值
-        atr_for_index = {}
-        atr = sum(tr_list[:atr_period]) / atr_period
-        atr_for_index[atr_period] = atr
-        for j in range(atr_period, len(tr_list)):
-            atr = (atr * (atr_period - 1) + tr_list[j]) / atr_period
-            atr_for_index[j + 1] = atr
-
-        for i in range(atr_period, len(hist_data)):
-            # 使用预计算的 ATR 值
-            atr = atr_for_index[i]
-            atr_values.append(atr)
-
-            # 当前K线数据
-            current_high = float(highs[i])
-            current_low = float(lows[i])
-            current_close = float(closes[i])
-
-            hl2 = (current_high + current_low) / 2
-
-            # 计算基础上下轨
-            basic_upper = hl2 + factor * atr
-            basic_lower = hl2 - factor * atr
-            upper_values.append(basic_upper)  # 保存当前上轨
-            lower_values.append(basic_lower)  # 保存当前下轨
-
-            if len(directions) == 0:
-                if current_close > basic_upper:
-                    direction = -1  # 上升
-                    supertrend = basic_lower
-                else:
-                    direction = 1  # 下降
-                    supertrend = basic_upper
-            else:
-                prev_direction = directions[-1]
-                prev_supertrend = supertrend_values[-1]
-
-                if prev_direction == -1:  # 之前是上升趋势
-                    final_lower = max(basic_lower, prev_supertrend)
-                    if current_close <= final_lower:
-                        direction = 1  # 反转为下降
-                        supertrend = basic_upper
-                    else:
-                        direction = -1  # 继续上升
-                        supertrend = final_lower
-                else:  # 之前是下降趋势
-                    final_upper = min(basic_upper, prev_supertrend)
-                    if current_close >= final_upper:
-                        direction = -1  # 反转为上升
-                        supertrend = basic_lower
-                    else:
-                        direction = 1  # 继续下降
-                        supertrend = final_upper
-
-            supertrend_values.append(supertrend)
-            directions.append(direction)
-
-        return supertrend_values, directions, atr_values, upper_values, lower_values
-
-    @classmethod
-    async def check_trend(cls, code, zt_dates=None, kline_data=None, check_at_index=-1):
-        """
-        检查趋势信号 - 基于 Supertrend 指标 (A股适配版)
-
-        功能: 使用 Supertrend 指标判断市场趋势方向
-        参数:
-            code: 股票代码
-            zt_dates: 交易日期列表
-            kline_data: K线数据(可选,如果不提供则获取)
-            check_at_index: 检查信号的索引位置，默认-1（最后一个点与前一个点比较）
-        返回:
-            (signal, last_atr, supertrend_values): 信号('LONG'/'SHORT'/0)、最后一个点的ATR值 和 supertrend值列表
-        """
-        try:
-            atr_period = cls.ATR_PERIOD
-            factor = cls.SUPERTREND_FACTOR
-
-            # 如果未提供K线数据，则获取
-            if kline_data is None:
-                if zt_dates is None:
-                    zt_dates = cls.get_last_trading_days(days=cls.TRADING_DAYS_LOOKBACK)
-
-                if not zt_dates:
-                    return 0, 0.0
-
-                kline_data = await cls.stock_zh_a_hist(
-                    code,
-                    "date,code,open,high,low,close,preclose,volume,amount",
-                    start_date=zt_dates[-1],
-                    end_date=zt_dates[0],
-                )
-
-            if kline_data.empty or len(kline_data) < atr_period + 1:
-                return 0, 0.0, [], 0.0, 0.0
-
-            supertrend_values, directions, atr_values, upper_values, lower_values = (
-                cls.calculate_trend(kline_data, factor=factor, atr_period=atr_period)
-            )
-
-            last_atr = atr_values[-1] if atr_values else 0.0
-            current_upper = upper_values[-1] if upper_values else 0.0
-            current_lower = lower_values[-1] if lower_values else 0.0
-
-            if len(directions) < 2:
-                return 0, last_atr, supertrend_values, current_upper, current_lower
-
-            # 转换为实际索引
-            idx = (
-                check_at_index
-                if check_at_index >= 0
-                else len(directions) + check_at_index
-            )
-            if idx < 1 or idx >= len(directions):
-                return 0, last_atr, supertrend_values, current_upper, current_lower
-
-            prev_direction = directions[idx - 1]
-            curr_direction = directions[idx]
-
-            # 检测趋势变化
-            if prev_direction == 1 and curr_direction == -1:
-                return (
-                    PositionSide.LONG.value,
-                    last_atr,
-                    supertrend_values,
-                    current_upper,
-                    current_lower,
-                )  # 做多信号
-            elif prev_direction == -1 and curr_direction == 1:
-                return (
-                    PositionSide.SHORT.value,
-                    last_atr,
-                    supertrend_values,
-                    current_upper,
-                    current_lower,
-                )  # 做空信号
-            else:
-                return 0, last_atr, supertrend_values, current_upper, current_lower
-
-        except Exception:
-            cls.logger.exception(f"检查 {code} 趋势信号时发生错误")
-            return 0, 0.0, []
-
     @classmethod
     def check_gap_up_after_break_ma10(cls, hist: pd.DataFrame) -> bool:
         """
@@ -2614,20 +2425,12 @@ class AUTOA:
             )
         else:
             # 未触及止盈止损，执行移动止损逻辑
-            supertrend_values, directions, atr_values, upper_values, lower_values = (
-                cls.calculate_trend(
-                    hist, factor=cls.SUPERTREND_FACTOR, atr_period=cls.ATR_PERIOD
-                )
-            )
-
-            # 参照 AUTOBN 的动态止盈止损逻辑
+            # 参照 AUTOBN 的动态止盈止损逻辑（使用当前hl2与ATR计算上下轨）
             DECAY = cls.STOP_LOSS_DECAY
-
-            # 使用 calculate_trend 返回的当前上下轨
-            current_upper = upper_values[-1] if upper_values else close_info.take_profit
-            current_lower = lower_values[-1] if lower_values else close_info.stop_loss
-
-            atr_value = atr_values[-1] if atr_values else 0.0
+            atr_value = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
+            hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
+            current_upper = hl2 + atr_value * cls.SUPERTREND_FACTOR
+            current_lower = hl2 - atr_value * cls.SUPERTREND_FACTOR
             if (
                 atr_value > 0
                 and close_info.entry_price > 0
@@ -2734,13 +2537,7 @@ class AUTOA:
             ]
             current_volume = hist_volume[-1]
             # 先计算 supertrend 和 ATR（两种策略都需要）
-            (
-                trend_signal,
-                current_atr,
-                supertrend_values,
-                current_upper,
-                current_lower,
-            ) = await cls.check_trend(code, zt_dates, hist, check_at_index=-1)
+            current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
             if (
                 hist_open[-1] > hist_high[-2]
                 and current_volume == max(volume_sample)
@@ -2760,9 +2557,10 @@ class AUTOA:
 
             if should_open and current_atr > 0:
                 price_close = float(hist.iloc[-1]["close"])
-                # 止盈使用check_trend返回的当前上轨
-                take_profit = current_upper
-                stop_loss = supertrend_values[-1]
+                # 初始化止盈止损与AUTOBN一致：基于hl2和ATR倍数计算
+                hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
+                take_profit = hl2 + current_atr * cls.SUPERTREND_FACTOR
+                stop_loss = hl2 - current_atr * cls.SUPERTREND_FACTOR
                 atr_percent = (
                     abs(take_profit - price_close) / price_close
                     if price_close > 0
