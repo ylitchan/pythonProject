@@ -1374,14 +1374,13 @@ class AUTOBN:
                     )
                     close_info.take_profit = tp
                     close_info.stop_loss = sl
-                    position_side = PositionSide.Basis
                     order_side = OrderSide.BUY if is_long else OrderSide.SELL
                     # 转换为 Observation 对象并保存
                     open_info = Observation(
                         price=current_price,
                         timestamp=current_timestamp,
                         side=order_side,
-                        strategy=[position_side],
+                        strategy=[close_info.strategy[0]],
                         name=symbol,
                     )
                     # 更新到字典
@@ -1677,6 +1676,7 @@ class AUTOBN:
                             strategy=open_info.strategy,
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
+                        open_info.strategy = [open_info.strategy[0]]
                         # 更新timestamp为当前时间，确保同一天(UTC)内不会再次触发Supertrend开仓
                         open_info.timestamp = current_timestamp
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
