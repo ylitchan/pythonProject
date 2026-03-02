@@ -36,7 +36,7 @@ class PositionSide(str, Enum):
     N = "N"
     DK = "DK"
     Basis = "Basis"
-    Grid = "Grid"
+    Martingale = "Martingale"
 
 
 class OrderSide(str, Enum):
@@ -1429,8 +1429,7 @@ class AUTOBN:
 
                     if close_info.position_side.value == PositionSide.LONG.value:
                         if current_price < close_info.entry_price - atr_value:
-                            if PositionSide.Grid not in close_info.strategy:
-                                close_info.strategy.append(PositionSide.Grid)
+                            close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
                                 OrderSide.BUY.value,
@@ -1488,8 +1487,7 @@ class AUTOBN:
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         if current_price > close_info.entry_price + atr_value:
-                            if PositionSide.Grid not in close_info.strategy:
-                                close_info.strategy.append(PositionSide.Grid)
+                            close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
                                 OrderSide.SELL.value,
@@ -2436,8 +2434,7 @@ class AUTOA:
                 and close_info.entry_price > 0
                 and price_close < close_info.entry_price - atr_value
             ):
-                if PositionSide.Grid not in close_info.strategy:
-                    close_info.strategy.append(PositionSide.Grid)
+                close_info.strategy.append(PositionSide.Martingale)
                 strategy_tag = ",".join([ps.value for ps in close_info.strategy])
                 msg = (
                     f"{close_info.name} 加仓\n"
