@@ -258,7 +258,7 @@ class AUTOBN:
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     # ==================== 风险管理常量 ====================
-    RISK_PER_TRADE = 0.1  # 每笔交易风险比例 (10%: 止损触发时最多损失账户的10%)
+    RISK_PER_TRADE = 0.2  # 每笔交易风险比例 (20%: 止损触发时最多损失账户的20%)
     TARGET_PROFIT_RATIO = 0.1  # 每笔交易目标盈利比例 (10%: 止盈触发时赚取账户的10%)
     MAX_POSITION_RATIO = 0.1  # 单币种最大持仓比例 (防止极端杠杆)
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
