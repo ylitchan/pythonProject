@@ -1941,9 +1941,9 @@ class AUTOA:
     MA_PERIOD = 10  # 均线周期
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
-    VOLUME_CHEB_SAMPLE_START_OFFSET = -10  # 成交量切比雪夫样本窗口起点（含）
-    VOLUME_CHEB_SAMPLE_END_OFFSET = -5  # 成交量切比雪夫样本窗口终点（不含）
-    VOLUME_CHEB_REQUIRED_HISTORY = 10  # 切片[-10:-5]所需最少历史K线数
+    VOLUME_CHEB_SAMPLE_START_OFFSET = -20  # 成交量切比雪夫样本窗口起点（含）
+    VOLUME_CHEB_SAMPLE_END_OFFSET = -10  # 成交量切比雪夫样本窗口终点（不含）
+    VOLUME_CHEB_REQUIRED_HISTORY = 20  # 切片[-20:-10]所需最少历史K线数
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
