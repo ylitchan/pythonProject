@@ -249,7 +249,7 @@ class AUTOBN:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
-    ATR_TRIGGER_CAP_RATIO = 0.07
+    ATR_TRIGGER_CAP_RATIO = 0.10
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
     # ==================== 回溯周期常量 ====================
@@ -1928,7 +1928,7 @@ class AUTOBN:
 class AUTOA:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
-    ATR_TRIGGER_CAP_RATIO = 0.07
+    ATR_TRIGGER_CAP_RATIO = 0.10
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
