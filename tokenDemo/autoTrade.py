@@ -1766,6 +1766,13 @@ class AUTOBN:
         positions_data = []
         for p in position_risk:
             entryPrice = float(p["entryPrice"])
+            notional = abs(float(p.get("notional", 0) or 0))
+            unrealized_profit = float(p.get("unRealizedProfit", 0) or 0)
+            if notional == 0:
+                self.logger.info(
+                    f"跳过名义价值为0的持仓记录: symbol={p.get('symbol')} side={p.get('positionSide')}"
+                )
+                continue
             # 获取策略信息
             strategy_tag = ""
             if p["symbol"] in self.alert_all["POSITIONS"]:
@@ -1774,7 +1781,7 @@ class AUTOBN:
                     strategy_list = pos_data["strategy"]
                     strategy_tag = ",".join(strategy_list) if strategy_list else ""
             positions_data.append(
-                f"==={p['symbol']}===\n策略:{strategy_tag}\n开仓价格:{entryPrice} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unRealizedProfit']} USDT\n持仓收益:{float(p['unRealizedProfit']) / abs(float(p['notional'])):.2%}"
+                f"==={p['symbol']}===\n策略:{strategy_tag}\n开仓价格:{entryPrice} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unRealizedProfit']} USDT\n持仓收益:{unrealized_profit / notional:.2%}"
             )
 
             if p["symbol"] not in self.alert_all["POSITIONS"]:
