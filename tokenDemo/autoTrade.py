@@ -249,6 +249,7 @@ class AUTOBN:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
+    ATR_TRIGGER_CAP_RATIO = 0.07
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
     # ==================== 回溯周期常量 ====================
@@ -1425,9 +1426,12 @@ class AUTOBN:
                     hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
                     current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
                     current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
+                    atr_trigger = min(
+                        atr_value, close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO
+                    )
 
                     if close_info.position_side.value == PositionSide.LONG.value:
-                        if current_price < close_info.entry_price - atr_value:
+                        if current_price < close_info.entry_price - atr_trigger:
                             close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
@@ -1485,7 +1489,7 @@ class AUTOBN:
                                     )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
-                        if current_price > close_info.entry_price + atr_value:
+                        if current_price > close_info.entry_price + atr_trigger:
                             close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
@@ -1917,6 +1921,7 @@ class AUTOBN:
 class AUTOA:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
+    ATR_TRIGGER_CAP_RATIO = 0.07
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -2429,10 +2434,13 @@ class AUTOA:
             hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
             current_upper = hl2 + atr_value * cls.SUPERTREND_FACTOR
             current_lower = hl2 - atr_value * cls.SUPERTREND_FACTOR
+            atr_trigger = min(
+                atr_value, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO
+            )
             if (
                 atr_value > 0
                 and close_info.entry_price > 0
-                and price_close < close_info.entry_price - atr_value
+                and price_close < close_info.entry_price - atr_trigger
             ):
                 close_info.strategy.append(PositionSide.Martingale)
                 strategy_tag = ",".join([ps.value for ps in close_info.strategy])
