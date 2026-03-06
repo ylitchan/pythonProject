@@ -250,6 +250,7 @@ class AUTOBN:
     ATR_PERIOD = 10  # ATR计算周期
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
     ATR_TRIGGER_CAP_RATIO = 0.10
+    MARTINGALE_TP_ATR_RATIO = 0.5  # 马丁触发后止盈收紧系数(按ATR与触发次数)
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
     # ==================== 回溯周期常量 ====================
@@ -259,7 +260,7 @@ class AUTOBN:
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     # ==================== 风险管理常量 ====================
-    RISK_PER_TRADE = 0.2  # 每笔交易风险比例 (20%: 止损触发时最多损失账户的20%)
+    RISK_PER_TRADE = 0.1  # 每笔交易风险比例 (10%: 止损触发时最多损失账户的10%)
     TARGET_PROFIT_RATIO = 0.1  # 每笔交易目标盈利比例 (10%: 止盈触发时赚取账户的10%)
     MAX_POSITION_RATIO = 0.1  # 单币种最大持仓比例 (防止极端杠杆)
     MAINTENANCE_MARGIN_RATE = 0.004  # 维持保证金率 (0.5%)
@@ -1443,6 +1444,21 @@ class AUTOBN:
                             ):
                                 amount_price = await self.get_amount_close(symbol)
                                 close_info.entry_price = amount_price[1]
+                                martingale_count = sum(
+                                    1
+                                    for strategy in close_info.strategy
+                                    if strategy == PositionSide.Martingale
+                                )
+                                target_take_profit = (
+                                    close_info.entry_price
+                                    + self.MARTINGALE_TP_ATR_RATIO
+                                    * atr_value
+                                    * martingale_count
+                                )
+                                close_info.take_profit = min(
+                                    close_info.take_profit,
+                                    target_take_profit,
+                                )
                         else:
                             # 做多: 基于入场价格计算初始距离，线性衰减
                             # 衰减系数 = 1 + tp_count (每次止盈后加速)
@@ -1450,7 +1466,6 @@ class AUTOBN:
                             initial_tp_gap = (
                                 close_info.take_profit
                                 - close_info.entry_price
-                                - atr_value
                             )  # 止盈到入场价的初始距离
                             tp_decay_step = (
                                 initial_tp_gap
@@ -1501,13 +1516,27 @@ class AUTOBN:
                             ):
                                 amount_price = await self.get_amount_close(symbol)
                                 close_info.entry_price = amount_price[1]
+                                martingale_count = sum(
+                                    1
+                                    for strategy in close_info.strategy
+                                    if strategy == PositionSide.Martingale
+                                )
+                                target_take_profit = (
+                                    close_info.entry_price
+                                    - self.MARTINGALE_TP_ATR_RATIO
+                                    * atr_value
+                                    * martingale_count
+                                )
+                                close_info.take_profit = max(
+                                    close_info.take_profit,
+                                    target_take_profit,
+                                )
                         else:
                             # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
                             # 衰减系数 = 1 + tp_count (每次止盈后加速)
                             decay_multiplier = 1 + close_info.tp_count
                             initial_tp_gap = (
                                 close_info.entry_price
-                                - atr_value
                                 - close_info.take_profit
                             )  # 入场价到止盈的初始距离
                             tp_decay_step = (
@@ -1929,6 +1958,7 @@ class AUTOA:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     ATR_TRIGGER_CAP_RATIO = 0.10
+    MARTINGALE_TP_ATR_RATIO = 0.5  # 马丁触发后止盈收紧系数(按ATR与触发次数)
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
@@ -2460,11 +2490,24 @@ class AUTOA:
                 )
                 cls.send_msg(msg)
                 close_info.entry_price = (close_info.entry_price + price_close) / 2
+                martingale_count = sum(
+                    1
+                    for strategy in close_info.strategy
+                    if strategy == PositionSide.Martingale
+                )
+                target_take_profit = (
+                    close_info.entry_price
+                    + cls.MARTINGALE_TP_ATR_RATIO * atr_value * martingale_count
+                )
+                close_info.take_profit = min(
+                    close_info.take_profit,
+                    target_take_profit,
+                )
             else:
                 # 做多: 止盈在上方，止损在下方
                 # 止盈下移: 取衰减后的值和当前上轨的较小值
                 initial_tp_gap = (
-                    close_info.take_profit - close_info.entry_price - atr_value
+                    close_info.take_profit - close_info.entry_price
                 )
                 tp_decay_step = initial_tp_gap * DECAY
                 decayed_tp = close_info.take_profit - tp_decay_step
