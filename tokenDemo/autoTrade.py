@@ -69,6 +69,7 @@ class Position(BaseModel):
     date: int
     strategy: List[PositionSide]
     tp_count: int = 0  # 止盈次数，每次部分止盈后+1，衰减加速系数
+    oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，马丁时用于风控）
 
 
 class Observation(BaseModel):
@@ -244,13 +245,13 @@ class AUTOBN:
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
     LONG_SHORT_RATIO_LONG_LIMIT = 3 / 7  # LONG额外放行阈值（多空比）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
-    MARTINGALE_CLOSE_LONG_RATIO_THRESHOLD = 6 / 4  # 多头马丁触发时，多空比大于该值则直接平仓
+    MARTINGALE_CLOSE_LONG_RATIO_THRESHOLD = 5.5 / 4.5  # 多头马丁触发时，多空比大于该值则直接平仓
     OI_DELTA_LONG_RATIO_WEIGHT = 0.5  # LONG融合公式中(oi_5m-oi_1h)项权重
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
-    ATR_TRIGGER_CAP_RATIO = 0.10
+    ATR_TRIGGER_CAP_RATIO = 0.05
     MARTINGALE_TP_ATR_RATIO = 0.5  # 马丁触发后止盈收紧系数(按ATR与触发次数)
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
@@ -850,7 +851,7 @@ class AUTOBN:
                 long_short_ratio_data = await self.get_long_short_ratio(symbol)
                 # 提取最新的多空人数比
                 if not long_short_ratio_data:
-                    return False, None
+                    return False, None, None
 
                 # 提取所有历史多空比值（供 SHORT 现有逻辑复用）
                 lsr_values = [
@@ -871,11 +872,11 @@ class AUTOBN:
                 # SHORT：极值条件 或 多空比阈值条件
                 if positionSide == PositionSide.SHORT.value:
                     if lsrd <= (1 / self.OPEN_LONG_SHORT_RATIO_THRESHOLD):
-                        return False, None
+                        return False, None, None
                     short_extreme = lsrd == max(lsr_values)
                     short_ratio_cond = lsrd > self.LONG_SHORT_RATIO_SHORT_LIMIT
                     if not (short_extreme or short_ratio_cond):
-                        return False, None
+                        return False, None, None
                 current_time_5m = time.time()
                 oi_5m_cache = self._oi_5m_cache.get(symbol)
                 if (
@@ -897,16 +898,16 @@ class AUTOBN:
                     }
 
                 if not oi_5m:
-                    return False, None
+                    return False, None, None
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
                     if lsrd >= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
-                        return False, None
+                        return False, None, None
                     long_extreme = len(lsr_values) >= 2 and lsrd < min(lsr_values[:-1])
                     long_ratio_cond = lsrd < self.LONG_SHORT_RATIO_LONG_LIMIT
                     # 做多：极值条件 或 多空比阈值条件
                     if not (long_extreme or long_ratio_cond):
-                        return False, None
+                        return False, None, None
 
                     dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
                     target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
@@ -928,25 +929,25 @@ class AUTOBN:
                             }
 
                     if not oi_1h:
-                        return False, None
+                        return False, None, None
                     sumOpenInterest_1h = [float(i["sumOpenInterest"]) for i in oi_1h]
                     if len(sumOpenInterest_1h) < 1:
-                        return False, None
+                        return False, None, None
                     oi_hist_for_cheb = sumOpenInterest_1h[
                         : -self.OI_CHEB_EXCLUDE_RECENT_COUNT
                     ]
                     if len(oi_hist_for_cheb) < self.MIN_CHEB_SAMPLE_SIZE:
-                        return False, None
+                        return False, None, None
 
                     current_total_oi = oi_5m_last
                     if current_total_oi <= 0:
-                        return False, None
+                        return False, None, None
 
                     latest_oi_1h = float(oi_1h[-1]["sumOpenInterest"])
                     latest_ratio_item_5m = long_short_ratio_data[-1]
                     long_ratio_5m = _extract_long_ratio(latest_ratio_item_5m)
                     if long_ratio_5m is None:
-                        return False, None
+                        return False, None, None
 
                     ratio_item_1h = None
                     for item in reversed(long_short_ratio_data):
@@ -970,11 +971,11 @@ class AUTOBN:
                                 continue
 
                     if ratio_item_1h is None:
-                        return False, None
+                        return False, None, None
 
                     long_ratio_1h = _extract_long_ratio(ratio_item_1h)
                     if long_ratio_1h is None:
-                        return False, None
+                        return False, None, None
 
                     blend = (
                         latest_oi_1h * long_ratio_1h
@@ -982,7 +983,7 @@ class AUTOBN:
                     ) / current_total_oi
 
                     if blend <= long_ratio_5m:
-                        return False, None
+                        return False, None, None
 
                     passed = (
                         oi_5m_last > max(sumOpenInterest_1h)
@@ -992,7 +993,12 @@ class AUTOBN:
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    return (True, lsrd) if passed else (False, None)
+                    oi_guard_threshold = (oi_hist_for_cheb[-1] + oi_5m_last) / 2
+                    return (
+                        (True, lsrd, oi_guard_threshold)
+                        if passed
+                        else (False, None, None)
+                    )
 
                 # 获取持仓量历史数据（带缓存，仅做空使用）
                 dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
@@ -1013,7 +1019,7 @@ class AUTOBN:
                     )
                     # 检查数据是否满足条件
                     if oi_1d[-1]["timestamp"] != target_ts:
-                        return False, None
+                        return False, None, None
                     # 数据满足条件，缓存起来
                     self._oi_1d_cache[symbol] = {
                         "data": oi_1d,
@@ -1042,10 +1048,10 @@ class AUTOBN:
                         -1, max(-self.OI_LOOKBACK_PERIOD, -len(kline_close)), -1
                     )
                 )
-                return (True, lsrd) if passed else (False, None)
+                return (True, lsrd, None) if passed else (False, None, None)
             except Exception:
                 self.logger.exception("检查增仓信号时发生错误")
-                return False, None
+                return False, None, None
 
     async def get_kline(self, semaphore, symbol, t: str):
         """
@@ -1452,6 +1458,66 @@ class AUTOBN:
                                     symbol, close_info, atr_value, current_price, 1
                                 )
                                 return
+                            if close_info.oi_guard_threshold <= 0:
+                                dtn_target_1h = dtn.replace(
+                                    minute=0, second=0, microsecond=0
+                                )
+                                target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
+                                oi_1h_cache = self._oi_1h_cache.get(symbol)
+                                if (
+                                    oi_1h_cache
+                                    and oi_1h_cache.get("target_date") == target_ts_1h
+                                ):
+                                    oi_1h = oi_1h_cache["data"]
+                                else:
+                                    oi_1h = await self._call_um(
+                                        self.um_futures_client.open_interest_hist,
+                                        symbol=symbol,
+                                        period="1h",
+                                        limit=self.OI_QUERY_LIMIT,
+                                    )
+                                    if oi_1h and oi_1h[-1]["timestamp"] == target_ts_1h:
+                                        self._oi_1h_cache[symbol] = {
+                                            "data": oi_1h,
+                                            "target_date": target_ts_1h,
+                                        }
+                                if oi_1h:
+                                    oi_1h_values = [
+                                        float(item["sumOpenInterest"]) for item in oi_1h
+                                    ]
+                                    if oi_1h_values:
+                                        close_info.oi_guard_threshold = (
+                                            max(oi_1h_values) + min(oi_1h_values)
+                                        ) / 2
+                            current_time_5m = time.time()
+                            oi_5m_cache = self._oi_5m_cache.get(symbol)
+                            if (
+                                oi_5m_cache
+                                and (current_time_5m - oi_5m_cache["timestamp"])
+                                < self.OI_5M_CACHE_TTL
+                            ):
+                                oi_5m = oi_5m_cache["data"]
+                            else:
+                                oi_5m = await self._call_um(
+                                    self.um_futures_client.open_interest_hist,
+                                    symbol=symbol,
+                                    period="5m",
+                                    limit=self.OI_QUERY_LIMIT,
+                                )
+                                self._oi_5m_cache[symbol] = {
+                                    "data": oi_5m,
+                                    "timestamp": current_time_5m,
+                                }
+                            if (
+                                oi_5m
+                                and close_info.oi_guard_threshold > 0
+                                and float(oi_5m[-1]["sumOpenInterest"])
+                                < close_info.oi_guard_threshold
+                            ):
+                                await self.close_bn_position(
+                                    symbol, close_info, atr_value, current_price, 1
+                                )
+                                return
                             close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
@@ -1626,12 +1692,12 @@ class AUTOBN:
                     atr_value = None
                     hl2 = None
 
-                    long_ok, long_lsr = False, None
+                    long_ok, long_lsr, long_oi_guard_threshold = False, None, None
                     if (
                         PositionSide.BZ in open_info.strategy
                         and kline_close[-2] < current_price
                     ):
-                        long_ok, long_lsr = await self.check_side(
+                        long_ok, long_lsr, long_oi_guard_threshold = await self.check_side(
                             semaphore,
                             symbol,
                             PositionSide.LONG.value,
@@ -1662,13 +1728,13 @@ class AUTOBN:
                             )
                             open_info.side = OrderSide.BUY
                             should_open = True
-                    short_ok, short_lsr = False, None
+                    short_ok, short_lsr, _ = False, None, None
                     if (
                         not long_ok
                         and PositionSide.BD in open_info.strategy
                         and current_price < kline_close[-2]
                     ):
-                        short_ok, short_lsr = await self.check_side(
+                        short_ok, short_lsr, _ = await self.check_side(
                             semaphore,
                             symbol,
                             PositionSide.SHORT.value,
@@ -1744,6 +1810,11 @@ class AUTOBN:
                             name=symbol,
                             date=int(dtn.strftime("%Y%m%d")),
                             strategy=open_info.strategy,
+                            oi_guard_threshold=(
+                                long_oi_guard_threshold
+                                if is_long and long_oi_guard_threshold is not None
+                                else 0.0
+                            ),
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                         open_info.strategy = [open_info.strategy[0]]
