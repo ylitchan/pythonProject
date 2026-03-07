@@ -252,6 +252,8 @@ class AUTOBN:
     ATR_PERIOD = 10  # ATR计算周期
     SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
     ATR_TRIGGER_CAP_RATIO = 0.05
+    ATR_HL2_CAP_RATIO = 0.1  # ATR返回值上限比例（不超过hl2的10%）
+    MIN_ATR_TRIGGER = 1e-8
     MARTINGALE_TP_ATR_RATIO = 0.5  # 马丁触发后止盈收紧系数(按ATR与触发次数)
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
@@ -1230,7 +1232,9 @@ class AUTOBN:
         for i in range(period, len(tr_list)):
             atr = (atr * (period - 1) + tr_list[i]) / period
 
-        return atr
+        hl2 = (kline_data[-1][2] + kline_data[-1][3]) / 2
+        atr_cap = hl2 * self.ATR_HL2_CAP_RATIO
+        return min(atr, atr_cap) if atr_cap > 0 else atr
 
     # 止盈止损计算辅助函数 (使用supertrend的factor倍ATR)
     def calc_stop_profit_loss(self, price, is_long=True, atr=0):
@@ -1447,8 +1451,12 @@ class AUTOBN:
                     current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
                     current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
                     # ATR触发阈值：用于收益阈值比较（与1/3预期收益取较小值）
-                    atr_trigger = min(
-                        atr_value, close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO
+                    atr_trigger = max(
+                        min(
+                            atr_value,
+                            close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO,
+                        ),
+                        self.MIN_ATR_TRIGGER,
                     )
 
                     if close_info.position_side.value == PositionSide.LONG.value:
@@ -2052,6 +2060,8 @@ class AUTOA:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
     ATR_TRIGGER_CAP_RATIO = 0.10
+    ATR_HL2_CAP_RATIO = 0.1  # ATR返回值上限比例（不超过hl2的10%）
+    MIN_ATR_TRIGGER = 1e-8
     MARTINGALE_TP_ATR_RATIO = 0.5  # 马丁触发后止盈收紧系数(按ATR与触发次数)
 
     # ==================== 切比雪夫概率阈值常量 ====================
@@ -2134,7 +2144,12 @@ class AUTOA:
 
         if not tr_list:
             return 0.0
-        return sum(tr_list[-period:]) / min(len(tr_list), period)
+        atr = sum(tr_list[-period:]) / min(len(tr_list), period)
+        latest_high = float(hist_data.iloc[-1]["high"])
+        latest_low = float(hist_data.iloc[-1]["low"])
+        hl2 = (latest_high + latest_low) / 2
+        atr_cap = hl2 * cls.ATR_HL2_CAP_RATIO
+        return min(atr, atr_cap) if atr_cap > 0 else atr
     @classmethod
     def check_gap_up_after_break_ma10(cls, hist: pd.DataFrame) -> bool:
         """
@@ -2607,8 +2622,9 @@ class AUTOA:
 
                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                 profit = price_close - close_info.entry_price
-                atr_trigger = min(
-                    atr_value, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO
+                atr_trigger = max(
+                    min(atr_value, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO),
+                    cls.MIN_ATR_TRIGGER,
                 )
                 target_profit = min(
                     initial_tp_gap / cls.TARGET_PROFIT_DIVISOR,
