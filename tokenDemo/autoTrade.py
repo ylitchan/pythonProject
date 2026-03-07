@@ -245,7 +245,7 @@ class AUTOBN:
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
     LONG_SHORT_RATIO_LONG_LIMIT = 3 / 7  # LONG额外放行阈值（多空比）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
-    MARTINGALE_CLOSE_LONG_RATIO_THRESHOLD = 5.5 / 4.5  # 多头马丁触发时，多空比大于该值则直接平仓
+    MARTINGALE_CLOSE_LONG_RATIO_THRESHOLD = 5 / 5  # 多头马丁触发时，多空比大于该值则直接平仓
     OI_DELTA_LONG_RATIO_WEIGHT = 0.5  # LONG融合公式中(oi_5m-oi_1h)项权重
 
     # ==================== ATR风控常量 ====================
@@ -290,7 +290,7 @@ class AUTOBN:
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
-    OPEN_LONG_SHORT_RATIO_THRESHOLD = 1.0
+    OPEN_LONG_SHORT_RATIO_THRESHOLD = 45 / 55
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
 
