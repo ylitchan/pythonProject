@@ -834,6 +834,49 @@ class AUTOBN:
                 )
         return None
 
+    async def _get_oi_5m_data(self, symbol):
+        """获取5m OI数据（优先缓存）"""
+        current_time_5m = time.time()
+        oi_5m_cache = self._oi_5m_cache.get(symbol)
+        if (
+            oi_5m_cache
+            and (current_time_5m - oi_5m_cache["timestamp"]) < self.OI_5M_CACHE_TTL
+        ):
+            return oi_5m_cache["data"]
+
+        oi_5m = await self._call_um(
+            self.um_futures_client.open_interest_hist,
+            symbol=symbol,
+            period="5m",
+            limit=self.OI_QUERY_LIMIT,
+        )
+        self._oi_5m_cache[symbol] = {
+            "data": oi_5m,
+            "timestamp": current_time_5m,
+        }
+        return oi_5m
+
+    async def _get_oi_1h_data(self, symbol, dtn: datetime):
+        """获取1h OI数据（优先缓存，按当前整点对齐）"""
+        dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
+        target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
+        oi_1h_cache = self._oi_1h_cache.get(symbol)
+        if oi_1h_cache and oi_1h_cache.get("target_date") == target_ts_1h:
+            return oi_1h_cache["data"]
+
+        oi_1h = await self._call_um(
+            self.um_futures_client.open_interest_hist,
+            symbol=symbol,
+            period="1h",
+            limit=self.OI_QUERY_LIMIT,
+        )
+        if oi_1h and oi_1h[-1]["timestamp"] == target_ts_1h:
+            self._oi_1h_cache[symbol] = {
+                "data": oi_1h,
+                "target_date": target_ts_1h,
+            }
+        return oi_1h
+
     async def check_side(
         self,
         semaphore,
@@ -877,25 +920,7 @@ class AUTOBN:
                     short_ratio_cond = lsrd > self.LONG_SHORT_RATIO_SHORT_LIMIT
                     if not (short_extreme or short_ratio_cond):
                         return False, None, None
-                current_time_5m = time.time()
-                oi_5m_cache = self._oi_5m_cache.get(symbol)
-                if (
-                    oi_5m_cache
-                    and (current_time_5m - oi_5m_cache["timestamp"])
-                    < self.OI_5M_CACHE_TTL
-                ):
-                    oi_5m = oi_5m_cache["data"]
-                else:
-                    oi_5m = await self._call_um(
-                        self.um_futures_client.open_interest_hist,
-                        symbol=symbol,
-                        period="5m",
-                        limit=self.OI_QUERY_LIMIT,
-                    )
-                    self._oi_5m_cache[symbol] = {
-                        "data": oi_5m,
-                        "timestamp": current_time_5m,
-                    }
+                oi_5m = await self._get_oi_5m_data(symbol)
 
                 if not oi_5m:
                     return False, None, None
@@ -909,24 +934,11 @@ class AUTOBN:
                     if not (long_extreme or long_ratio_cond):
                         return False, None, None
 
-                    dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
-                    target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
-
-                    oi_1h_cache = self._oi_1h_cache.get(symbol)
-                    if oi_1h_cache and oi_1h_cache.get("target_date") == target_ts_1h:
-                        oi_1h = oi_1h_cache["data"]
-                    else:
-                        oi_1h = await self._call_um(
-                            self.um_futures_client.open_interest_hist,
-                            symbol=symbol,
-                            period="1h",
-                            limit=self.OI_QUERY_LIMIT,
-                        )
-                        if oi_1h and oi_1h[-1]["timestamp"] == target_ts_1h:
-                            self._oi_1h_cache[symbol] = {
-                                "data": oi_1h,
-                                "target_date": target_ts_1h,
-                            }
+                    target_ts_1h = int(
+                        dtn.replace(minute=0, second=0, microsecond=0).timestamp()
+                        * 1000
+                    )
+                    oi_1h = await self._get_oi_1h_data(symbol, dtn)
 
                     if not oi_1h:
                         return False, None, None
@@ -993,7 +1005,7 @@ class AUTOBN:
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    oi_guard_threshold = (oi_hist_for_cheb[-1] + oi_5m_last) / 2
+                    oi_guard_threshold = max(oi_hist_for_cheb)
                     return (
                         (True, lsrd, oi_guard_threshold)
                         if passed
@@ -1459,65 +1471,24 @@ class AUTOBN:
                                 )
                                 return
                             if close_info.oi_guard_threshold <= 0:
-                                dtn_target_1h = dtn.replace(
-                                    minute=0, second=0, microsecond=0
-                                )
-                                target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
-                                oi_1h_cache = self._oi_1h_cache.get(symbol)
-                                if (
-                                    oi_1h_cache
-                                    and oi_1h_cache.get("target_date") == target_ts_1h
-                                ):
-                                    oi_1h = oi_1h_cache["data"]
-                                else:
-                                    oi_1h = await self._call_um(
-                                        self.um_futures_client.open_interest_hist,
-                                        symbol=symbol,
-                                        period="1h",
-                                        limit=self.OI_QUERY_LIMIT,
-                                    )
-                                    if oi_1h and oi_1h[-1]["timestamp"] == target_ts_1h:
-                                        self._oi_1h_cache[symbol] = {
-                                            "data": oi_1h,
-                                            "target_date": target_ts_1h,
-                                        }
+                                oi_1h = await self._get_oi_1h_data(symbol, dtn)
                                 if oi_1h:
                                     oi_1h_values = [
                                         float(item["sumOpenInterest"]) for item in oi_1h
                                     ]
                                     if oi_1h_values:
-                                        close_info.oi_guard_threshold = (
-                                            max(oi_1h_values) + min(oi_1h_values)
-                                        ) / 2
-                            current_time_5m = time.time()
-                            oi_5m_cache = self._oi_5m_cache.get(symbol)
-                            if (
-                                oi_5m_cache
-                                and (current_time_5m - oi_5m_cache["timestamp"])
-                                < self.OI_5M_CACHE_TTL
-                            ):
-                                oi_5m = oi_5m_cache["data"]
-                            else:
-                                oi_5m = await self._call_um(
-                                    self.um_futures_client.open_interest_hist,
-                                    symbol=symbol,
-                                    period="5m",
-                                    limit=self.OI_QUERY_LIMIT,
-                                )
-                                self._oi_5m_cache[symbol] = {
-                                    "data": oi_5m,
-                                    "timestamp": current_time_5m,
-                                }
-                            if (
-                                oi_5m
-                                and close_info.oi_guard_threshold > 0
-                                and float(oi_5m[-1]["sumOpenInterest"])
-                                < close_info.oi_guard_threshold
-                            ):
-                                await self.close_bn_position(
-                                    symbol, close_info, atr_value, current_price, 1
-                                )
-                                return
+                                        close_info.oi_guard_threshold = min(oi_1h_values)
+                            if close_info.oi_guard_threshold > 0:
+                                oi_5m = await self._get_oi_5m_data(symbol)
+                                if (
+                                    oi_5m
+                                    and float(oi_5m[-1]["sumOpenInterest"])
+                                    < close_info.oi_guard_threshold
+                                ):
+                                    await self.close_bn_position(
+                                        symbol, close_info, atr_value, current_price, 1
+                                    )
+                                    return
                             close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
@@ -1544,6 +1515,12 @@ class AUTOBN:
                                     close_info.take_profit,
                                     target_take_profit,
                                 )
+                            else:
+                                if (
+                                    close_info.strategy
+                                    and close_info.strategy[-1] == PositionSide.Martingale
+                                ):
+                                    close_info.strategy.pop()
                         else:
                             # 做多: 基于入场价格计算初始距离，线性衰减
                             # 衰减系数 = 1 + tp_count (每次止盈后加速)
@@ -1634,6 +1611,12 @@ class AUTOBN:
                                     close_info.take_profit,
                                     target_take_profit,
                                 )
+                            else:
+                                if (
+                                    close_info.strategy
+                                    and close_info.strategy[-1] == PositionSide.Martingale
+                                ):
+                                    close_info.strategy.pop()
                         else:
                             # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
                             # 衰减系数 = 1 + tp_count (每次止盈后加速)
