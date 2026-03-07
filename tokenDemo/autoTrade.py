@@ -1446,12 +1446,13 @@ class AUTOBN:
                     hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
                     current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
                     current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
+                    # ATR触发阈值：用于收益阈值比较（与1/3预期收益取较小值）
                     atr_trigger = min(
                         atr_value, close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO
                     )
 
                     if close_info.position_side.value == PositionSide.LONG.value:
-                        if current_price < close_info.entry_price - atr_trigger:
+                        if current_price < close_info.entry_price - atr_value:
                             long_short_ratio_data = await self.get_long_short_ratio(symbol)
                             latest_lsr = None
                             if long_short_ratio_data:
@@ -1543,9 +1544,10 @@ class AUTOBN:
                             else:
                                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                                 profit = current_price - close_info.entry_price
-                                target_profit = (
-                                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR
-                                )  # 预期收益的1/3
+                                target_profit = min(
+                                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR,
+                                    atr_trigger,
+                                )  # 预期收益的1/3 与 ATR触发阈值取较小值
                                 if profit >= target_profit:
                                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
                                     # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
@@ -1566,7 +1568,7 @@ class AUTOBN:
                                     )
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
-                        if current_price > close_info.entry_price + atr_trigger:
+                        if current_price > close_info.entry_price + atr_value:
                             long_short_ratio_data = await self.get_long_short_ratio(symbol)
                             latest_lsr = None
                             if long_short_ratio_data:
@@ -1639,9 +1641,10 @@ class AUTOBN:
                             else:
                                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                                 profit = close_info.entry_price - current_price
-                                target_profit = (
-                                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR
-                                )  # 预期收益的1/3
+                                target_profit = min(
+                                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR,
+                                    atr_trigger,
+                                )  # 预期收益的1/3 与 ATR触发阈值取较小值
                                 if profit >= target_profit:
                                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
                                     # 止损 = 入场价 - 盈利 * TRAILING_STOP_PROFIT_RATIO
@@ -2562,13 +2565,11 @@ class AUTOA:
             hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
             current_upper = hl2 + atr_value * cls.SUPERTREND_FACTOR
             current_lower = hl2 - atr_value * cls.SUPERTREND_FACTOR
-            atr_trigger = min(
-                atr_value, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO
-            )
+            
             if (
                 atr_value > 0
                 and close_info.entry_price > 0
-                and price_close < close_info.entry_price - atr_trigger
+                and price_close < close_info.entry_price - atr_value
             ):
                 close_info.strategy.append(PositionSide.Martingale)
                 strategy_tag = ",".join([ps.value for ps in close_info.strategy])
@@ -2606,9 +2607,13 @@ class AUTOA:
 
                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                 profit = price_close - close_info.entry_price
-                target_profit = (
-                    initial_tp_gap / cls.TARGET_PROFIT_DIVISOR
-                )  # 预期收益的1/3
+                atr_trigger = min(
+                    atr_value, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO
+                )
+                target_profit = min(
+                    initial_tp_gap / cls.TARGET_PROFIT_DIVISOR,
+                    atr_trigger,
+                )  # 预期收益的1/3 与 ATR触发阈值取较小值
                 if profit >= target_profit:
                     # 达到目标盈利，止损设置为当前盈利回撤30%的位置
                     # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
