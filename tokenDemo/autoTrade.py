@@ -70,6 +70,7 @@ class Position(BaseModel):
     strategy: List[PositionSide]
     tp_count: int = 0  # 止盈次数，每次部分止盈后+1，衰减加速系数
     oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，马丁时用于风控）
+    close_reason: str = ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损/马丁不满足OI/马丁多空比异常等）
 
 
 class Observation(BaseModel):
@@ -135,6 +136,7 @@ class CloseRecordManager:
         "平仓收益率",
         "平仓比例",
         "策略标签",  # Supertrend/BZ/BD 等
+        "平仓依据",
     ]
 
     @classmethod
@@ -150,6 +152,7 @@ class CloseRecordManager:
         pnl_percent: float,
         close_ratio: float = 1.0,
         strategy_tag: str = "",
+        close_reason: str = "",
     ):
         """
         记录一笔平仓交易
@@ -183,6 +186,7 @@ class CloseRecordManager:
                     "平仓收益率": f"{pnl_percent:.2%}",
                     "平仓比例": f"{close_ratio:.2%}",
                     "策略标签": strategy_tag,
+                    "平仓依据": close_reason,
                 }
 
                 # 读取现有数据
@@ -776,7 +780,7 @@ class AUTOBN:
                 realized_pnl = price_diff * close_amount
                 pnl_percent = price_diff / entryPrice if entryPrice != 0 else 0
                 strategy_tag = ",".join([ps.value for ps in close_info.strategy])
-                msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}"
+                msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}\n平仓依据:{close_info.close_reason}"
                 self.send_msg(msg)
 
                 # 记录平仓到Excel
@@ -791,6 +795,7 @@ class AUTOBN:
                     pnl_percent=pnl_percent,
                     close_ratio=close_ratio,
                     strategy_tag=strategy_tag,
+                    close_reason=close_info.close_reason,
                 )
 
                 # 检查平仓后是否仍有该symbol的仓位，若无则从POSITIONS中移除 (异步)
@@ -1430,12 +1435,15 @@ class AUTOBN:
                 ) or (not is_long and current_price <= close_info.take_profit)
 
                 if sl_triggered:  # 触及止损 - 全仓平仓
+                    if not close_info.close_reason:
+                        close_info.close_reason = "初始止损"
                     await self.close_bn_position(
                         symbol, close_info, atr_value, current_price, 1
                     )
                 elif tp_triggered:  # 触及止盈 - 部分平仓
                     # 止盈次数+1，加速后续衰减
                     close_info.tp_count += 1
+                    close_info.close_reason = "止盈"
                     await self.close_bn_position(
                         symbol,
                         close_info,
@@ -1474,6 +1482,7 @@ class AUTOBN:
                                 and latest_lsr
                                 > self.OPEN_LONG_SHORT_RATIO_THRESHOLD
                             ):
+                                close_info.close_reason = "马丁多空比异常"
                                 await self.close_bn_position(
                                     symbol, close_info, atr_value, current_price, 1
                                 )
@@ -1493,6 +1502,7 @@ class AUTOBN:
                                     and float(oi_5m[-1]["sumOpenInterest"])
                                     < close_info.oi_guard_threshold
                                 ):
+                                    close_info.close_reason = "马丁不满足OI"
                                     await self.close_bn_position(
                                         symbol, close_info, atr_value, current_price, 1
                                     )
@@ -1547,7 +1557,9 @@ class AUTOBN:
                             close_info.take_profit = min(decayed_tp, current_upper)
 
                             if close_info.tp_count > 0:
-                                close_info.stop_loss = close_info.entry_price
+                                if close_info.stop_loss != close_info.entry_price:
+                                    close_info.stop_loss = close_info.entry_price
+                                    close_info.close_reason = "止盈后入场价止损"
                             else:
                                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                                 profit = current_price - close_info.entry_price
@@ -1562,17 +1574,23 @@ class AUTOBN:
                                         close_info.entry_price
                                         + profit * self.TRAILING_STOP_PROFIT_RATIO
                                     )
-                                    close_info.stop_loss = max(
+                                    new_stop_loss = max(
                                         close_info.stop_loss,
                                         trailing_stop,
                                     )
+                                    if new_stop_loss != close_info.stop_loss:
+                                        close_info.stop_loss = new_stop_loss
+                                        close_info.close_reason = "追踪止损(保护盈利)"
                                 else:
                                     # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
                                     # 取当前下轨和原止损的较大值
-                                    close_info.stop_loss = max(
+                                    new_stop_loss = max(
                                         close_info.stop_loss,
                                         current_lower,
                                     )
+                                    if new_stop_loss != close_info.stop_loss:
+                                        close_info.stop_loss = new_stop_loss
+                                        close_info.close_reason = "移动止损(轨道)"
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         if current_price > close_info.entry_price + atr_value:
@@ -1590,6 +1608,7 @@ class AUTOBN:
                                 and latest_lsr
                                 < (1 / self.OPEN_LONG_SHORT_RATIO_THRESHOLD)
                             ):
+                                close_info.close_reason = "马丁多空比异常"
                                 await self.close_bn_position(
                                     symbol, close_info, atr_value, current_price, 1
                                 )
@@ -1644,7 +1663,9 @@ class AUTOBN:
                             close_info.take_profit = max(decayed_tp, current_lower)
 
                             if close_info.tp_count > 0:
-                                close_info.stop_loss = close_info.entry_price
+                                if close_info.stop_loss != close_info.entry_price:
+                                    close_info.stop_loss = close_info.entry_price
+                                    close_info.close_reason = "止盈后入场价止损"
                             else:
                                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                                 profit = close_info.entry_price - current_price
@@ -1659,17 +1680,23 @@ class AUTOBN:
                                         close_info.entry_price
                                         - profit * self.TRAILING_STOP_PROFIT_RATIO
                                     )
-                                    close_info.stop_loss = min(
+                                    new_stop_loss = min(
                                         close_info.stop_loss,
                                         trailing_stop,
                                     )
+                                    if new_stop_loss != close_info.stop_loss:
+                                        close_info.stop_loss = new_stop_loss
+                                        close_info.close_reason = "追踪止损(保护盈利)"
                                 else:
                                     # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
                                     # 取当前上轨和原止损的较小值
-                                    close_info.stop_loss = min(
+                                    new_stop_loss = min(
                                         close_info.stop_loss,
                                         current_upper,
                                     )
+                                    if new_stop_loss != close_info.stop_loss:
+                                        close_info.stop_loss = new_stop_loss
+                                        close_info.close_reason = "移动止损(轨道)"
 
                     # 更新回字典
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
@@ -2545,6 +2572,11 @@ class AUTOA:
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
         if price_close <= close_info.stop_loss or price_close >= close_info.take_profit:
+            if price_close >= close_info.take_profit:
+                close_info.close_reason = "止盈"
+            else:
+                if not close_info.close_reason:
+                    close_info.close_reason = "初始止损"
             # 从持仓列表移除
             cls.alert_all["POSITIONS"].pop(code)
 
@@ -2555,7 +2587,7 @@ class AUTOA:
             profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
             realized_pnl = (price_close - entry_price) * cls.DEFAULT_POSITION_SHARES
             strategy_tag = ",".join([ps.value for ps in close_info.strategy])
-            msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}"
+            msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}\n平仓依据:{close_info.close_reason}"
             cls.send_msg(msg)
 
             # 记录平仓到Excel
@@ -2570,6 +2602,7 @@ class AUTOA:
                 pnl_percent=profit_rate,
                 close_ratio=1.0,
                 strategy_tag=strategy_tag,
+                close_reason=close_info.close_reason,
             )
         else:
             # 未触及止盈止损，执行移动止损逻辑
@@ -2635,11 +2668,17 @@ class AUTOA:
                     trailing_stop = (
                         close_info.entry_price + profit * cls.TRAILING_STOP_PROFIT_RATIO
                     )
-                    close_info.stop_loss = max(close_info.stop_loss, trailing_stop)
+                    new_stop_loss = max(close_info.stop_loss, trailing_stop)
+                    if new_stop_loss != close_info.stop_loss:
+                        close_info.stop_loss = new_stop_loss
+                        close_info.close_reason = "追踪止损(保护盈利)"
                 else:
                     # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
                     # 取当前下轨和原止损的较大值
-                    close_info.stop_loss = max(close_info.stop_loss, current_lower)
+                    new_stop_loss = max(close_info.stop_loss, current_lower)
+                    if new_stop_loss != close_info.stop_loss:
+                        close_info.stop_loss = new_stop_loss
+                        close_info.close_reason = "移动止损(轨道)"
 
             cls.alert_all["POSITIONS"][code] = close_info.model_dump()
 
