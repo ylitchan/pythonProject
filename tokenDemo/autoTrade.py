@@ -1424,10 +1424,17 @@ class AUTOBN:
                 is_long = close_info.position_side.value == PositionSide.LONG.value
                 prev_close_price = kline_close[-2]
 
-                # 止损触发条件（使用昨日收盘价）
+                # 止损触发条件：
+                # - 保护盈利类（止盈后入场价止损/追踪止损）使用当前价触发
+                # - 其他止损使用昨日收盘价触发
+                use_current_price_sl = close_info.close_reason in (
+                    "止盈后入场价止损",
+                    "追踪止损(保护盈利)",
+                )
+                sl_ref_price = current_price if use_current_price_sl else prev_close_price
                 sl_triggered = (
-                    is_long and prev_close_price <= close_info.stop_loss
-                ) or (not is_long and prev_close_price >= close_info.stop_loss)
+                    is_long and sl_ref_price <= close_info.stop_loss
+                ) or (not is_long and sl_ref_price >= close_info.stop_loss)
                 # 止盈触发条件
                 tp_triggered = (
                     is_long and current_price >= close_info.take_profit
