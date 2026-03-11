@@ -397,7 +397,7 @@ class AUTOBN:
         obj.um_futures_client.session.mount("http://", adapter)
 
         # 加载持仓记录
-        with open(obj.alert_all_file, "r") as f:
+        with open(obj.alert_all_file, "r", encoding="utf-8") as f:
             obj.alert_all = json.load(f)
         obj.alert_all.setdefault("CLOSE_TS", {})
 
@@ -427,7 +427,7 @@ class AUTOBN:
             """脚本退出时保存alert_all数据到文件"""
             try:
                 obj.logger.info(f"脚本退出,正在保存BN数据到 {obj.alert_all_file}...")
-                with open(obj.alert_all_file, "w") as f:
+                with open(obj.alert_all_file, "w", encoding="utf-8") as f:
                     json.dump(obj.alert_all, f, ensure_ascii=False, indent=4)
                 obj.logger.info("BN数据保存完成")
             except Exception as e:
@@ -2047,7 +2047,7 @@ class AUTOBN:
             balance = balance_info["totalWalletBalance"]
             self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
             self.logger.info("账户信息推送任务执行完成")
-            with open(self.alert_all_file, "w") as f:
+            with open(self.alert_all_file, "w", encoding="utf-8") as f:
                 json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
         # 创建信号量，限制最大并发数，避免API限制
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
