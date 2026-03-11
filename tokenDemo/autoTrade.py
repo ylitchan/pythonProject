@@ -34,7 +34,6 @@ class PositionSide(str, Enum):
     BZ = "BZ"
     BD = "BD"
     N = "N"
-    DK = "DK"
     Basis = "Basis"
     Martingale = "Martingale"
 
@@ -1468,45 +1467,55 @@ class AUTOBN:
 
                     if close_info.position_side.value == PositionSide.LONG.value:
                         if current_price < close_info.entry_price - atr_value:
-                            long_short_ratio_data = await self.get_long_short_ratio(symbol)
-                            latest_lsr = None
-                            if long_short_ratio_data:
-                                try:
-                                    latest_lsr = float(
-                                        long_short_ratio_data[-1]["longShortRatio"]
-                                    )
-                                except (KeyError, TypeError, ValueError):
-                                    latest_lsr = None
-                            if (
-                                latest_lsr is not None
-                                and latest_lsr
-                                > self.OPEN_LONG_SHORT_RATIO_THRESHOLD
-                            ):
-                                close_info.close_reason = "马丁多空比异常"
-                                await self.close_bn_position(
-                                    symbol, close_info, atr_value, current_price, 1
+                            if PositionSide.N not in close_info.strategy:
+                                long_short_ratio_data = await self.get_long_short_ratio(
+                                    symbol
                                 )
-                                return
-                            if close_info.oi_guard_threshold <= 0:
-                                oi_1h = await self._get_oi_1h_data(symbol, dtn)
-                                if oi_1h:
-                                    oi_1h_values = [
-                                        float(item["sumOpenInterest"]) for item in oi_1h
-                                    ]
-                                    if oi_1h_values:
-                                        close_info.oi_guard_threshold = min(oi_1h_values)
-                            if close_info.oi_guard_threshold > 0:
-                                oi_5m = await self._get_oi_5m_data(symbol)
+                                latest_lsr = None
+                                if long_short_ratio_data:
+                                    try:
+                                        latest_lsr = float(
+                                            long_short_ratio_data[-1]["longShortRatio"]
+                                        )
+                                    except (KeyError, TypeError, ValueError):
+                                        latest_lsr = None
                                 if (
-                                    oi_5m
-                                    and float(oi_5m[-1]["sumOpenInterest"])
-                                    < close_info.oi_guard_threshold
+                                    latest_lsr is not None
+                                    and latest_lsr
+                                    > self.OPEN_LONG_SHORT_RATIO_THRESHOLD
                                 ):
-                                    close_info.close_reason = "马丁不满足OI"
+                                    close_info.close_reason = "马丁多空比异常"
                                     await self.close_bn_position(
                                         symbol, close_info, atr_value, current_price, 1
                                     )
                                     return
+                                if close_info.oi_guard_threshold <= 0:
+                                    oi_1h = await self._get_oi_1h_data(symbol, dtn)
+                                    if oi_1h:
+                                        oi_1h_values = [
+                                            float(item["sumOpenInterest"])
+                                            for item in oi_1h
+                                        ]
+                                        if oi_1h_values:
+                                            close_info.oi_guard_threshold = min(
+                                                oi_1h_values
+                                            )
+                                if close_info.oi_guard_threshold > 0:
+                                    oi_5m = await self._get_oi_5m_data(symbol)
+                                    if (
+                                        oi_5m
+                                        and float(oi_5m[-1]["sumOpenInterest"])
+                                        < close_info.oi_guard_threshold
+                                    ):
+                                        close_info.close_reason = "马丁不满足OI"
+                                        await self.close_bn_position(
+                                            symbol,
+                                            close_info,
+                                            atr_value,
+                                            current_price,
+                                            1,
+                                        )
+                                        return
                             close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
@@ -1594,25 +1603,28 @@ class AUTOBN:
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         if current_price > close_info.entry_price + atr_value:
-                            long_short_ratio_data = await self.get_long_short_ratio(symbol)
-                            latest_lsr = None
-                            if long_short_ratio_data:
-                                try:
-                                    latest_lsr = float(
-                                        long_short_ratio_data[-1]["longShortRatio"]
-                                    )
-                                except (KeyError, TypeError, ValueError):
-                                    latest_lsr = None
-                            if (
-                                latest_lsr is not None
-                                and latest_lsr
-                                < (1 / self.OPEN_LONG_SHORT_RATIO_THRESHOLD)
-                            ):
-                                close_info.close_reason = "马丁多空比异常"
-                                await self.close_bn_position(
-                                    symbol, close_info, atr_value, current_price, 1
+                            if PositionSide.N not in close_info.strategy:
+                                long_short_ratio_data = (
+                                    await self.get_long_short_ratio(symbol)
                                 )
-                                return
+                                latest_lsr = None
+                                if long_short_ratio_data:
+                                    try:
+                                        latest_lsr = float(
+                                            long_short_ratio_data[-1]["longShortRatio"]
+                                        )
+                                    except (KeyError, TypeError, ValueError):
+                                        latest_lsr = None
+                                if (
+                                    latest_lsr is not None
+                                    and latest_lsr
+                                    < (1 / self.OPEN_LONG_SHORT_RATIO_THRESHOLD)
+                                ):
+                                    close_info.close_reason = "马丁多空比异常"
+                                    await self.close_bn_position(
+                                        symbol, close_info, atr_value, current_price, 1
+                                    )
+                                    return
                             close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
@@ -1952,7 +1964,7 @@ class AUTOBN:
                         entry_price=entryPrice,
                         name=p["symbol"],
                         date=int(datetime.datetime.now().strftime("%Y%m%d")),
-                        strategy=[PositionSide.DK],
+                        strategy=[PositionSide.N],
                     )
                     self.alert_all["POSITIONS"][p["symbol"]] = close_info.model_dump()
                 else:
@@ -1964,7 +1976,7 @@ class AUTOBN:
                         entry_price=entryPrice,
                         name=p["symbol"],
                         date=int(datetime.datetime.now().strftime("%Y%m%d")),
-                        strategy=[PositionSide.DK],
+                        strategy=[PositionSide.N],
                     )
                     self.alert_all["POSITIONS"][p["symbol"]] = close_info.model_dump()
             else:
