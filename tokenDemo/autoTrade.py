@@ -295,6 +295,7 @@ class AUTOBN:
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
     OPEN_LONG_SHORT_RATIO_THRESHOLD = 55 / 45
+    MARTINGALE_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
 
@@ -1489,7 +1490,7 @@ class AUTOBN:
                                 if (
                                     latest_lsr is not None
                                     and latest_lsr
-                                    > self.OPEN_LONG_SHORT_RATIO_THRESHOLD
+                                    > self.MARTINGALE_LONG_SHORT_RATIO_THRESHOLD
                                 ):
                                     close_info.close_reason = "马丁多空比异常"
                                     await self.close_bn_position(
@@ -1625,7 +1626,7 @@ class AUTOBN:
                                 if (
                                     latest_lsr is not None
                                     and latest_lsr
-                                    < (1 / self.OPEN_LONG_SHORT_RATIO_THRESHOLD)
+                                    < (1 / self.MARTINGALE_LONG_SHORT_RATIO_THRESHOLD)
                                 ):
                                     close_info.close_reason = "马丁多空比异常"
                                     await self.close_bn_position(
