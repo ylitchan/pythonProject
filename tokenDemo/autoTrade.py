@@ -1427,12 +1427,22 @@ class AUTOBN:
 
                 # 止损触发条件：
                 # - 保护盈利类（止盈后入场价止损/追踪止损）使用当前价触发
+                # - 初始止损要求“当前价与昨收同时满足”，用多空最值实现
                 # - 其他止损使用昨日收盘价触发
                 use_current_price_sl = close_info.close_reason in (
                     "止盈后入场价止损",
                     "追踪止损(保护盈利)",
                 )
-                sl_ref_price = current_price if use_current_price_sl else prev_close_price
+                if use_current_price_sl:
+                    sl_ref_price = current_price
+                elif not close_info.close_reason:
+                    sl_ref_price = (
+                        max(current_price, prev_close_price)
+                        if is_long
+                        else min(current_price, prev_close_price)
+                    )
+                else:
+                    sl_ref_price = prev_close_price
                 sl_triggered = (
                     is_long and sl_ref_price <= close_info.stop_loss
                 ) or (not is_long and sl_ref_price >= close_info.stop_loss)
@@ -2591,7 +2601,16 @@ class AUTOA:
         price_close = float(hist.iloc[-1]["close"])
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
-        if price_close <= close_info.stop_loss or price_close >= close_info.take_profit:
+        prev_close = (
+            float(hist.iloc[-2]["close"]) if len(hist) > 1 else price_close
+        )
+        stop_loss_triggered = price_close <= close_info.stop_loss
+        if not close_info.close_reason:
+            stop_loss_triggered = (
+                price_close <= close_info.stop_loss
+                and prev_close <= close_info.stop_loss
+            )
+        if stop_loss_triggered or price_close >= close_info.take_profit:
             if price_close >= close_info.take_profit:
                 close_info.close_reason = "止盈"
             else:
