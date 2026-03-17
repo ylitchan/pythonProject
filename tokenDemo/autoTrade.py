@@ -1426,11 +1426,11 @@ class AUTOBN:
                 prev_close_price = kline_close[-2]
 
                 # 止损触发条件：
-                # - 保护盈利类（止盈后入场价止损/追踪止损）使用当前价触发
+                # - 保护盈利类（止盈后追踪止损/追踪止损）使用当前价触发
                 # - 初始止损要求“当前价与昨收同时满足”，用多空最值实现
                 # - 其他止损使用昨日收盘价触发
                 use_current_price_sl = close_info.close_reason in (
-                    "止盈后入场价止损",
+                    "止盈后追踪止损",
                     "追踪止损(保护盈利)",
                 )
                 if use_current_price_sl:
@@ -1584,9 +1584,18 @@ class AUTOBN:
                             close_info.take_profit = min(decayed_tp, current_upper)
 
                             if close_info.tp_count > 0:
-                                if close_info.stop_loss != close_info.entry_price:
-                                    close_info.stop_loss = close_info.entry_price
-                                    close_info.close_reason = "止盈后入场价止损"
+                                profit = current_price - close_info.entry_price
+                                trailing_stop = (
+                                    close_info.entry_price
+                                    + profit * self.TRAILING_STOP_PROFIT_RATIO
+                                )
+                                new_stop_loss = max(
+                                    close_info.stop_loss,
+                                    trailing_stop,
+                                )
+                                if new_stop_loss != close_info.stop_loss:
+                                    close_info.stop_loss = new_stop_loss
+                                    close_info.close_reason = "止盈后追踪止损"
                             else:
                                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                                 profit = current_price - close_info.entry_price
@@ -1693,9 +1702,18 @@ class AUTOBN:
                             close_info.take_profit = max(decayed_tp, current_lower)
 
                             if close_info.tp_count > 0:
-                                if close_info.stop_loss != close_info.entry_price:
-                                    close_info.stop_loss = close_info.entry_price
-                                    close_info.close_reason = "止盈后入场价止损"
+                                profit = close_info.entry_price - current_price
+                                trailing_stop = (
+                                    close_info.entry_price
+                                    - profit * self.TRAILING_STOP_PROFIT_RATIO
+                                )
+                                new_stop_loss = min(
+                                    close_info.stop_loss,
+                                    trailing_stop,
+                                )
+                                if new_stop_loss != close_info.stop_loss:
+                                    close_info.stop_loss = new_stop_loss
+                                    close_info.close_reason = "止盈后追踪止损"
                             else:
                                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                                 profit = close_info.entry_price - current_price
