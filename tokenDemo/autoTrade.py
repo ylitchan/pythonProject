@@ -2139,7 +2139,7 @@ class AUTOA:
     MARTINGALE_TP_ATR_RATIO = 0.5  # 马丁触发后止盈收紧系数(按ATR与触发次数)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 30 * 24 * 60 * 60  # 观察记录超时时间（30天）
