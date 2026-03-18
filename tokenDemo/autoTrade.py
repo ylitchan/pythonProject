@@ -69,7 +69,7 @@ class Position(BaseModel):
     strategy: List[PositionSide]
     tp_count: int = 0  # 止盈次数，每次部分止盈后+1，衰减加速系数
     oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，马丁时用于风控）
-    close_reason: str = ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损/马丁不满足OI/马丁多空比异常等）
+    close_reason: str = ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损/马丁多空比异常且OI不满足等）
 
 
 class Observation(BaseModel):
@@ -1497,16 +1497,11 @@ class AUTOBN:
                                         )
                                     except (KeyError, TypeError, ValueError):
                                         latest_lsr = None
-                                if (
+                                lsr_abnormal = (
                                     latest_lsr is not None
                                     and latest_lsr
                                     > self.MARTINGALE_LONG_SHORT_RATIO_THRESHOLD
-                                ):
-                                    close_info.close_reason = "马丁多空比异常"
-                                    await self.close_bn_position(
-                                        symbol, close_info, atr_value, current_price, 1
-                                    )
-                                    return
+                                )
                                 if close_info.oi_guard_threshold <= 0:
                                     oi_1h = await self._get_oi_1h_data(symbol, dtn)
                                     if oi_1h:
@@ -1518,22 +1513,24 @@ class AUTOBN:
                                             close_info.oi_guard_threshold = min(
                                                 oi_1h_values
                                             )
+                                oi_guard_failed = False
                                 if close_info.oi_guard_threshold > 0:
                                     oi_5m = await self._get_oi_5m_data(symbol)
-                                    if (
+                                    oi_guard_failed = (
                                         oi_5m
                                         and float(oi_5m[-1]["sumOpenInterest"])
                                         < close_info.oi_guard_threshold
-                                    ):
-                                        close_info.close_reason = "马丁不满足OI"
-                                        await self.close_bn_position(
-                                            symbol,
-                                            close_info,
-                                            atr_value,
-                                            current_price,
-                                            1,
-                                        )
-                                        return
+                                    )
+                                if lsr_abnormal and oi_guard_failed:
+                                    close_info.close_reason = "马丁多空比异常且OI不满足"
+                                    await self.close_bn_position(
+                                        symbol,
+                                        close_info,
+                                        atr_value,
+                                        current_price,
+                                        1,
+                                    )
+                                    return
                             close_info.strategy.append(PositionSide.Martingale)
                             if await self.open_bn_position(
                                 symbol,
