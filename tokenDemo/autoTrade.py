@@ -35,7 +35,7 @@ class PositionSide(str, Enum):
     BD = "BD"
     N = "N"
     Basis = "Basis"
-    Martingale = "Martingale"
+    DCA = "DCA"
 
 
 class OrderSide(str, Enum):
@@ -68,8 +68,8 @@ class Position(BaseModel):
     date: int
     strategy: List[PositionSide]
     tp_count: int = 0  # 止盈次数，每次部分止盈后+1，衰减加速系数
-    oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，马丁时用于风控）
-    close_reason: str = ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损/马丁多空比异常且OI不满足等）
+    oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，DCA时用于风控）
+    close_reason: str = ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损/DCA多空比异常且OI不满足等）
 
 
 class Observation(BaseModel):
@@ -256,7 +256,7 @@ class AUTOBN:
     ATR_TRIGGER_CAP_RATIO = 0.05
     ATR_HL2_CAP_RATIO = 0.1  # ATR返回值上限比例（不超过hl2的10%）
     MIN_ATR_TRIGGER = 1e-8
-    MARTINGALE_TP_ATR_RATIO = 0.5  # 马丁触发后止盈收紧系数(按ATR与触发次数)
+    DCA_TP_ATR_RATIO = 0.5  # DCA触发后止盈收紧系数(按ATR与触发次数)
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
     # ==================== 回溯周期常量 ====================
@@ -295,7 +295,7 @@ class AUTOBN:
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
     OPEN_LONG_SHORT_RATIO_THRESHOLD = 55 / 45
-    MARTINGALE_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
+    DCA_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
 
@@ -1500,7 +1500,7 @@ class AUTOBN:
                                 lsr_abnormal = (
                                     latest_lsr is not None
                                     and latest_lsr
-                                    > self.MARTINGALE_LONG_SHORT_RATIO_THRESHOLD
+                                    > self.DCA_LONG_SHORT_RATIO_THRESHOLD
                                 )
                                 if close_info.oi_guard_threshold <= 0:
                                     oi_1h = await self._get_oi_1h_data(symbol, dtn)
@@ -1522,7 +1522,7 @@ class AUTOBN:
                                         < close_info.oi_guard_threshold
                                     )
                                 if lsr_abnormal and oi_guard_failed:
-                                    close_info.close_reason = "马丁多空比异常且OI不满足"
+                                    close_info.close_reason = "DCA多空比异常且OI不满足"
                                     await self.close_bn_position(
                                         symbol,
                                         close_info,
@@ -1531,7 +1531,7 @@ class AUTOBN:
                                         1,
                                     )
                                     return
-                            close_info.strategy.append(PositionSide.Martingale)
+                            close_info.strategy.append(PositionSide.DCA)
                             if await self.open_bn_position(
                                 symbol,
                                 OrderSide.BUY.value,
@@ -1542,16 +1542,16 @@ class AUTOBN:
                             ):
                                 amount_price = await self.get_amount_close(symbol)
                                 close_info.entry_price = amount_price[1]
-                                martingale_count = sum(
+                                dca_count = sum(
                                     1
                                     for strategy in close_info.strategy
-                                    if strategy == PositionSide.Martingale
+                                    if strategy == PositionSide.DCA
                                 )
                                 target_take_profit = (
                                     close_info.entry_price
-                                    + self.MARTINGALE_TP_ATR_RATIO
+                                    + self.DCA_TP_ATR_RATIO
                                     * atr_value
-                                    * martingale_count
+                                    * dca_count
                                 )
                                 close_info.take_profit = min(
                                     close_info.take_profit,
@@ -1560,7 +1560,7 @@ class AUTOBN:
                             else:
                                 if (
                                     close_info.strategy
-                                    and close_info.strategy[-1] == PositionSide.Martingale
+                                    and close_info.strategy[-1] == PositionSide.DCA
                                 ):
                                     close_info.strategy.pop()
                         else:
@@ -1642,14 +1642,14 @@ class AUTOBN:
                                 if (
                                     latest_lsr is not None
                                     and latest_lsr
-                                    < (1 / self.MARTINGALE_LONG_SHORT_RATIO_THRESHOLD)
+                                    < (1 / self.DCA_LONG_SHORT_RATIO_THRESHOLD)
                                 ):
-                                    close_info.close_reason = "马丁多空比异常"
+                                    close_info.close_reason = "DCA多空比异常"
                                     await self.close_bn_position(
                                         symbol, close_info, atr_value, current_price, 1
                                     )
                                     return
-                            close_info.strategy.append(PositionSide.Martingale)
+                            close_info.strategy.append(PositionSide.DCA)
                             if await self.open_bn_position(
                                 symbol,
                                 OrderSide.SELL.value,
@@ -1660,16 +1660,16 @@ class AUTOBN:
                             ):
                                 amount_price = await self.get_amount_close(symbol)
                                 close_info.entry_price = amount_price[1]
-                                martingale_count = sum(
+                                dca_count = sum(
                                     1
                                     for strategy in close_info.strategy
-                                    if strategy == PositionSide.Martingale
+                                    if strategy == PositionSide.DCA
                                 )
                                 target_take_profit = (
                                     close_info.entry_price
-                                    - self.MARTINGALE_TP_ATR_RATIO
+                                    - self.DCA_TP_ATR_RATIO
                                     * atr_value
-                                    * martingale_count
+                                    * dca_count
                                 )
                                 close_info.take_profit = max(
                                     close_info.take_profit,
@@ -1678,7 +1678,7 @@ class AUTOBN:
                             else:
                                 if (
                                     close_info.strategy
-                                    and close_info.strategy[-1] == PositionSide.Martingale
+                                    and close_info.strategy[-1] == PositionSide.DCA
                                 ):
                                     close_info.strategy.pop()
                         else:
@@ -2133,7 +2133,7 @@ class AUTOA:
     ATR_TRIGGER_CAP_RATIO = 0.10
     ATR_HL2_CAP_RATIO = 0.1  # ATR返回值上限比例（不超过hl2的10%）
     MIN_ATR_TRIGGER = 1e-8
-    MARTINGALE_TP_ATR_RATIO = 0.5  # 马丁触发后止盈收紧系数(按ATR与触发次数)
+    DCA_TP_ATR_RATIO = 0.5  # DCA触发后止盈收紧系数(按ATR与触发次数)
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
@@ -2672,7 +2672,7 @@ class AUTOA:
                 and close_info.entry_price > 0
                 and price_close < close_info.entry_price - atr_value
             ):
-                close_info.strategy.append(PositionSide.Martingale)
+                close_info.strategy.append(PositionSide.DCA)
                 strategy_tag = ",".join([ps.value for ps in close_info.strategy])
                 msg = (
                     f"{close_info.name} 加仓\n"
@@ -2683,14 +2683,14 @@ class AUTOA:
                 )
                 cls.send_msg(msg)
                 close_info.entry_price = (close_info.entry_price + price_close) / 2
-                martingale_count = sum(
+                dca_count = sum(
                     1
                     for strategy in close_info.strategy
-                    if strategy == PositionSide.Martingale
+                    if strategy == PositionSide.DCA
                 )
                 target_take_profit = (
                     close_info.entry_price
-                    + cls.MARTINGALE_TP_ATR_RATIO * atr_value * martingale_count
+                    + cls.DCA_TP_ATR_RATIO * atr_value * dca_count
                 )
                 close_info.take_profit = min(
                     close_info.take_profit,
