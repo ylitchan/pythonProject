@@ -330,6 +330,7 @@ class AUTOBN:
         obj.qy_key = kwargs.get("qy_key") or kwargs.get("qyWechatKey")
         if not obj.qy_key:
             raise ValueError("from_cfg 需要提供 qy_key")
+        obj.signal_qy_key = kwargs.get("signal_qy_key") or obj.qy_key
 
         # 交易参数配置（可覆盖）
         obj.leverage = kwargs.get("leverage", cls.DEFAULT_LEVERAGE)
@@ -442,7 +443,7 @@ class AUTOBN:
 
         return obj
 
-    def send_msg(self, msg: str, wx: bool = False) -> None:
+    def send_msg(self, msg: str, wx: bool = False, qy_key: Optional[str] = None) -> None:
         """
         发送消息通知函数
 
@@ -451,6 +452,7 @@ class AUTOBN:
         参数：
             msg: 要发送的消息内容
             wx: 是否使用微信发送（True=微信，False=企业微信）
+            qy_key: 可选的企业微信机器人key，未提供时默认使用 self.qy_key
 
         返回：
             None
@@ -479,7 +481,7 @@ class AUTOBN:
                 # 企业微信发送格式：使用企业微信机器人webhook
                 json_msg = {"msgtype": "text", "text": {"content": msg}}
                 response = session.post(
-                    url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={self.qy_key}",
+                    url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={qy_key or self.qy_key}",
                     json=json_msg,
                 )
 
@@ -1780,6 +1782,10 @@ class AUTOBN:
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
                             self.send_msg(
+                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
+                                qy_key=self.signal_qy_key,
+                            )
+                            self.send_msg(
                                 f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.BUY
@@ -1815,6 +1821,10 @@ class AUTOBN:
                             )
                             rate_show = (
                                 atr_value * self.SUPERTREND_FACTOR / current_price
+                            )
+                            self.send_msg(
+                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
+                                qy_key=self.signal_qy_key,
                             )
                             self.send_msg(
                                 f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
@@ -3018,11 +3028,13 @@ async def main():
         # 可以选择：1) 抛出异常退出  2) 使用空密钥继续运行
         # 这里选择继续运行但禁用通知
         qy_key = ""
+    autobn_qy_key = AUTOA.qy_key
 
     autobn = AUTOBN.from_cfg(
         bn_api_file=os.path.join(current_dir, "bn.json"),
         alert_all_file=os.path.join(current_dir, "alert_all.json"),
-        qy_key=qy_key,
+        qy_key=autobn_qy_key,
+        signal_qy_key=qy_key,
     )
 
     # 初始化任务调度器，配置全局日志级别
