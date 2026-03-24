@@ -942,7 +942,7 @@ class AUTOBN:
                         return False, None, None
 
                     passed = (
-                        oi_5m_last < min(sumOpenInterest_1d)
+                        oi_5m_last <= min(sumOpenInterest_1d)
                         and self.calculate_chebyshev_probability(
                             oi_hist_for_cheb,
                             oi_5m_last,
@@ -981,7 +981,7 @@ class AUTOBN:
                 if positionSide == PositionSide.LONG.value:
                     if lsrd >= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
                         return False, None, None
-                    long_extreme = len(lsr_values) >= 2 and lsrd < min(lsr_values[:-1])
+                    long_extreme = len(lsr_values) >= 2 and lsrd <= min(lsr_values[:-1])
                     long_ratio_cond = lsrd < self.LONG_SHORT_RATIO_LONG_LIMIT
                     # 做多：极值条件 或 多空比阈值条件
                     if not (long_extreme or long_ratio_cond):
@@ -1051,7 +1051,7 @@ class AUTOBN:
                         return False, None, None
 
                     passed = (
-                        oi_5m_last > max(sumOpenInterest_1h)
+                        oi_5m_last >= max(sumOpenInterest_1h)
                         and self.calculate_chebyshev_probability(
                             oi_hist_for_cheb,
                             oi_5m_last,
@@ -1901,7 +1901,7 @@ class AUTOBN:
                 new_open_info = None
 
                 # 做多信号判断
-                if kline_close[-2] < current_price and kline_volume[-1] == max(
+                if kline_close[-2] < current_price and kline_volume[-1] >= max(
                     kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
                 ):
                     new_open_info = Observation(
@@ -1913,9 +1913,9 @@ class AUTOBN:
                     )
 
                 # 做空信号判断
-                elif max(kline_close[-3:]) == max(kline_close) and max(
+                elif max(kline_close[-3:]) >= max(kline_close) and max(
                     kline_volume[-3:]
-                ) == max(kline_volume):
+                ) >= max(kline_volume):
                     new_open_info = Observation(
                         price=current_price,
                         timestamp=current_timestamp,
@@ -2796,7 +2796,7 @@ class AUTOA:
             if (
                 hist_open[-1] > hist_high[-2]
                 and current_volume
-                == max(hist_volume[cls.VOLUME_CHEB_SAMPLE_START_OFFSET :])
+                >= max(hist_volume[cls.VOLUME_CHEB_SAMPLE_START_OFFSET :])
                 and cls.calculate_chebyshev_probability(
                     volume_sample,
                     current_volume,
