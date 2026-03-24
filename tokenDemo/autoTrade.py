@@ -69,7 +69,9 @@ class Position(BaseModel):
     strategy: List[PositionSide]
     tp_count: int = 0  # 止盈次数，每次部分止盈后+1，衰减加速系数
     oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，DCA时用于风控）
-    close_reason: str = ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损/DCA多空比异常且OI不满足等）
+    close_reason: str = (
+        ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损/DCA多空比异常且OI不满足等）
+    )
 
 
 class Observation(BaseModel):
@@ -273,6 +275,7 @@ class AUTOBN:
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
+    SHORT_OI_CHEB_THRESHOLD = 0.05  # SHORT的1d OI极端阈值（5%）
 
     # ==================== 基差率常量 ====================
     BASIS_RATE_THRESHOLD = 0.02  # 基差率开仓阈值（2%）
@@ -896,13 +899,63 @@ class AUTOBN:
         """
         async with semaphore:
             try:
+                if positionSide == PositionSide.SHORT.value:
+                    oi_5m = await self._get_oi_5m_data(symbol)
+                    if not oi_5m:
+                        return False, None, None
+                    oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
+
+                    # 获取持仓量历史数据（带缓存，仅做空使用）
+                    dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
+                    target_ts = int(dtn_target.timestamp() * 1000)
+
+                    # 检查缓存是否存在且有效（target_date 匹配当天8点）
+                    cache_entry = self._oi_1d_cache.get(symbol)
+                    if cache_entry and cache_entry.get("target_date") == target_ts:
+                        # 缓存有效，直接使用
+                        oi_1d = cache_entry["data"]
+                    else:
+                        # 缓存无效或不存在，获取新数据
+                        oi_1d = await self._call_um(
+                            self.um_futures_client.open_interest_hist,
+                            symbol=symbol,
+                            period="1d",
+                            limit=self.OI_QUERY_LIMIT,
+                        )
+                        # 检查数据是否满足条件
+                        if oi_1d[-1]["timestamp"] != target_ts:
+                            return False, None, None
+                        # 数据满足条件，缓存起来
+                        self._oi_1d_cache[symbol] = {
+                            "data": oi_1d,
+                            "target_date": target_ts,
+                        }
+                    sumOpenInterest_1d = [
+                        float(i["sumOpenInterest"]) for i in oi_1d
+                    ]  # 持仓数量（合约数）
+                    oi_hist_for_cheb = sumOpenInterest_1d[
+                        -(self.OI_QUERY_LIMIT - self.OI_CHEB_EXCLUDE_RECENT_COUNT) :
+                    ]
+                    if len(oi_hist_for_cheb) < self.MIN_CHEB_SAMPLE_SIZE:
+                        return False, None, None
+
+                    passed = (
+                        oi_5m_last < min(sumOpenInterest_1d)
+                        and self.calculate_chebyshev_probability(
+                            oi_hist_for_cheb,
+                            oi_5m_last,
+                        )["chebyshev_upper_bound"]
+                        < self.SHORT_OI_CHEB_THRESHOLD
+                    )
+                    return (True, None, None) if passed else (False, None, None)
+
                 # 获取多空人数比数据（使用缓存）
                 long_short_ratio_data = await self.get_long_short_ratio(symbol)
                 # 提取最新的多空人数比
                 if not long_short_ratio_data:
                     return False, None, None
 
-                # 提取所有历史多空比值（供 SHORT 现有逻辑复用）
+                # 提取所有历史多空比值
                 lsr_values = [
                     float(item["longShortRatio"]) for item in long_short_ratio_data
                 ]
@@ -918,14 +971,6 @@ class AUTOBN:
                         return None
                     return lsr / (1 + lsr)
 
-                # SHORT：极值条件 或 多空比阈值条件
-                if positionSide == PositionSide.SHORT.value:
-                    if lsrd <= (1 / self.OPEN_LONG_SHORT_RATIO_THRESHOLD):
-                        return False, None, None
-                    short_extreme = lsrd == max(lsr_values)
-                    short_ratio_cond = lsrd > self.LONG_SHORT_RATIO_SHORT_LIMIT
-                    if not (short_extreme or short_ratio_cond):
-                        return False, None, None
                 oi_5m = await self._get_oi_5m_data(symbol)
 
                 if not oi_5m:
@@ -1018,55 +1063,6 @@ class AUTOBN:
                         else (False, None, None)
                     )
 
-                # 获取持仓量历史数据（带缓存，仅做空使用）
-                dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
-                target_ts = int(dtn_target.timestamp() * 1000)
-
-                # 检查缓存是否存在且有效（target_date 匹配当天8点）
-                cache_entry = self._oi_1d_cache.get(symbol)
-                if cache_entry and cache_entry.get("target_date") == target_ts:
-                    # 缓存有效，直接使用
-                    oi_1d = cache_entry["data"]
-                else:
-                    # 缓存无效或不存在，获取新数据
-                    oi_1d = await self._call_um(
-                        self.um_futures_client.open_interest_hist,
-                        symbol=symbol,
-                        period="1d",
-                        limit=self.OI_QUERY_LIMIT,
-                    )
-                    # 检查数据是否满足条件
-                    if oi_1d[-1]["timestamp"] != target_ts:
-                        return False, None, None
-                    # 数据满足条件，缓存起来
-                    self._oi_1d_cache[symbol] = {
-                        "data": oi_1d,
-                        "target_date": target_ts,
-                    }
-                sumOpenInterestValue_1d = [
-                    float(i["sumOpenInterestValue"]) for i in oi_1d
-                ]  # 持仓价值（美元）
-                sumOpenInterest_1d = [
-                    float(i["sumOpenInterest"]) for i in oi_1d
-                ]  # 持仓数量（合约数）
-
-                # 做空条件检查：需要持仓量减少且多空比小于1（空头占优）
-                # 条件1：最新持仓量必须小于前3天最小值（说明有资金流出）
-                max_kline_close = max(kline_close)
-                max_oi_value_1d = max(sumOpenInterestValue_1d)
-                max_recent_oi_value = max(sumOpenInterestValue_1d[-3:-1])
-                passed = any(
-                    (
-                        kline_close[index - 1] == max_kline_close
-                        and sumOpenInterestValue_1d[index] == max_oi_value_1d
-                        and sumOpenInterestValue_1d[-1] > max_recent_oi_value
-                        and oi_5m_last < sumOpenInterest_1d[-1] < sumOpenInterest_1d[-2]
-                    )
-                    for index in range(
-                        -1, max(-self.OI_LOOKBACK_PERIOD, -len(kline_close)), -1
-                    )
-                )
-                return (True, lsrd, None) if passed else (False, None, None)
             except Exception:
                 self.logger.exception("检查增仓信号时发生错误")
                 return False, None, None
@@ -1443,9 +1439,9 @@ class AUTOBN:
                     )
                 else:
                     sl_ref_price = prev_close_price
-                sl_triggered = (
-                    is_long and sl_ref_price <= close_info.stop_loss
-                ) or (not is_long and sl_ref_price >= close_info.stop_loss)
+                sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
+                    not is_long and sl_ref_price >= close_info.stop_loss
+                )
                 # 止盈触发条件
                 tp_triggered = (
                     is_long and current_price >= close_info.take_profit
@@ -1495,12 +1491,11 @@ class AUTOBN:
                                         latest_lsr = float(
                                             long_short_ratio_data[-1]["longShortRatio"]
                                         )
-                                    except (KeyError, TypeError, ValueError):
+                                    except KeyError, TypeError, ValueError:
                                         latest_lsr = None
                                 lsr_abnormal = (
                                     latest_lsr is not None
-                                    and latest_lsr
-                                    > self.DCA_LONG_SHORT_RATIO_THRESHOLD
+                                    and latest_lsr > self.DCA_LONG_SHORT_RATIO_THRESHOLD
                                 )
                                 if close_info.oi_guard_threshold <= 0:
                                     oi_1h = await self._get_oi_1h_data(symbol, dtn)
@@ -1549,9 +1544,7 @@ class AUTOBN:
                                 )
                                 target_take_profit = (
                                     close_info.entry_price
-                                    + self.DCA_TP_ATR_RATIO
-                                    * atr_value
-                                    * dca_count
+                                    + self.DCA_TP_ATR_RATIO * atr_value * dca_count
                                 )
                                 close_info.take_profit = min(
                                     close_info.take_profit,
@@ -1568,8 +1561,7 @@ class AUTOBN:
                             # 衰减系数 = 1 + tp_count (每次止盈后加速)
                             decay_multiplier = 1 + close_info.tp_count
                             initial_tp_gap = (
-                                close_info.take_profit
-                                - close_info.entry_price
+                                close_info.take_profit - close_info.entry_price
                             )  # 止盈到入场价的初始距离
                             tp_decay_step = (
                                 initial_tp_gap
@@ -1628,8 +1620,8 @@ class AUTOBN:
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         if current_price > close_info.entry_price + atr_value:
                             if PositionSide.N not in close_info.strategy:
-                                long_short_ratio_data = (
-                                    await self.get_long_short_ratio(symbol)
+                                long_short_ratio_data = await self.get_long_short_ratio(
+                                    symbol
                                 )
                                 latest_lsr = None
                                 if long_short_ratio_data:
@@ -1637,12 +1629,10 @@ class AUTOBN:
                                         latest_lsr = float(
                                             long_short_ratio_data[-1]["longShortRatio"]
                                         )
-                                    except (KeyError, TypeError, ValueError):
+                                    except KeyError, TypeError, ValueError:
                                         latest_lsr = None
-                                if (
-                                    latest_lsr is not None
-                                    and latest_lsr
-                                    < (1 / self.DCA_LONG_SHORT_RATIO_THRESHOLD)
+                                if latest_lsr is not None and latest_lsr < (
+                                    1 / self.DCA_LONG_SHORT_RATIO_THRESHOLD
                                 ):
                                     close_info.close_reason = "DCA多空比异常"
                                     await self.close_bn_position(
@@ -1667,9 +1657,7 @@ class AUTOBN:
                                 )
                                 target_take_profit = (
                                     close_info.entry_price
-                                    - self.DCA_TP_ATR_RATIO
-                                    * atr_value
-                                    * dca_count
+                                    - self.DCA_TP_ATR_RATIO * atr_value * dca_count
                                 )
                                 close_info.take_profit = max(
                                     close_info.take_profit,
@@ -1686,8 +1674,7 @@ class AUTOBN:
                             # 衰减系数 = 1 + tp_count (每次止盈后加速)
                             decay_multiplier = 1 + close_info.tp_count
                             initial_tp_gap = (
-                                close_info.entry_price
-                                - close_info.take_profit
+                                close_info.entry_price - close_info.take_profit
                             )  # 入场价到止盈的初始距离
                             tp_decay_step = (
                                 initial_tp_gap
@@ -1762,7 +1749,11 @@ class AUTOBN:
                         PositionSide.BZ in open_info.strategy
                         and kline_close[-2] < current_price
                     ):
-                        long_ok, long_lsr, long_oi_guard_threshold = await self.check_side(
+                        (
+                            long_ok,
+                            long_lsr,
+                            long_oi_guard_threshold,
+                        ) = await self.check_side(
                             semaphore,
                             symbol,
                             PositionSide.LONG.value,
@@ -1838,9 +1829,7 @@ class AUTOBN:
                             current_timestamp - float(last_close_ts)
                             < self.REOPEN_COOLDOWN_SECONDS
                         ):
-                            self.logger.info(
-                                f"{symbol} 24小时内已平仓，跳过开仓信号"
-                            )
+                            self.logger.info(f"{symbol} 24小时内已平仓，跳过开仓信号")
                             return
                         is_long = open_info.side.value == OrderSide.BUY.value
                         if atr_value is None or hl2 is None:
@@ -1914,8 +1903,8 @@ class AUTOBN:
                     )
 
                 # 做空信号判断
-                elif kline_close[-2] > max(kline_close[-4:-2]) and max(
-                    kline_volume[-3:-1]
+                elif max(kline_close[-3:]) == max(kline_close) and max(
+                    kline_volume[-3:]
                 ) == max(kline_volume):
                     new_open_info = Observation(
                         price=current_price,
@@ -2221,6 +2210,7 @@ class AUTOA:
         hl2 = (latest_high + latest_low) / 2
         atr_cap = hl2 * cls.ATR_HL2_CAP_RATIO
         return min(atr, atr_cap) if atr_cap > 0 else atr
+
     @classmethod
     def check_gap_up_after_break_ma10(cls, hist: pd.DataFrame) -> bool:
         """
@@ -2616,9 +2606,7 @@ class AUTOA:
         price_close = float(hist.iloc[-1]["close"])
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
-        prev_close = (
-            float(hist.iloc[-2]["close"]) if len(hist) > 1 else price_close
-        )
+        prev_close = float(hist.iloc[-2]["close"]) if len(hist) > 1 else price_close
         stop_loss_triggered = price_close <= close_info.stop_loss
         if not close_info.close_reason:
             stop_loss_triggered = (
@@ -2666,7 +2654,7 @@ class AUTOA:
             hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
             current_upper = hl2 + atr_value * cls.SUPERTREND_FACTOR
             current_lower = hl2 - atr_value * cls.SUPERTREND_FACTOR
-            
+
             if (
                 atr_value > 0
                 and close_info.entry_price > 0
@@ -2699,9 +2687,7 @@ class AUTOA:
             else:
                 # 做多: 止盈在上方，止损在下方
                 # 止盈下移: 取衰减后的值和当前上轨的较小值
-                initial_tp_gap = (
-                    close_info.take_profit - close_info.entry_price
-                )
+                initial_tp_gap = close_info.take_profit - close_info.entry_price
                 tp_decay_step = initial_tp_gap * DECAY
                 decayed_tp = close_info.take_profit - tp_decay_step
                 close_info.take_profit = min(decayed_tp, current_upper)
@@ -2799,7 +2785,8 @@ class AUTOA:
             current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
             if (
                 hist_open[-1] > hist_high[-2]
-                and current_volume == max(volume_sample)
+                and current_volume
+                == max(hist_volume[cls.VOLUME_CHEB_SAMPLE_START_OFFSET :])
                 and cls.calculate_chebyshev_probability(
                     volume_sample,
                     current_volume,
@@ -2866,8 +2853,7 @@ class AUTOA:
         today = datetime.datetime.today()
         # 9:30前不执行：小时小于9，或9点但分钟小于30
         is_before_open = today.hour < cls.MARKET_OPEN_HOUR or (
-            today.hour == cls.MARKET_OPEN_HOUR
-            and today.minute < cls.MARKET_OPEN_MINUTE
+            today.hour == cls.MARKET_OPEN_HOUR and today.minute < cls.MARKET_OPEN_MINUTE
         )
         # 收盘后不执行：小时大于15，或者小时等于15且分钟大于5
         is_after_close = today.hour > cls.MARKET_CLOSE_HOUR or (
@@ -2875,8 +2861,10 @@ class AUTOA:
             and today.minute > cls.MARKET_CLOSE_MINUTE
         )
         if (
-            cls.zt_dates and today.strftime("%Y-%m-%d") not in cls.zt_dates
-        ) or is_before_open or is_after_close:
+            (cls.zt_dates and today.strftime("%Y-%m-%d") not in cls.zt_dates)
+            or is_before_open
+            or is_after_close
+        ):
             return []
         if not cls.zt_dates:
             cls.zt_dates = cls.get_last_trading_days(today)
