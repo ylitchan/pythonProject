@@ -167,17 +167,55 @@ wheels = [
 ]
 
 [[package]]
-name = "binance-futures-connector"
-version = "4.1.0"
+name = "binance-common"
+version = "3.7.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "pycryptodome" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f0/91/b1071f0e82048a7b791bb684ebcc4597f472582d5f9c8b9cbbd683787208/binance_common-3.7.0.tar.gz", hash = "sha256:ecbbfeee24a7159ad816f5dbf82cf46052fe46a90efd5417b8e902f4436a28e6", size = 22303, upload-time = "2026-03-16T07:48:35.626Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/27/4d5582346235398c0e61f47af0aaef46cda263696f91eb2fea69555e1ba4/binance_common-3.7.0-py3-none-any.whl", hash = "sha256:8d39827d58ea905f3f7a31823845aad5afa1fa9b16d791f85f3b965ce6a345a0", size = 24568, upload-time = "2026-03-16T07:48:36.504Z" },
+]
+
+[[package]]
+name = "binance-sdk-derivatives-trading-portfolio-margin"
+version = "5.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "binance-common" },
+    { name = "pycryptodome" },
+    { name = "pydantic" },
     { name = "requests" },
     { name = "websocket-client" },
+    { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c8/1f/ac485b41a87844cdf6b8e8ade941dc45838606a10db21b656a999bd62bf1/binance-futures-connector-4.1.0.tar.gz", hash = "sha256:f6ac965dfe482ab31a36f8a06b226f730b4a660fffc5c97bdc8814d9333a11c0", size = 33450, upload-time = "2024-10-31T07:07:28.236Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7f/a8/12ba30d55ea792e6d23abdd89af95810c4682d63093e726d122a769bc4b3/binance_sdk_derivatives_trading_portfolio_margin-5.2.0.tar.gz", hash = "sha256:c820820dc6dca472cdcd006d5c03802d206227ae024fc756aa13e184b704719b", size = 91510, upload-time = "2026-03-16T10:48:20.567Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/16/97/b49576e6b6e589c80968a8947b0737e0531aa8fb718aae1fdd0a660cff37/binance_futures_connector-4.1.0-py3-none-any.whl", hash = "sha256:ef1e45f4cd7f47f364837564fb83e02962d06c1612c0c1e8e706e4cd308405a6", size = 38274, upload-time = "2024-10-31T07:07:26.4Z" },
+    { url = "https://files.pythonhosted.org/packages/98/f1/205f49320c86f30acb980205b735b6e0e2fb51eec7865604f91b4f10ff6d/binance_sdk_derivatives_trading_portfolio_margin-5.2.0-py3-none-any.whl", hash = "sha256:f71ede0c1ef258e0e72c4cc07f65bbd03d27663d9bd32a635e3f0cc44a479a25", size = 365567, upload-time = "2026-03-16T10:48:21.489Z" },
+]
+
+[[package]]
+name = "binance-sdk-derivatives-trading-usds-futures"
+version = "9.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "binance-common" },
+    { name = "pycryptodome" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "websocket-client" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1b/92/8bed515bb10dbde0ed1dc2645dde739cf34bff3577eaa4d072c22e3d866d/binance_sdk_derivatives_trading_usds_futures-9.0.0.tar.gz", hash = "sha256:382cd8a66c64e35c7f08ecf5515215d47f13c19188824ccbafe98fefd5351b0c", size = 147414, upload-time = "2026-03-16T10:48:54.938Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ad/c0/69353c1d3db8af4bbcee349d59d31c37416bfb570753fd14006fefc75f88/binance_sdk_derivatives_trading_usds_futures-9.0.0-py3-none-any.whl", hash = "sha256:87ed3e4fcb8af1e4f7c373f1560385aec607927032eb8ef2510838db08dde61c", size = 569242, upload-time = "2026-03-16T10:48:56.921Z" },
 ]
 
 [[package]]
@@ -910,7 +948,8 @@ dependencies = [
     { name = "akshare" },
     { name = "apscheduler" },
     { name = "baostock" },
-    { name = "binance-futures-connector" },
+    { name = "binance-sdk-derivatives-trading-portfolio-margin" },
+    { name = "binance-sdk-derivatives-trading-usds-futures" },
     { name = "eth-account" },
     { name = "openpyxl" },
     { name = "pandas" },
@@ -925,7 +964,8 @@ requires-dist = [
     { name = "akshare", specifier = ">=1.17.85" },
     { name = "apscheduler", specifier = ">=3.11.1" },
     { name = "baostock", specifier = ">=0.8.9" },
-    { name = "binance-futures-connector", specifier = ">=4.1.0" },
+    { name = "binance-sdk-derivatives-trading-portfolio-margin", specifier = ">=5.2.0" },
+    { name = "binance-sdk-derivatives-trading-usds-futures", specifier = ">=9.0.0" },
     { name = "eth-account", specifier = ">=0.12.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=2.3.3" },
