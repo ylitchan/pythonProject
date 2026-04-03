@@ -490,7 +490,9 @@ class AUTOBN:
             account_info = self._unwrap_api_response(
                 self.papi_client.rest_api.account_information()
             )
-        total_available_balance = float(account_info.get("totalAvailableBalance", 0) or 0)
+        total_available_balance = float(
+            account_info.get("totalAvailableBalance", 0) or 0
+        )
         account_equity = float(account_info.get("accountEquity", 0) or 0)
         account_maint_margin = float(account_info.get("accountMaintMargin", 0) or 0)
         return {
@@ -562,7 +564,9 @@ class AUTOBN:
             )
         )
 
-    def send_msg(self, msg: str, wx: bool = False, qy_key: Optional[str] = None) -> None:
+    def send_msg(
+        self, msg: str, wx: bool = False, qy_key: Optional[str] = None
+    ) -> None:
         """
         发送消息通知函数
 
@@ -635,7 +639,9 @@ class AUTOBN:
             return 100
         if total_balance <= 0:
             return 0
-        return round(min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100)))
+        return round(
+            min(100, max(0, (1 - total_maintenance_margin / total_balance) * 100))
+        )
 
     async def _call_api(self, method, *args, **kwargs):
         """统一异步调用入口，兼容 PAPI ApiResponse 和普通返回值"""
@@ -2130,7 +2136,9 @@ class AUTOBN:
                         self.papi_client.rest_api.query_um_position_information
                     )
                     positions_data = self.get_position_risk(position_risk_data)
-                    exchange_info = await self._call_api(self.market_client.rest_api.exchange_information)
+                    exchange_info = await self._call_api(
+                        self.market_client.rest_api.exchange_information
+                    )
                     self.get_symbols_info(exchange_info)
                     self.symbols = list(self.symbols_info.keys())
                     break
@@ -2138,7 +2146,9 @@ class AUTOBN:
                     self.logger.exception("获取交易对信息时发生异常")
                     await asyncio.sleep(self.RETRY_DELAY_SECONDS)
         if self.is_early_morning:
-            balance_info = await self._call_api(self.papi_client.rest_api.account_information)
+            balance_info = await self._call_api(
+                self.papi_client.rest_api.account_information
+            )
             balance_info = self._normalize_account_info(balance_info)
             balance = balance_info["totalWalletBalance"]
             self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
@@ -2199,7 +2209,7 @@ class AUTOA:
     DCA_TP_ATR_RATIO = 0.5  # DCA触发后止盈收紧系数(按ATR与触发次数)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.05  # 极端异常阈值（5%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（5%），用于检测非常罕见的事件
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 30 * 24 * 60 * 60  # 观察记录超时时间（30天）
