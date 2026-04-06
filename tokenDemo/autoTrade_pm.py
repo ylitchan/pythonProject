@@ -2477,6 +2477,33 @@ class AUTOA:
             # 异常处理：记录错误但不中断程序运行
             cls.logger.error(f"消息发送异常: {str(e)}")
 
+    @classmethod
+    async def push_daily_positions(cls):
+        """每日推送一次A股持仓信息（模板参考AUTOBN）"""
+        try:
+            positions = cls.alert_all.get("POSITIONS", {})
+            if not positions:
+                cls.send_msg("账户余额:\nN/A\n持仓信息:\n暂无持仓")
+                return
+
+            positions_data = []
+            for code, close_info_dict in positions.items():
+                close_info = Position.model_validate(close_info_dict)
+                strategy_tag = ",".join([ps.value for ps in close_info.strategy])
+                positions_data.append(
+                    f"==={close_info.name}({code})===\n"
+                    f"策略:{strategy_tag}\n"
+                    f"开仓价格:{close_info.entry_price:.2f} CNY\n"
+                    f"持仓方向:{close_info.position_side.value}\n"
+                    f"止盈:{close_info.take_profit:.2f}\n"
+                    f"止损:{close_info.stop_loss:.2f}\n"
+                    f"开仓日期:{close_info.date}"
+                )
+
+            cls.send_msg("账户余额:\nN/A\n持仓信息:\n" + "\n\n".join(positions_data))
+        except Exception:
+            cls.logger.exception("A股每日持仓推送失败")
+
     @staticmethod
     def get_last_trading_days(today=None, days=None):
         """
@@ -2880,7 +2907,10 @@ class AUTOA:
                 if PositionSide.BZ not in open_info.strategy:
                     open_info.strategy.append(PositionSide.BZ)
                 should_open = True
-            elif cls.check_gap_up_after_break_ma10(hist):
+            elif (
+                PositionSide.BZ in open_info.strategy
+                and cls.check_gap_up_after_break_ma10(hist)
+            ):
                 if PositionSide.N not in open_info.strategy:
                     open_info.strategy.append(PositionSide.N)
                 should_open = True
@@ -3132,6 +3162,20 @@ async def main():
         max_instances=1,  # 同一时间只允许1个实例运行
         coalesce=False,  # 改为False，避免合并错过的执行导致任务堆积和卡住
         name="股票监控任务",  # 任务名称
+    )
+
+    logger.info("配置A股每日持仓推送任务...")
+    scheduler.add_job(
+        AUTOA.push_daily_positions,
+        "cron",
+        hour=9,
+        minute=0,
+        second=0,
+        timezone="Asia/Shanghai",
+        misfire_grace_time=300,
+        max_instances=1,
+        coalesce=True,
+        name="A股每日持仓推送任务",
     )
 
     logger = logging.getLogger("AUTOBN")
