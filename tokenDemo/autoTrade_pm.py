@@ -1522,6 +1522,8 @@ class AUTOBN:
                 sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
                     not is_long and sl_ref_price >= close_info.stop_loss
                 )
+                if not close_info.close_reason and PositionSide.N in close_info.strategy:
+                    sl_triggered = False
                 # 止盈触发条件
                 tp_triggered = (
                     is_long and current_price >= close_info.take_profit
