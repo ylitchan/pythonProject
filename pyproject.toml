@@ -17,4 +17,6 @@ dependencies = [
     "pydantic>=2.12.4",
     "binance-sdk-derivatives-trading-portfolio-margin>=5.2.0",
     "binance-sdk-derivatives-trading-usds-futures>=9.0.0",
+    "aiohttp>=3.13.2",
+    "aiofiles>=25.1.0",
 ]

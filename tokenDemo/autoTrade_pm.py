@@ -16,6 +16,8 @@ from enum import Enum
 from typing import List, Optional
 
 # ==================== 第三方库导入 ====================
+import aiofiles
+import aiohttp
 import akshare as ak
 import baostock as bs
 import pandas as pd
@@ -124,6 +126,7 @@ class CloseRecordManager:
         - 追加模式：每次平仓追加一行记录
     """
 
+    IO_TIMEOUT_SECONDS = 15
     _lock = threading.Lock()
     _excel_file = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "close_records.xlsx"
@@ -239,6 +242,39 @@ class CloseRecordManager:
                 cls._logger.error(f"保存平仓记录失败: {str(e)}")
                 cls._logger.exception("保存平仓记录时发生异常")
 
+    @classmethod
+    async def record_close_async(
+        cls,
+        source: str,
+        symbol: str,
+        position_side: str,
+        entry_price: float,
+        close_price: float,
+        close_amount: float,
+        realized_pnl: float,
+        pnl_percent: float,
+        close_ratio: float = 1.0,
+        strategy_tag: str = "",
+        close_reason: str = "",
+    ):
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                cls.record_close,
+                source,
+                symbol,
+                position_side,
+                entry_price,
+                close_price,
+                close_amount,
+                realized_pnl,
+                pnl_percent,
+                close_ratio,
+                strategy_tag,
+                close_reason,
+            ),
+            timeout=cls.IO_TIMEOUT_SECONDS,
+        )
+
 
 class AUTOBN:
     """币安期货自动交易类"""
@@ -303,6 +339,8 @@ class AUTOBN:
     MARKET_ANALYSIS_TIMEOUT = 300  # 市场分析超时时间（秒）
     BATCH_WINDOW_MINUTES = 5  # 分批窗口时长（分钟）
     BATCH_SLOT_COUNT = 5  # 窗口内批次数（每分钟一批）
+    MESSAGE_TIMEOUT_SECONDS = 10  # 消息发送超时时间（秒）
+    FILE_IO_TIMEOUT_SECONDS = 10  # 文件IO超时时间（秒）
 
     # ==================== 交易配置常量 ====================
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
@@ -453,13 +491,13 @@ class AUTOBN:
         def save_on_exit():
             """脚本退出时保存alert_all数据到文件"""
             try:
-                obj.logger.info(f"脚本退出,正在保存BN数据到 {obj.alert_all_file}...")
+                obj.logger.info(f"脚本退出,正在保存AUTOBN数据到 {obj.alert_all_file}...")
                 with open(obj.alert_all_file, "w", encoding="utf-8") as f:
                     json.dump(obj.alert_all, f, ensure_ascii=False, indent=4)
-                obj.logger.info("BN数据保存完成")
+                obj.logger.info("AUTOBN数据保存完成")
             except Exception as e:
-                obj.logger.error(f"保存BN数据失败: {str(e)}")
-                obj.logger.exception("保存BN数据时发生异常")
+                obj.logger.error(f"保存AUTOBN数据失败: {str(e)}")
+                obj.logger.exception("保存AUTOBN数据时发生异常")
 
         atexit.register(save_on_exit)
 
@@ -564,7 +602,7 @@ class AUTOBN:
             )
         )
 
-    def send_msg(
+    async def send_msg(
         self, msg: str, wx: bool = False, qy_key: Optional[str] = None
     ) -> None:
         """
@@ -583,36 +621,38 @@ class AUTOBN:
         try:
             self.logger.info(f"发送消息: {msg}")
 
-            if wx:
-                # 微信发送格式：使用微信API接口
-                json_msg = {
-                    "MsgItem": [
-                        {
-                            "AtWxIDList": ["string"],
-                            "ImageContent": "",
-                            "MsgType": 0,
-                            "TextContent": msg,
-                            "ToUserName": self.user_name,
-                        }
-                    ]
-                }
-                response = session.post(
-                    f"http://wechatpadpro:1238/message/SendTextMessage?key={self.wx_key}",
-                    json=json_msg,
-                )
-            else:
-                # 企业微信发送格式：使用企业微信机器人webhook
+            def _post_message():
+                if wx:
+                    json_msg = {
+                        "MsgItem": [
+                            {
+                                "AtWxIDList": ["string"],
+                                "ImageContent": "",
+                                "MsgType": 0,
+                                "TextContent": msg,
+                                "ToUserName": self.user_name,
+                            }
+                        ]
+                    }
+                    return session.post(
+                        f"http://wechatpadpro:1238/message/SendTextMessage?key={self.wx_key}",
+                        json=json_msg,
+                        timeout=self.MESSAGE_TIMEOUT_SECONDS,
+                    )
+
                 json_msg = {"msgtype": "text", "text": {"content": msg}}
-                response = session.post(
+                return session.post(
                     url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={qy_key or self.qy_key}",
                     json=json_msg,
+                    timeout=self.MESSAGE_TIMEOUT_SECONDS,
                 )
 
-            # 检查发送结果，失败时记录状态码
+            response = await asyncio.wait_for(
+                asyncio.to_thread(_post_message), timeout=self.MESSAGE_TIMEOUT_SECONDS
+            )
             if response.status_code != 200:
                 self.logger.error(f"消息发送失败，状态码: {response.status_code}")
         except Exception as e:
-            # 异常处理：记录错误但不中断程序运行
             self.logger.error(f"消息发送异常: {str(e)}")
 
     async def calculate_health_bn(self, notional, account_data=None) -> int:
@@ -646,7 +686,10 @@ class AUTOBN:
     async def _call_api(self, method, *args, **kwargs):
         """统一异步调用入口，兼容 PAPI ApiResponse 和普通返回值"""
         async with self._api_semaphore:
-            result = await asyncio.to_thread(method, *args, **kwargs)
+            result = await asyncio.wait_for(
+                asyncio.to_thread(method, *args, **kwargs),
+                timeout=self.MARKET_ANALYSIS_TIMEOUT,
+            )
             return self._unwrap_api_response(result)
 
     async def _call_um(self, method, *args, **kwargs):
@@ -716,31 +759,31 @@ class AUTOBN:
 
             balance = float(account_data["availableBalance"])
             if balance <= 0:
-                self.send_msg(f"{symbol} 开仓失败：可用余额为零")
+                await self.send_msg(f"{symbol} 开仓失败：可用余额为零")
                 return None
 
             if not mark_price_data:
-                self.send_msg(f"{symbol} 开仓失败：无法获取标记价格")
+                await self.send_msg(f"{symbol} 开仓失败：无法获取标记价格")
                 return None
 
             markPrice = float(mark_price_data["markPrice"])
 
             if symbol not in self.symbols_info:
-                self.send_msg(f"{symbol} 开仓失败：找不到交易对信息")
+                await self.send_msg(f"{symbol} 开仓失败：找不到交易对信息")
                 return None
 
             if stop_loss_price is None or stop_loss_price <= 0:
-                self.send_msg(f"{symbol} 开仓失败：未提供有效止损价格")
+                await self.send_msg(f"{symbol} 开仓失败：未提供有效止损价格")
                 return None
             if take_profit_price is None or take_profit_price <= 0:
-                self.send_msg(f"{symbol} 开仓失败：未提供有效止盈价格")
+                await self.send_msg(f"{symbol} 开仓失败：未提供有效止盈价格")
                 return None
 
             stop_loss_gap = abs(markPrice - stop_loss_price)
             take_profit_gap = abs(take_profit_price - markPrice)
 
             if stop_loss_gap <= 0 or take_profit_gap <= 0:
-                self.send_msg(f"{symbol} 开仓失败：止损/止盈距离为零")
+                await self.send_msg(f"{symbol} 开仓失败：止损/止盈距离为零")
                 return None
 
             total_balance = float(account_data["totalWalletBalance"])
@@ -798,7 +841,7 @@ class AUTOBN:
             )
             rate_show = abs(take_profit_price - markPrice) / markPrice
             msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n账户余额:{total_balance:.2f}\n仓位比例:{notional / total_balance:.2%}\n收益率:{rate_show:.2%}"
-            self.send_msg(msg)
+            await self.send_msg(msg)
             return account_data
         except Exception as e:
             error_msg = f"{symbol} 开仓失败：{str(e)}"
@@ -868,9 +911,9 @@ class AUTOBN:
                 pnl_percent = price_diff / entryPrice if entryPrice != 0 else 0
                 strategy_tag = ",".join([ps.value for ps in close_info.strategy])
                 msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}\n平仓依据:{close_info.close_reason}"
-                self.send_msg(msg)
+                await self.send_msg(msg)
 
-                CloseRecordManager.record_close(
+                await CloseRecordManager.record_close_async(
                     source="AUTOBN",
                     symbol=symbol,
                     position_side=positionSide,
@@ -911,7 +954,7 @@ class AUTOBN:
                 await asyncio.sleep(self.CLOSE_RETRY_DELAY)
                 self.logger.exception(f"平仓 {symbol} 失败，当前价格: {price_close}")
                 msg = f"bn平仓{symbol}失败，当前价格:{price_close}"
-                self.send_msg(msg)
+                await self.send_msg(msg)
                 current_amount_price = await self.get_amount_close(symbol)
                 close_amount = current_amount_price[0] * close_ratio
                 close_amount = float(
@@ -1519,11 +1562,14 @@ class AUTOBN:
                     )
                 else:
                     sl_ref_price = prev_close_price
-                sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
-                    not is_long and sl_ref_price >= close_info.stop_loss
+                skip_initial_stop_loss = (
+                    not close_info.close_reason and PositionSide.N in close_info.strategy
                 )
-                if not close_info.close_reason and PositionSide.N in close_info.strategy:
-                    sl_triggered = False
+                sl_triggered = False
+                if not skip_initial_stop_loss:
+                    sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
+                        not is_long and sl_ref_price >= close_info.stop_loss
+                    )
                 # 止盈触发条件
                 tp_triggered = (
                     is_long and current_price >= close_info.take_profit
@@ -1861,11 +1907,11 @@ class AUTOBN:
                             rate_show = (
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
-                            self.send_msg(
+                            await self.send_msg(
                                 f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
                                 qy_key=self.signal_qy_key,
                             )
-                            self.send_msg(
+                            await self.send_msg(
                                 f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.BUY
@@ -1902,11 +1948,11 @@ class AUTOBN:
                             rate_show = (
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
-                            self.send_msg(
+                            await self.send_msg(
                                 f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
                                 qy_key=self.signal_qy_key,
                             )
-                            self.send_msg(
+                            await self.send_msg(
                                 f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.SELL
@@ -2118,12 +2164,12 @@ class AUTOBN:
         except asyncio.TimeoutError:
             error_msg = f"{market} 市场分析任务超时(5分钟)，已强制中断"
             self.logger.error(error_msg)
-            self.send_msg(error_msg)
+            await self.send_msg(error_msg)
         except Exception as e:
             error_msg = f"{market} 市场分析任务异常: {str(e)}"
             self.logger.error(error_msg)
             self.logger.exception("市场分析任务发生异常")
-            self.send_msg(error_msg)
+            await self.send_msg(error_msg)
 
     async def _rzq_market_impl(self, market):
         """市场分析的实际实现"""
@@ -2153,10 +2199,17 @@ class AUTOBN:
             )
             balance_info = self._normalize_account_info(balance_info)
             balance = balance_info["totalWalletBalance"]
-            self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
+            await self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
             self.logger.info("账户信息推送任务执行完成")
-            with open(self.alert_all_file, "w", encoding="utf-8") as f:
-                json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
+
+            def _write_alert_all_sync():
+                with open(self.alert_all_file, "w", encoding="utf-8") as f:
+                    json.dump(self.alert_all, f, ensure_ascii=False, indent=4)
+
+            await asyncio.wait_for(
+                asyncio.to_thread(_write_alert_all_sync),
+                timeout=self.FILE_IO_TIMEOUT_SECONDS,
+            )
         # 创建信号量，限制最大并发数，避免API限制
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
 
@@ -2228,6 +2281,13 @@ class AUTOA:
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
     MARKET_CLOSE_MINUTE = 5  # A股收盘分钟
     MONITOR_TIMEOUT = 600  # 股票监控超时时间（秒）
+    BATCH_WINDOW_MINUTES = 5  # 分批窗口时长（分钟）
+    BATCH_SLOT_COUNT = 5  # 窗口内批次数（每分钟一批）
+    MAX_CONCURRENT_REQUESTS = 8  # 最大并发请求数
+    HTTP_TIMEOUT_SECONDS = 10  # HTTP请求超时时间（秒）
+    FILE_IO_TIMEOUT_SECONDS = 10  # 文件IO超时时间（秒）
+    AKSHARE_TIMEOUT_SECONDS = 15  # akshare请求超时时间（秒）
+    BAOSTOCK_TIMEOUT_SECONDS = 15  # baostock请求超时时间（秒）
 
     # ==================== 均线与筛选常量 ====================
     MA_PERIOD = 10  # 均线周期
@@ -2245,6 +2305,9 @@ class AUTOA:
     alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
     zt_dates = []
     hist_cache = {}
+    _batch_window_id = None
+    _batch_observations_snapshot = []
+    _http_session = None
     # 添加线程锁以保护 baostock 查询操作(baostock 不是线程安全的)
     _bs_lock = threading.Lock()
     logger = logging.getLogger("AUTOA")
@@ -2255,13 +2318,13 @@ class AUTOA:
     def _save_alert_all_on_exit():
         """脚本退出时保存AUTOA的alert_all数据到文件"""
         try:
-            AUTOA.logger.info(f"脚本退出,正在保存A股数据到 {AUTOA.alert_all_file}...")
+            AUTOA.logger.info(f"脚本退出,正在保存AUTOA数据到 {AUTOA.alert_all_file}...")
             with open(AUTOA.alert_all_file, "w", encoding="utf-8") as f:
                 json.dump(AUTOA.alert_all, f, ensure_ascii=False, indent=4)
-            AUTOA.logger.info("A股数据保存完成")
+            AUTOA.logger.info("AUTOA数据保存完成")
         except Exception as e:
-            AUTOA.logger.error(f"保存A股数据失败: {str(e)}")
-            AUTOA.logger.exception("保存A股数据时发生异常")
+            AUTOA.logger.error(f"保存AUTOA数据失败: {str(e)}")
+            AUTOA.logger.exception("保存AUTOA数据时发生异常")
 
     @classmethod
     def calculate_atr(cls, hist_data, period=None):
@@ -2454,7 +2517,14 @@ class AUTOA:
         return result
 
     @classmethod
-    def send_msg(cls, msg):
+    async def _get_http_session(cls):
+        if cls._http_session is None or cls._http_session.closed:
+            timeout = aiohttp.ClientTimeout(total=cls.HTTP_TIMEOUT_SECONDS)
+            cls._http_session = aiohttp.ClientSession(timeout=timeout)
+        return cls._http_session
+
+    @classmethod
+    async def send_msg(cls, msg):
         """
         发送消息通知函数
 
@@ -2463,20 +2533,16 @@ class AUTOA:
             msg: 要发送的消息内容
         """
         try:
-            # 记录发送时间，便于调试和追踪
             cls.logger.info(f"发送消息: {msg}")
-            # 企业微信发送格式：使用企业微信机器人webhook
             json_msg = {"msgtype": "text", "text": {"content": msg}}
-            response = session.post(
+            http_session = await cls._get_http_session()
+            async with http_session.post(
                 url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={cls.qy_key}",
                 json=json_msg,
-            )
-
-            # 检查发送结果，失败时记录状态码
-            if response.status_code != 200:
-                cls.logger.error(f"消息发送失败，状态码: {response.status_code}")
+            ) as response:
+                if response.status != 200:
+                    cls.logger.error(f"消息发送失败，状态码: {response.status}")
         except Exception as e:
-            # 异常处理：记录错误但不中断程序运行
             cls.logger.error(f"消息发送异常: {str(e)}")
 
     @classmethod
@@ -2485,7 +2551,7 @@ class AUTOA:
         try:
             positions = cls.alert_all.get("POSITIONS", {})
             if not positions:
-                cls.send_msg("账户余额:\nN/A\n持仓信息:\n暂无持仓")
+                await cls.send_msg("账户余额:\nN/A\n持仓信息:\n暂无持仓")
                 return
 
             positions_data = []
@@ -2502,12 +2568,12 @@ class AUTOA:
                     f"开仓日期:{close_info.date}"
                 )
 
-            cls.send_msg("账户余额:\nN/A\n持仓信息:\n" + "\n\n".join(positions_data))
+            await cls.send_msg("账户余额:\nN/A\n持仓信息:\n" + "\n\n".join(positions_data))
         except Exception:
             cls.logger.exception("A股每日持仓推送失败")
 
     @staticmethod
-    def get_last_trading_days(today=None, days=None):
+    async def get_last_trading_days(today=None, days=None):
         """
         获取A股交易日历
 
@@ -2527,7 +2593,10 @@ class AUTOA:
 
         try:
             # 从新浪财经获取交易日历
-            trade_dates = ak.tool_trade_date_hist_sina()
+            trade_dates = await asyncio.wait_for(
+                asyncio.to_thread(ak.tool_trade_date_hist_sina),
+                timeout=AUTOA.AKSHARE_TIMEOUT_SECONDS,
+            )
             trade_dates = pd.to_datetime(trade_dates["trade_date"])
 
             # 过滤出不晚于指定日期的交易日
@@ -2557,7 +2626,6 @@ class AUTOA:
         adjustflag="3",
     ):
         try:
-            loop = asyncio.get_running_loop()
             code_pre = "sh" if code[0] == "6" else "sz"
             cls.logger.debug(f"stock_zh_a_hist 调用: code={code}, code_pre={code_pre}")
             if code in cls.hist_cache:
@@ -2608,17 +2676,19 @@ class AUTOA:
                     )
                     return dl
 
-                data_list = await loop.run_in_executor(
-                    None,
-                    fetch_bs_data,
-                    code_pre,
-                    code,
-                    fields,
-                    start_date,
-                    end_date,
-                    frequency,
-                    adjustflag,
-                    cls._bs_lock,
+                data_list = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        fetch_bs_data,
+                        code_pre,
+                        code,
+                        fields,
+                        start_date,
+                        end_date,
+                        frequency,
+                        adjustflag,
+                        cls._bs_lock,
+                    ),
+                    timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
                 )
                 if data_list:
                     # 检查data_list中的股票代码
@@ -2634,22 +2704,21 @@ class AUTOA:
             if not data_list:
                 return pd.DataFrame()
 
-            def fetch_sina_data(stock_code_pre, stock_code):
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Referer": "https://finance.sina.com.cn/",
-                }
-                dl = []
-                try:
-                    dl = requests.get(
-                        url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={stock_code_pre}{stock_code}",
-                        headers=headers,
-                    ).json()["result"]["data"]
-                except Exception:
-                    pass
-                return dl
-
-            res = await loop.run_in_executor(None, fetch_sina_data, code_pre, code)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://finance.sina.com.cn/",
+            }
+            res = []
+            try:
+                http_session = await cls._get_http_session()
+                async with http_session.get(
+                    url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}",
+                    headers=headers,
+                ) as response:
+                    payload = await response.json(content_type=None)
+                    res = payload.get("result", {}).get("data", [])
+            except Exception:
+                pass
             if not res:
                 return pd.DataFrame()
             hist_today = pd.DataFrame(res, columns=["m", "v", "p", "avg_p"])
@@ -2720,8 +2789,11 @@ class AUTOA:
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
         prev_close = float(hist.iloc[-2]["close"]) if len(hist) > 1 else price_close
+        skip_initial_stop_loss = (
+            not close_info.close_reason and PositionSide.N in close_info.strategy
+        )
         stop_loss_triggered = price_close <= close_info.stop_loss
-        if not close_info.close_reason:
+        if not close_info.close_reason and not skip_initial_stop_loss:
             stop_loss_triggered = (
                 price_close <= close_info.stop_loss
                 and prev_close <= close_info.stop_loss
@@ -2743,10 +2815,10 @@ class AUTOA:
             realized_pnl = (price_close - entry_price) * cls.DEFAULT_POSITION_SHARES
             strategy_tag = ",".join([ps.value for ps in close_info.strategy])
             msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}\n平仓依据:{close_info.close_reason}"
-            cls.send_msg(msg)
+            await cls.send_msg(msg)
 
             # 记录平仓到Excel
-            CloseRecordManager.record_close(
+            await CloseRecordManager.record_close_async(
                 source="AUTOA",
                 symbol=f"{close_info.name} {code}",
                 position_side="LONG",  # A股默认做多
@@ -2782,7 +2854,7 @@ class AUTOA:
                     f"止盈:{close_info.take_profit:.2f}\n"
                     f"止损:{close_info.stop_loss:.2f}"
                 )
-                cls.send_msg(msg)
+                await cls.send_msg(msg)
                 close_info.entry_price = (close_info.entry_price + price_close) / 2
                 dca_count = sum(
                     1
@@ -2942,13 +3014,13 @@ class AUTOA:
 
                 # 5. 发送买入通知
                 msg = (
-                    f"==={open_info.name}**{','.join(open_info.strategy)}**===\n"
+                    f"==={open_info.name}**{','.join([ps.value for ps in open_info.strategy])}**===\n"
                     f"价格:{price_close:.2f}\n"
                     f"止盈:{take_profit:.2f}\n"
                     f"止损:{stop_loss:.2f}\n"
                     f"收益率:{atr_percent:.2%}\n"
                 )
-                cls.send_msg(msg)
+                await cls.send_msg(msg)
 
                 # 6. 从观察列表移除
                 cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
@@ -2983,14 +3055,24 @@ class AUTOA:
         ):
             return []
         if not cls.zt_dates:
-            cls.zt_dates = cls.get_last_trading_days(today)
+            cls.zt_dates = await cls.get_last_trading_days(today)
             if not cls.zt_dates:
                 return []
         selected = set()  # 存储符合条件的股票
         if today.hour == cls.MARKET_CLOSE_HOUR:
-            with open(cls.alert_all_file, "w", encoding="utf-8") as f:
-                json.dump(cls.alert_all, f, ensure_ascii=False, indent=4)
-            zt_df = ak.stock_zt_pool_em(date=cls.zt_dates[0].replace("-", ""))
+            async def _write_alert_all_async():
+                async with aiofiles.open(cls.alert_all_file, "w", encoding="utf-8") as f:
+                    await f.write(json.dumps(cls.alert_all, ensure_ascii=False, indent=4))
+
+            await asyncio.wait_for(
+                _write_alert_all_async(), timeout=cls.FILE_IO_TIMEOUT_SECONDS
+            )
+            zt_df = await asyncio.wait_for(
+                asyncio.to_thread(
+                    ak.stock_zt_pool_em, date=cls.zt_dates[0].replace("-", "")
+                ),
+                timeout=cls.AKSHARE_TIMEOUT_SECONDS,
+            )
             stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
             for code in stock_codes:
                 hist = await cls.stock_zh_a_hist(
@@ -3028,18 +3110,60 @@ class AUTOA:
             cls.hist_cache.clear()
             return selected
 
-        # 创建异步任务列表，并发处理持仓和观察列表
-        tasks = [
-            cls.on_positions(code, cls.zt_dates, close_info, today)
-            for code, close_info in cls.alert_all["POSITIONS"].items()
-        ] + [
-            cls.on_observations(code, cls.zt_dates, open_info, today)
-            for code, open_info in cls.alert_all["OBSERVATIONS"].items()
-            if code not in cls.alert_all["POSITIONS"]
+        semaphore = asyncio.Semaphore(cls.MAX_CONCURRENT_REQUESTS)
+        window_seconds = cls.BATCH_WINDOW_MINUTES * 60
+        window_id = int(today.timestamp() // window_seconds)
+        slot = today.minute % cls.BATCH_SLOT_COUNT
+
+        if cls._batch_window_id != window_id:
+            cls._batch_window_id = window_id
+            cls._batch_observations_snapshot = sorted(
+                [
+                    code
+                    for code in cls.alert_all["OBSERVATIONS"].keys()
+                    if code not in cls.alert_all["POSITIONS"]
+                ]
+            )
+
+        observation_snapshot = cls._batch_observations_snapshot
+        batch_observation_codes = [
+            code
+            for index, code in enumerate(observation_snapshot)
+            if index % cls.BATCH_SLOT_COUNT == slot
         ]
-        # 等待所有任务完成
-        await asyncio.gather(*tasks)
+        position_symbols = list(cls.alert_all["POSITIONS"].keys())
+        effective_symbols = list(dict.fromkeys(batch_observation_codes + position_symbols))
+
+        cls.logger.info(
+            f"A任务开始 - window:{window_id} slot:{slot}/{cls.BATCH_SLOT_COUNT} "
+            f"快照数量:{len(observation_snapshot)} 批次数量:{len(batch_observation_codes)} "
+            f"持仓数量:{len(position_symbols)} 实际处理数量:{len(effective_symbols)}"
+        )
+
+        success = set()
+
+        async def _run_symbol(code):
+            async with semaphore:
+                if code in cls.alert_all["POSITIONS"]:
+                    close_info = cls.alert_all["POSITIONS"].get(code)
+                    if close_info is None:
+                        return
+                    await cls.on_positions(code, cls.zt_dates, close_info, today)
+                else:
+                    open_info = cls.alert_all["OBSERVATIONS"].get(code)
+                    if open_info is None:
+                        return
+                    await cls.on_observations(code, cls.zt_dates, open_info, today)
+                success.add(code)
+
+        tasks = [_run_symbol(code) for code in effective_symbols]
+        if tasks:
+            await asyncio.gather(*tasks)
         gc.collect()  # 垃圾回收，释放内存
+        cls.logger.info(
+            f"A任务结束 - window:{window_id} slot:{slot}/{cls.BATCH_SLOT_COUNT} "
+            f"批次成功数量:{len(success)}"
+        )
         return selected
 
     @classmethod
@@ -3050,28 +3174,31 @@ class AUTOA:
         功能：筛选符合条件的A股股票，并通过企业微信发送通知
         策略：低吸策略，寻找回调买入机会
         """
+        start_ts = time.time()
         try:
             # 设置超时时间为10分钟，防止任务卡住
             cls.logger.info("A股监控任务开始")
             await asyncio.wait_for(
                 cls._monitor_stocks_impl(), timeout=cls.MONITOR_TIMEOUT
             )
+            cls.logger.info(f"A股监控任务结束，总耗时:{time.time() - start_ts:.2f}s")
         except asyncio.TimeoutError:
             error_msg = "A股监控任务超时(10分钟)，已强制中断"
             cls.logger.error(error_msg)
-            cls.send_msg(error_msg)
+            await cls.send_msg(error_msg)
         except Exception as e:
             error_msg = f"A股监控任务异常: {str(e)}"
             cls.logger.error(error_msg)
             cls.logger.exception("A股监控任务发生异常")
-            cls.send_msg(error_msg)
+            await cls.send_msg(error_msg)
 
     @classmethod
     async def _monitor_stocks_impl(cls):
         """A股监控的实际实现"""
         # 登录系统（使用异步执行，避免阻塞事件循环）
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, bs.login)
+        await asyncio.wait_for(
+            asyncio.to_thread(bs.login), timeout=cls.BAOSTOCK_TIMEOUT_SECONDS
+        )
         try:
             # 筛选符合量能条件的股票
             filtered = await cls.filter_stocks()
@@ -3084,11 +3211,14 @@ class AUTOA:
                     filtered
                 )
                 # 发送到企业微信群
-                cls.send_msg(content)
+                await cls.send_msg(content)
 
         finally:
             # 确保总是登出，即使发生异常（使用异步执行）
-            await loop.run_in_executor(None, bs.logout)
+            await asyncio.wait_for(
+                asyncio.to_thread(bs.logout),
+                timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
+            )
 
 
 # 注册AUTOA的退出处理函数,在脚本退出时保存A股数据
@@ -3156,7 +3286,7 @@ async def main():
         AUTOA.monitor_stocks,  # 执行的函数
         "cron",  # 调度类型：按日历规则
         hour="09-15",  # 交易时段：09:00 - 15:00
-        minute="*/5",  # 每5分钟执行一次
+        minute="*",  # 每分钟执行一次
         second="00",  # 整点秒数
         day_of_week="mon-fri",  # 周一至周五（交易日）
         timezone="Asia/Shanghai",  # 上海时区
