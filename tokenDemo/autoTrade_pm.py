@@ -2313,8 +2313,8 @@ class AUTOA:
     _batch_window_id = None
     _batch_observations_snapshot = []
     _http_session = None
-    # 添加线程锁以保护 baostock 查询操作(baostock 不是线程安全的)
-    _bs_lock = threading.Lock()
+    # 使用协程锁在进入线程前串行化 baostock 查询，避免等待锁的时间也计入单标的超时
+    _bs_async_lock = None
     logger = logging.getLogger("AUTOA")
     logger.setLevel(logging.INFO)  # 默认级别
     logger.propagate = False  # 防止日志向上层传播导致重复
@@ -2537,6 +2537,12 @@ class AUTOA:
         return cls._http_session
 
     @classmethod
+    def _get_bs_async_lock(cls):
+        if cls._bs_async_lock is None:
+            cls._bs_async_lock = asyncio.Lock()
+        return cls._bs_async_lock
+
+    @classmethod
     async def send_msg(cls, msg):
         """
         发送消息通知函数
@@ -2656,24 +2662,21 @@ class AUTOA:
                     e_date,
                     freq,
                     adj_flag,
-                    lock,
                 ):
                     cls.logger.debug(
                         f"fetch_bs_data 开始获取: {stock_code_pre}.{stock_code}"
                     )
-                    # 使用线程锁保护 baostock 查询（baostock 不是线程安全的）
-                    with lock:
-                        rs = bs.query_history_k_data_plus(
-                            f"{stock_code_pre}.{stock_code}",  # 股票代码
-                            flds,
-                            start_date=s_date,
-                            end_date=e_date,
-                            frequency=freq,  # 日K
-                            adjustflag=adj_flag,  # 3：前复权；1：不复权；2：后复权
-                        )
-                        dl = []
-                        while (rs.error_code == "0") & rs.next():
-                            dl.append(rs.get_row_data())
+                    rs = bs.query_history_k_data_plus(
+                        f"{stock_code_pre}.{stock_code}",  # 股票代码
+                        flds,
+                        start_date=s_date,
+                        end_date=e_date,
+                        frequency=freq,  # 日K
+                        adjustflag=adj_flag,  # 3：前复权；1：不复权；2：后复权
+                    )
+                    dl = []
+                    while (rs.error_code == "0") & rs.next():
+                        dl.append(rs.get_row_data())
 
                     # 验证返回的数据
                     if dl and len(dl[0]) > 1:
@@ -2689,20 +2692,20 @@ class AUTOA:
                     )
                     return dl
 
-                data_list = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        fetch_bs_data,
-                        code_pre,
-                        code,
-                        fields,
-                        start_date,
-                        end_date,
-                        frequency,
-                        adjustflag,
-                        cls._bs_lock,
-                    ),
-                    timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-                )
+                async with cls._get_bs_async_lock():
+                    data_list = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            fetch_bs_data,
+                            code_pre,
+                            code,
+                            fields,
+                            start_date,
+                            end_date,
+                            frequency,
+                            adjustflag,
+                        ),
+                        timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
+                    )
                 if data_list:
                     # 检查data_list中的股票代码
                     actual_code_in_data = (
@@ -2775,8 +2778,10 @@ class AUTOA:
             hist["preclose"] = pd.to_numeric(hist["preclose"], errors="coerce")
             hist["涨跌幅"] = (hist["close"] - hist["preclose"]) / hist["preclose"]
             return hist
-        except Exception:
-            cls.logger.exception("获取股票历史数据时发生异常")
+        except Exception as e:
+            cls.logger.error(
+                f"{code} 获取股票历史数据失败: {type(e).__name__}: {e!r}"
+            )
             return pd.DataFrame()
 
     @classmethod
@@ -3135,8 +3140,10 @@ class AUTOA:
                         strategy=[],
                         name=code[1],  # 股票名称
                     ).model_dump()
-                except Exception:
-                    cls.logger.exception(f"{code[0]} 收盘更新观察列表时发生异常")
+                except Exception as e:
+                    cls.logger.error(
+                        f"{code[0]} 收盘更新观察列表失败: {type(e).__name__}: {e!r}"
+                    )
                     continue
 
             cls.zt_dates.clear()
@@ -3189,8 +3196,10 @@ class AUTOA:
                             return
                         await cls.on_observations(code, cls.zt_dates, open_info, today)
                     success.add(code)
-                except Exception:
-                    cls.logger.exception(f"{code} 处理失败，已跳过该标的")
+                except Exception as e:
+                    cls.logger.error(
+                        f"{code} 处理失败，已跳过该标的: {type(e).__name__}: {e!r}"
+                    )
 
         tasks = [_run_symbol(code) for code in effective_symbols]
         if tasks:
