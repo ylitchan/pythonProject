@@ -2053,7 +2053,8 @@ class AUTOBN:
                 if new_open_info:
                     self.alert_all["OBSERVATIONS"][symbol] = new_open_info.model_dump()
         except Exception:
-            self.logger.exception("处理持仓信息时发生异常")
+            success.discard(symbol)
+            self.logger.exception(f"处理标的 {symbol} 时发生异常")
             return
 
     def get_symbols_info(self, exchange_info=None):
@@ -2732,17 +2733,33 @@ class AUTOA:
                 pass
             if not res:
                 return pd.DataFrame()
-            hist_today = pd.DataFrame(res, columns=["m", "v", "p", "avg_p"])
+            if not isinstance(res[0], dict):
+                cls.logger.warning(f"{code} 分时数据格式异常: {type(res[0])}")
+                return pd.DataFrame()
+            hist_today = pd.DataFrame(res)
+            required_columns = ["m", "v", "p", "avg_p"]
+            if not set(required_columns).issubset(hist_today.columns):
+                cls.logger.warning(
+                    f"{code} 分时数据字段异常: {list(hist_today.columns)}"
+                )
+                return pd.DataFrame()
+            hist_today = hist_today[required_columns].copy()
             hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
-            volume = hist_today["v"].sum()
+            hist_today["p"] = pd.to_numeric(hist_today["p"], errors="coerce")
+            hist_today = hist_today.dropna(subset=["p"])
+            if hist_today.empty:
+                return pd.DataFrame()
+            volume = hist_today["v"].fillna(0).sum()
+            open_price = hist_today.iloc[0]["p"]
+            close_price = hist_today.iloc[-1]["p"]
             data_list.append(
                 [
                     end_date,
                     f"{code_pre}.{code}",
-                    res[0]["p"],
-                    res[-1]["p"],
-                    res[0]["p"],
-                    res[-1]["p"],
+                    open_price,
+                    close_price,
+                    open_price,
+                    close_price,
                     data_list[-1][5],
                     volume,
                     0,
@@ -3086,36 +3103,40 @@ class AUTOA:
             )
             stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
             for code in stock_codes:
-                hist = await cls.stock_zh_a_hist(
-                    code[0],  # 股票代码
-                    "date,code,open,high,low,close,preclose,volume,amount",
-                    start_date=cls.zt_dates[-1],
-                    end_date=cls.zt_dates[0],
-                    frequency="d",  # 日K
-                    adjustflag="3",  # 3：前复权；1：不复权；2：后复权
-                )
-                if hist.empty:
-                    continue
-                price_close = hist.iloc[-1]["close"]
-
-                # 已在观察列表且当日再次涨停：刷新观察时间（即使在持仓也允许更新）
-                if code[0] in cls.alert_all["OBSERVATIONS"]:
-                    open_info = Observation.model_validate(
-                        cls.alert_all["OBSERVATIONS"][code[0]]
+                try:
+                    hist = await cls.stock_zh_a_hist(
+                        code[0],  # 股票代码
+                        "date,code,open,high,low,close,preclose,volume,amount",
+                        start_date=cls.zt_dates[-1],
+                        end_date=cls.zt_dates[0],
+                        frequency="d",  # 日K
+                        adjustflag="3",  # 3：前复权；1：不复权；2：后复权
                     )
-                    open_info.price = float(price_close)
-                    open_info.timestamp = today.timestamp()
-                    cls.alert_all["OBSERVATIONS"][code[0]] = open_info.model_dump()
-                    continue
+                    if hist.empty:
+                        continue
+                    price_close = hist.iloc[-1]["close"]
 
-                selected.add(f"{code[1]}")
-                cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
-                    price=float(price_close),
-                    timestamp=today.timestamp(),
-                    side=OrderSide.BUY,
-                    strategy=[],
-                    name=code[1],  # 股票名称
-                ).model_dump()
+                    # 已在观察列表且当日再次涨停：刷新观察时间（即使在持仓也允许更新）
+                    if code[0] in cls.alert_all["OBSERVATIONS"]:
+                        open_info = Observation.model_validate(
+                            cls.alert_all["OBSERVATIONS"][code[0]]
+                        )
+                        open_info.price = float(price_close)
+                        open_info.timestamp = today.timestamp()
+                        cls.alert_all["OBSERVATIONS"][code[0]] = open_info.model_dump()
+                        continue
+
+                    selected.add(f"{code[1]}")
+                    cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
+                        price=float(price_close),
+                        timestamp=today.timestamp(),
+                        side=OrderSide.BUY,
+                        strategy=[],
+                        name=code[1],  # 股票名称
+                    ).model_dump()
+                except Exception:
+                    cls.logger.exception(f"{code[0]} 收盘更新观察列表时发生异常")
+                    continue
 
             cls.zt_dates.clear()
             cls.hist_cache.clear()
@@ -3155,17 +3176,20 @@ class AUTOA:
 
         async def _run_symbol(code):
             async with semaphore:
-                if code in cls.alert_all["POSITIONS"]:
-                    close_info = cls.alert_all["POSITIONS"].get(code)
-                    if close_info is None:
-                        return
-                    await cls.on_positions(code, cls.zt_dates, close_info, today)
-                else:
-                    open_info = cls.alert_all["OBSERVATIONS"].get(code)
-                    if open_info is None:
-                        return
-                    await cls.on_observations(code, cls.zt_dates, open_info, today)
-                success.add(code)
+                try:
+                    if code in cls.alert_all["POSITIONS"]:
+                        close_info = cls.alert_all["POSITIONS"].get(code)
+                        if close_info is None:
+                            return
+                        await cls.on_positions(code, cls.zt_dates, close_info, today)
+                    else:
+                        open_info = cls.alert_all["OBSERVATIONS"].get(code)
+                        if open_info is None:
+                            return
+                        await cls.on_observations(code, cls.zt_dates, open_info, today)
+                    success.add(code)
+                except Exception:
+                    cls.logger.exception(f"{code} 处理失败，已跳过该标的")
 
         tasks = [_run_symbol(code) for code in effective_symbols]
         if tasks:
