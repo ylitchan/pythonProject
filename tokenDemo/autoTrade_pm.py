@@ -1208,7 +1208,9 @@ class AUTOBN:
                 # 将所有数据转换为浮点数格式
                 return [list(map(float, sublist)) for sublist in kline]
             except Exception as e:
-                self.logger.error(f"{symbol}获取K线数据失败: {str(e)}")
+                self.logger.error(
+                    f"{symbol}获取K线数据失败: {type(e).__name__}: {e!r}"
+                )
                 # 获取失败时返回空列表
                 return []
 
@@ -1249,7 +1251,9 @@ class AUTOBN:
                     "timestamp": current_time,
                 }
             except Exception as e:
-                self.logger.error(f"{symbol}获取多空比数据失败: {str(e)}")
+                self.logger.error(
+                    f"{symbol}获取多空比数据失败: {type(e).__name__}: {e!r}"
+                )
                 # 如果获取失败但有旧缓存，返回旧数据
                 if cache_entry:
                     data = cache_entry["data"]
@@ -1263,7 +1267,9 @@ class AUTOBN:
                 limit=1,
             )
         except Exception as e:
-            self.logger.error(f"{symbol}获取多空比数据失败: {str(e)}")
+            self.logger.error(
+                    f"{symbol}获取多空比数据失败: {type(e).__name__}: {e!r}"
+                )
             data2 = []
         return data + data2
 
@@ -2149,11 +2155,14 @@ class AUTOBN:
         参数：
             market: 市场名称，如'BN'（币安）
         """
+        start_ts = time.time()
         try:
-            # 设置超时时间为5分钟，防止任务卡住
             self.logger.info(f"{market} 市场分析任务开始")
             await asyncio.wait_for(
                 self._rzq_market_impl(market), timeout=self.MARKET_ANALYSIS_TIMEOUT
+            )
+            self.logger.info(
+                f"{market} 市场分析任务结束，总耗时:{time.time() - start_ts:.2f}s"
             )
         except asyncio.TimeoutError:
             error_msg = (
