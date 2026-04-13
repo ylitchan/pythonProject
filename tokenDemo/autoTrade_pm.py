@@ -21,7 +21,6 @@ import aiohttp
 import akshare as ak
 import baostock as bs
 import pandas as pd
-import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from binance_common.configuration import ConfigurationRestAPI
 from binance_sdk_derivatives_trading_portfolio_margin.derivatives_trading_portfolio_margin import (
@@ -105,12 +104,6 @@ class Observation(BaseModel):
     side: OrderSide
     strategy: List[PositionSide]
     name: str
-
-
-# HTTP 会话配置（可覆盖）
-session = requests.Session()
-session.verify = False
-session.headers = {"Content-Type": "application/json"}
 
 
 # ==================== 平仓记录管理 ====================
@@ -621,38 +614,37 @@ class AUTOBN:
         """
         try:
             self.logger.info(f"发送消息: {msg}")
+            timeout = aiohttp.ClientTimeout(total=self.MESSAGE_TIMEOUT_SECONDS)
 
-            def _post_message():
-                if wx:
-                    json_msg = {
-                        "MsgItem": [
-                            {
-                                "AtWxIDList": ["string"],
-                                "ImageContent": "",
-                                "MsgType": 0,
-                                "TextContent": msg,
-                                "ToUserName": self.user_name,
-                            }
-                        ]
-                    }
-                    return session.post(
-                        f"http://wechatpadpro:1238/message/SendTextMessage?key={self.wx_key}",
-                        json=json_msg,
-                        timeout=self.MESSAGE_TIMEOUT_SECONDS,
-                    )
-
+            if wx:
+                json_msg = {
+                    "MsgItem": [
+                        {
+                            "AtWxIDList": ["string"],
+                            "ImageContent": "",
+                            "MsgType": 0,
+                            "TextContent": msg,
+                            "ToUserName": self.user_name,
+                        }
+                    ]
+                }
+                url = (
+                    f"http://wechatpadpro:1238/message/SendTextMessage?key={self.wx_key}"
+                )
+            else:
                 json_msg = {"msgtype": "text", "text": {"content": msg}}
-                return session.post(
-                    url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={qy_key or self.qy_key}",
-                    json=json_msg,
-                    timeout=self.MESSAGE_TIMEOUT_SECONDS,
+                url = (
+                    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
+                    f"{qy_key or self.qy_key}"
                 )
 
-            response = await asyncio.wait_for(
-                asyncio.to_thread(_post_message), timeout=self.MESSAGE_TIMEOUT_SECONDS
-            )
-            if response.status_code != 200:
-                self.logger.error(f"消息发送失败，状态码: {response.status_code}")
+            async with aiohttp.ClientSession(timeout=timeout) as http_session:
+                async with http_session.post(url=url, json=json_msg) as response:
+                    if response.status != 200:
+                        response_text = await response.text()
+                        self.logger.error(
+                            f"消息发送失败，状态码: {response.status}，响应: {response_text}"
+                        )
         except Exception as e:
             self.logger.error(f"消息发送异常: {str(e)}")
 
