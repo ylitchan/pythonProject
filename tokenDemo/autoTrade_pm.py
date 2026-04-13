@@ -336,7 +336,8 @@ class AUTOBN:
     # ==================== 任务控制常量 ====================
     MAX_RETRY_COUNT = 10  # 最大重试次数
     EARLY_MORNING_HOUR = 8  # 早盘检测小时
-    MARKET_ANALYSIS_TIMEOUT = 300  # 市场分析超时时间（秒）
+    MARKET_ANALYSIS_TIMEOUT = 55  # 市场分析任务总超时时间（秒）
+    API_TIMEOUT_SECONDS = 15  # 单次API调用超时时间（秒）
     BATCH_WINDOW_MINUTES = 5  # 分批窗口时长（分钟）
     BATCH_SLOT_COUNT = 5  # 窗口内批次数（每分钟一批）
     MESSAGE_TIMEOUT_SECONDS = 10  # 消息发送超时时间（秒）
@@ -688,7 +689,7 @@ class AUTOBN:
         async with self._api_semaphore:
             result = await asyncio.wait_for(
                 asyncio.to_thread(method, *args, **kwargs),
-                timeout=self.MARKET_ANALYSIS_TIMEOUT,
+                timeout=self.API_TIMEOUT_SECONDS,
             )
             return self._unwrap_api_response(result)
 
@@ -2162,7 +2163,9 @@ class AUTOBN:
                 self._rzq_market_impl(market), timeout=self.MARKET_ANALYSIS_TIMEOUT
             )
         except asyncio.TimeoutError:
-            error_msg = f"{market} 市场分析任务超时(5分钟)，已强制中断"
+            error_msg = (
+                f"{market} 市场分析任务超时({self.MARKET_ANALYSIS_TIMEOUT}秒)，已强制中断"
+            )
             self.logger.error(error_msg)
             await self.send_msg(error_msg)
         except Exception as e:
@@ -2280,7 +2283,7 @@ class AUTOA:
     MARKET_OPEN_MINUTE = 30  # A股开盘分钟
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
     MARKET_CLOSE_MINUTE = 5  # A股收盘分钟
-    MONITOR_TIMEOUT = 600  # 股票监控超时时间（秒）
+    MONITOR_TIMEOUT = 55  # 股票监控任务总超时时间（秒）
     BATCH_WINDOW_MINUTES = 5  # 分批窗口时长（分钟）
     BATCH_SLOT_COUNT = 5  # 窗口内批次数（每分钟一批）
     MAX_CONCURRENT_REQUESTS = 8  # 最大并发请求数
@@ -3191,7 +3194,7 @@ class AUTOA:
             )
             cls.logger.info(f"A股监控任务结束，总耗时:{time.time() - start_ts:.2f}s")
         except asyncio.TimeoutError:
-            error_msg = "A股监控任务超时(10分钟)，已强制中断"
+            error_msg = f"A股监控任务超时({cls.MONITOR_TIMEOUT}秒)，已强制中断"
             cls.logger.error(error_msg)
             await cls.send_msg(error_msg)
         except Exception as e:
