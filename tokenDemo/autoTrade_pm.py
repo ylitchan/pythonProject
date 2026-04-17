@@ -290,7 +290,8 @@ class AUTOBN:
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
     LONG_SHORT_RATIO_LONG_LIMIT = 3 / 7  # LONG额外放行阈值（多空比）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
-    OI_DELTA_LONG_RATIO_WEIGHT = 0.5  # LONG融合公式中(oi_5m-oi_1h)项权重
+    LONG_SHORT_RATIO_EXTREME_LOOKBACK = 10  # LONG极值判定回看窗口（不含当前值）
+    OI_DELTA_LONG_RATIO_WEIGHT = 0.55  # LONG融合公式中(oi_5m-oi_1h)项权重
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
@@ -340,7 +341,7 @@ class AUTOBN:
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
-    OPEN_LONG_SHORT_RATIO_THRESHOLD = 55 / 45
+    OPEN_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
     DCA_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
@@ -1094,7 +1095,12 @@ class AUTOBN:
                 if positionSide == PositionSide.LONG.value:
                     if lsrd >= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
                         return False, None, None
-                    long_extreme = len(lsr_values) >= 2 and lsrd <= min(lsr_values[:-1])
+                    recent_lsr_values = lsr_values[
+                        -self.LONG_SHORT_RATIO_EXTREME_LOOKBACK : -1
+                    ]
+                    long_extreme = (
+                        len(recent_lsr_values) > 0 and lsrd <= min(recent_lsr_values)
+                    )
                     long_ratio_cond = lsrd < self.LONG_SHORT_RATIO_LONG_LIMIT
                     # 做多：极值条件 或 多空比阈值条件
                     if not (long_extreme or long_ratio_cond):
