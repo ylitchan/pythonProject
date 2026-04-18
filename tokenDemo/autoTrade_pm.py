@@ -80,9 +80,9 @@ class Position(BaseModel):
     date: int
     strategy: List[PositionSide]
     tp_count: int = 0  # 止盈次数，每次部分止盈后+1，衰减加速系数
-    oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，DCA时用于风控）
+    oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，初始止损绕过判断时用于风控）
     close_reason: str = (
-        ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损/DCA多空比异常且OI不满足等）
+        ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损等）
     )
 
 
@@ -342,7 +342,7 @@ class AUTOBN:
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
     OPEN_LONG_SHORT_RATIO_THRESHOLD = 55 / 45
-    DCA_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
+    INITIAL_STOP_LOSS_BYPASS_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
 
@@ -1014,9 +1014,6 @@ class AUTOBN:
         return close_info.oi_guard_threshold
 
     async def _should_bypass_initial_stop_loss(self, symbol, close_info, dtn: datetime):
-        if PositionSide.N in close_info.strategy:
-            return True
-
         long_short_ratio_data = await self.get_long_short_ratio(symbol)
         latest_lsr = None
         if long_short_ratio_data:
@@ -1026,22 +1023,25 @@ class AUTOBN:
                 latest_lsr = None
 
         if close_info.position_side.value == PositionSide.LONG.value:
-            lsr_ok = (
+            lsr_bypass_ok = (
                 latest_lsr is not None
-                and latest_lsr < self.DCA_LONG_SHORT_RATIO_THRESHOLD
+                and latest_lsr
+                < self.INITIAL_STOP_LOSS_BYPASS_LONG_SHORT_RATIO_THRESHOLD
             )
             await self._ensure_long_oi_guard_threshold(symbol, close_info, dtn)
-            oi_guard_ok = False
+            oi_bypass_ok = False
             if close_info.oi_guard_threshold > 0:
                 oi_5m = await self._get_oi_5m_data(symbol)
-                oi_guard_ok = (
+                oi_bypass_ok = (
                     oi_5m
                     and float(oi_5m[-1]["sumOpenInterest"])
                     > close_info.oi_guard_threshold
                 )
-            return lsr_ok or oi_guard_ok
+            return lsr_bypass_ok or oi_bypass_ok
 
-        return latest_lsr is not None and latest_lsr > self.DCA_LONG_SHORT_RATIO_THRESHOLD
+        return latest_lsr is not None and latest_lsr > (
+            self.INITIAL_STOP_LOSS_BYPASS_LONG_SHORT_RATIO_THRESHOLD
+        )
 
     async def check_side(
         self,
