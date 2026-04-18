@@ -1002,6 +1002,47 @@ class AUTOBN:
             }
         return oi_1h
 
+    async def _ensure_long_oi_guard_threshold(self, symbol, close_info, dtn: datetime):
+        if close_info.oi_guard_threshold > 0:
+            return close_info.oi_guard_threshold
+        oi_1h = await self._get_oi_1h_data(symbol, dtn)
+        if not oi_1h:
+            return close_info.oi_guard_threshold
+        oi_1h_values = [float(item["sumOpenInterest"]) for item in oi_1h]
+        if oi_1h_values:
+            close_info.oi_guard_threshold = min(oi_1h_values)
+        return close_info.oi_guard_threshold
+
+    async def _should_bypass_initial_stop_loss(self, symbol, close_info, dtn: datetime):
+        if PositionSide.N in close_info.strategy:
+            return True
+
+        long_short_ratio_data = await self.get_long_short_ratio(symbol)
+        latest_lsr = None
+        if long_short_ratio_data:
+            try:
+                latest_lsr = float(long_short_ratio_data[-1]["longShortRatio"])
+            except (KeyError, TypeError, ValueError):
+                latest_lsr = None
+
+        if close_info.position_side.value == PositionSide.LONG.value:
+            lsr_ok = (
+                latest_lsr is not None
+                and latest_lsr < self.DCA_LONG_SHORT_RATIO_THRESHOLD
+            )
+            await self._ensure_long_oi_guard_threshold(symbol, close_info, dtn)
+            oi_guard_ok = False
+            if close_info.oi_guard_threshold > 0:
+                oi_5m = await self._get_oi_5m_data(symbol)
+                oi_guard_ok = (
+                    oi_5m
+                    and float(oi_5m[-1]["sumOpenInterest"])
+                    > close_info.oi_guard_threshold
+                )
+            return lsr_ok or oi_guard_ok
+
+        return latest_lsr is not None and latest_lsr > self.DCA_LONG_SHORT_RATIO_THRESHOLD
+
     async def check_side(
         self,
         semaphore,
@@ -1567,14 +1608,24 @@ class AUTOBN:
                     )
                 else:
                     sl_ref_price = prev_close_price
-                skip_initial_stop_loss = (
+                initial_stop_loss_bypassed = (
                     not close_info.close_reason and PositionSide.N in close_info.strategy
                 )
                 sl_triggered = False
-                if not skip_initial_stop_loss:
+                if not initial_stop_loss_bypassed:
                     sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
                         not is_long and sl_ref_price >= close_info.stop_loss
                     )
+                if (
+                    sl_triggered
+                    and not close_info.close_reason
+                    and not initial_stop_loss_bypassed
+                ):
+                    initial_stop_loss_bypassed = await self._should_bypass_initial_stop_loss(
+                        symbol, close_info, dtn
+                    )
+                    if initial_stop_loss_bypassed:
+                        sl_triggered = False
                 # 止盈触发条件
                 tp_triggered = (
                     is_long and current_price >= close_info.take_profit
@@ -1614,51 +1665,6 @@ class AUTOBN:
 
                     if close_info.position_side.value == PositionSide.LONG.value:
                         if current_price < close_info.entry_price - atr_value:
-                            if PositionSide.N not in close_info.strategy:
-                                long_short_ratio_data = await self.get_long_short_ratio(
-                                    symbol
-                                )
-                                latest_lsr = None
-                                if long_short_ratio_data:
-                                    try:
-                                        latest_lsr = float(
-                                            long_short_ratio_data[-1]["longShortRatio"]
-                                        )
-                                    except KeyError, TypeError, ValueError:
-                                        latest_lsr = None
-                                lsr_abnormal = (
-                                    latest_lsr is not None
-                                    and latest_lsr > self.DCA_LONG_SHORT_RATIO_THRESHOLD
-                                )
-                                if close_info.oi_guard_threshold <= 0:
-                                    oi_1h = await self._get_oi_1h_data(symbol, dtn)
-                                    if oi_1h:
-                                        oi_1h_values = [
-                                            float(item["sumOpenInterest"])
-                                            for item in oi_1h
-                                        ]
-                                        if oi_1h_values:
-                                            close_info.oi_guard_threshold = min(
-                                                oi_1h_values
-                                            )
-                                oi_guard_failed = False
-                                if close_info.oi_guard_threshold > 0:
-                                    oi_5m = await self._get_oi_5m_data(symbol)
-                                    oi_guard_failed = (
-                                        oi_5m
-                                        and float(oi_5m[-1]["sumOpenInterest"])
-                                        < close_info.oi_guard_threshold
-                                    )
-                                if lsr_abnormal and oi_guard_failed:
-                                    close_info.close_reason = "DCA多空比异常且OI不满足"
-                                    await self.close_bn_position(
-                                        symbol,
-                                        close_info,
-                                        atr_value,
-                                        current_price,
-                                        1,
-                                    )
-                                    return
                             close_info.strategy.append(PositionSide.DCA)
                             if await self.open_bn_position(
                                 symbol,
@@ -1752,26 +1758,6 @@ class AUTOBN:
 
                     elif close_info.position_side.value == PositionSide.SHORT.value:
                         if current_price > close_info.entry_price + atr_value:
-                            if PositionSide.N not in close_info.strategy:
-                                long_short_ratio_data = await self.get_long_short_ratio(
-                                    symbol
-                                )
-                                latest_lsr = None
-                                if long_short_ratio_data:
-                                    try:
-                                        latest_lsr = float(
-                                            long_short_ratio_data[-1]["longShortRatio"]
-                                        )
-                                    except KeyError, TypeError, ValueError:
-                                        latest_lsr = None
-                                if latest_lsr is not None and latest_lsr < (
-                                    1 / self.DCA_LONG_SHORT_RATIO_THRESHOLD
-                                ):
-                                    close_info.close_reason = "DCA多空比异常"
-                                    await self.close_bn_position(
-                                        symbol, close_info, atr_value, current_price, 1
-                                    )
-                                    return
                             close_info.strategy.append(PositionSide.DCA)
                             if await self.open_bn_position(
                                 symbol,
