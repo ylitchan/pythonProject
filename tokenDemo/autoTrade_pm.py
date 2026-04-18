@@ -291,7 +291,7 @@ class AUTOBN:
     LONG_SHORT_RATIO_LONG_LIMIT = 3 / 7  # LONG额外放行阈值（多空比）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
     LONG_SHORT_RATIO_EXTREME_LOOKBACK = 10  # LONG极值判定回看窗口（不含当前值）
-    OI_DELTA_LONG_RATIO_WEIGHT = 0.55  # LONG融合公式中(oi_5m-oi_1h)项权重
+    OI_DELTA_LONG_RATIO_WEIGHT = 0.5  # LONG融合公式中(oi_5m-oi_1h)项权重
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
@@ -341,7 +341,7 @@ class AUTOBN:
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
-    OPEN_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
+    OPEN_LONG_SHORT_RATIO_THRESHOLD = 55 / 45
     DCA_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
@@ -2304,7 +2304,6 @@ class AUTOA:
     MA_PERIOD = 10  # 均线周期
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
-    VOLUME_LOOKBACK_PERIOD = 10  # 最大量比较回看窗口
     VOLUME_CHEB_SAMPLE_START_OFFSET = -30  # 成交量切比雪夫样本窗口起点（含）
     VOLUME_CHEB_SAMPLE_END_OFFSET = -10  # 成交量切比雪夫样本窗口终点（不含）
     VOLUME_CHEB_REQUIRED_HISTORY = 30  # 切片[-30:-10]所需最少历史K线数
@@ -3011,7 +3010,7 @@ class AUTOA:
             current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
             if (
                 hist_open[-1] > hist_high[-2]
-                and current_volume >= max(hist_volume[-cls.VOLUME_LOOKBACK_PERIOD :])
+                and current_volume >= max(hist_volume[cls.VOLUME_CHEB_SAMPLE_END_OFFSET :])
                 and cls.calculate_chebyshev_probability(
                     volume_sample,
                     current_volume,
