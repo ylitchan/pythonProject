@@ -2304,9 +2304,10 @@ class AUTOA:
     MA_PERIOD = 10  # 均线周期
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
     DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
-    VOLUME_CHEB_SAMPLE_START_OFFSET = -20  # 成交量切比雪夫样本窗口起点（含）
+    VOLUME_LOOKBACK_PERIOD = 10  # 最大量比较回看窗口
+    VOLUME_CHEB_SAMPLE_START_OFFSET = -30  # 成交量切比雪夫样本窗口起点（含）
     VOLUME_CHEB_SAMPLE_END_OFFSET = -10  # 成交量切比雪夫样本窗口终点（不含）
-    VOLUME_CHEB_REQUIRED_HISTORY = 20  # 切片[-20:-10]所需最少历史K线数
+    VOLUME_CHEB_REQUIRED_HISTORY = 30  # 切片[-30:-10]所需最少历史K线数
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
@@ -3010,8 +3011,7 @@ class AUTOA:
             current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
             if (
                 hist_open[-1] > hist_high[-2]
-                and current_volume
-                >= max(hist_volume[cls.VOLUME_CHEB_SAMPLE_START_OFFSET :])
+                and current_volume >= max(hist_volume[-cls.VOLUME_LOOKBACK_PERIOD :])
                 and cls.calculate_chebyshev_probability(
                     volume_sample,
                     current_volume,
