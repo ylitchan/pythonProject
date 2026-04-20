@@ -2307,6 +2307,8 @@ class AUTOA:
     _http_session = None
     # 使用协程锁在进入线程前串行化 baostock 查询，避免等待锁的时间也计入单标的超时
     _bs_async_lock = None
+    _bs_login_lock = None
+    _bs_logged_in = False
     logger = logging.getLogger("AUTOA")
     logger.setLevel(logging.INFO)  # 默认级别
     logger.propagate = False  # 防止日志向上层传播导致重复
@@ -2330,6 +2332,51 @@ class AUTOA:
         except Exception as e:
             AUTOA.logger.error(f"保存AUTOA数据失败: {str(e)}")
             AUTOA.logger.exception("保存AUTOA数据时发生异常")
+        finally:
+            AUTOA._logout_bs_on_exit()
+
+    @classmethod
+    def _get_bs_login_lock(cls):
+        if cls._bs_login_lock is None:
+            cls._bs_login_lock = asyncio.Lock()
+        return cls._bs_login_lock
+
+    @classmethod
+    async def ensure_bs_login(cls, force_relogin=False):
+        async with cls._get_bs_login_lock():
+            if cls._bs_logged_in and not force_relogin:
+                return True
+            if force_relogin and cls._bs_logged_in:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.to_thread(bs.logout),
+                        timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
+                    )
+                except Exception:
+                    cls.logger.exception("baostock 重连前登出失败")
+                finally:
+                    cls._bs_logged_in = False
+
+            login_result = await asyncio.wait_for(
+                asyncio.to_thread(bs.login), timeout=cls.BAOSTOCK_TIMEOUT_SECONDS
+            )
+            error_code = getattr(login_result, "error_code", "")
+            if error_code != "0":
+                error_msg = getattr(login_result, "error_msg", "")
+                raise RuntimeError(f"baostock 登录失败: {error_code} {error_msg}")
+            cls._bs_logged_in = True
+            return True
+
+    @classmethod
+    def _logout_bs_on_exit(cls):
+        if not cls._bs_logged_in:
+            return
+        try:
+            bs.logout()
+        except Exception:
+            cls.logger.exception("baostock 退出登出失败")
+        finally:
+            cls._bs_logged_in = False
 
     @classmethod
     def calculate_atr(cls, hist_data, period=None):
@@ -2685,19 +2732,40 @@ class AUTOA:
                     return dl
 
                 async with cls._get_bs_async_lock():
-                    data_list = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            fetch_bs_data,
-                            code_pre,
-                            code,
-                            fields,
-                            start_date,
-                            end_date,
-                            frequency,
-                            adjustflag,
-                        ),
-                        timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-                    )
+                    await cls.ensure_bs_login()
+                    try:
+                        data_list = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                fetch_bs_data,
+                                code_pre,
+                                code,
+                                fields,
+                                start_date,
+                                end_date,
+                                frequency,
+                                adjustflag,
+                            ),
+                            timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
+                        )
+                    except Exception as e:
+                        if isinstance(e, OSError) and getattr(e, "winerror", None) == 233:
+                            cls.logger.warning(f"{code} baostock 连接断开，尝试重连后重试")
+                            await cls.ensure_bs_login(force_relogin=True)
+                            data_list = await asyncio.wait_for(
+                                asyncio.to_thread(
+                                    fetch_bs_data,
+                                    code_pre,
+                                    code,
+                                    fields,
+                                    start_date,
+                                    end_date,
+                                    frequency,
+                                    adjustflag,
+                                ),
+                                timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
+                            )
+                        else:
+                            raise
                 if data_list:
                     # 检查data_list中的股票代码
                     actual_code_in_data = (
@@ -3231,30 +3299,16 @@ class AUTOA:
     @classmethod
     async def _monitor_stocks_impl(cls):
         """A股监控的实际实现"""
-        # 登录系统（使用异步执行，避免阻塞事件循环）
-        await asyncio.wait_for(
-            asyncio.to_thread(bs.login), timeout=cls.BAOSTOCK_TIMEOUT_SECONDS
-        )
-        try:
-            # 筛选符合量能条件的股票
-            filtered = await cls.filter_stocks()
-            cls.logger.info(f"符合量能条件的股票：{filtered}")
+        await cls.ensure_bs_login()
 
-            # 如果有符合条件的股票，发送通知
-            if filtered:
-                # 构建消息内容
-                content = f"===A{len(filtered)} 首板===\n" + "\n-------\n".join(
-                    filtered
-                )
-                # 发送到企业微信群
-                await cls.send_msg(content)
+        # 筛选符合量能条件的股票
+        filtered = await cls.filter_stocks()
+        cls.logger.info(f"符合量能条件的股票：{filtered}")
 
-        finally:
-            # 确保总是登出，即使发生异常（使用异步执行）
-            await asyncio.wait_for(
-                asyncio.to_thread(bs.logout),
-                timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-            )
+        # 如果有符合条件的股票，发送通知
+        if filtered:
+            content = f"===A{len(filtered)} 首板===\n" + "\n-------\n".join(filtered)
+            await cls.send_msg(content)
 
 
 # 注册AUTOA的退出处理函数,在脚本退出时保存A股数据
@@ -3308,6 +3362,7 @@ async def main():
         qy_key=autobn_qy_key,
         signal_qy_key=qy_key,
     )
+    await AUTOA.ensure_bs_login()
 
     # 初始化任务调度器，配置全局日志级别
     scheduler = AsyncIOScheduler()
