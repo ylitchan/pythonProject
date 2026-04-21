@@ -2357,15 +2357,53 @@ class AUTOA:
                 finally:
                     cls._bs_logged_in = False
 
-            login_result = await asyncio.wait_for(
-                asyncio.to_thread(bs.login), timeout=cls.BAOSTOCK_TIMEOUT_SECONDS
-            )
-            error_code = getattr(login_result, "error_code", "")
-            if error_code != "0":
-                error_msg = getattr(login_result, "error_msg", "")
-                raise RuntimeError(f"baostock 登录失败: {error_code} {error_msg}")
-            cls._bs_logged_in = True
-            return True
+            last_error = None
+            for attempt in range(2):
+                try:
+                    login_result = await asyncio.wait_for(
+                        asyncio.to_thread(bs.login),
+                        timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
+                    )
+                    error_code = getattr(login_result, "error_code", "")
+                    if error_code != "0":
+                        error_msg = getattr(login_result, "error_msg", "")
+                        raise RuntimeError(
+                            f"baostock 登录失败: {error_code} {error_msg}"
+                        )
+                    cls._bs_logged_in = True
+                    return True
+                except Exception as e:
+                    last_error = e
+                    cls._bs_logged_in = False
+                    if attempt == 0:
+                        cls.logger.warning("baostock 登录异常，尝试重试一次")
+                        try:
+                            await asyncio.wait_for(
+                                asyncio.to_thread(bs.logout),
+                                timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        raise last_error
+
+    @classmethod
+    async def _call_bs_with_relogin(cls, func, *args, **kwargs):
+        last_error = None
+        for attempt in range(2):
+            await cls.ensure_bs_login(force_relogin=attempt > 0)
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(func, *args, **kwargs),
+                    timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
+                )
+            except Exception as e:
+                last_error = e
+                cls._bs_logged_in = False
+                if attempt == 0:
+                    cls.logger.warning("baostock 请求异常，尝试重登后重试一次")
+                else:
+                    raise last_error
 
     @classmethod
     def _logout_bs_on_exit(cls):
@@ -2732,40 +2770,16 @@ class AUTOA:
                     return dl
 
                 async with cls._get_bs_async_lock():
-                    await cls.ensure_bs_login()
-                    try:
-                        data_list = await asyncio.wait_for(
-                            asyncio.to_thread(
-                                fetch_bs_data,
-                                code_pre,
-                                code,
-                                fields,
-                                start_date,
-                                end_date,
-                                frequency,
-                                adjustflag,
-                            ),
-                            timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-                        )
-                    except Exception as e:
-                        if isinstance(e, OSError) and getattr(e, "winerror", None) == 233:
-                            cls.logger.warning(f"{code} baostock 连接断开，尝试重连后重试")
-                            await cls.ensure_bs_login(force_relogin=True)
-                            data_list = await asyncio.wait_for(
-                                asyncio.to_thread(
-                                    fetch_bs_data,
-                                    code_pre,
-                                    code,
-                                    fields,
-                                    start_date,
-                                    end_date,
-                                    frequency,
-                                    adjustflag,
-                                ),
-                                timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-                            )
-                        else:
-                            raise
+                    data_list = await cls._call_bs_with_relogin(
+                        fetch_bs_data,
+                        code_pre,
+                        code,
+                        fields,
+                        start_date,
+                        end_date,
+                        frequency,
+                        adjustflag,
+                    )
                 if data_list:
                     # 检查data_list中的股票代码
                     actual_code_in_data = (
