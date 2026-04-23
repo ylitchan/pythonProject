@@ -3376,7 +3376,6 @@ async def main():
         qy_key=autobn_qy_key,
         signal_qy_key=qy_key,
     )
-    await AUTOA.ensure_bs_login()
 
     # 初始化任务调度器，配置全局日志级别
     scheduler = AsyncIOScheduler()
