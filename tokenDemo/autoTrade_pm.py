@@ -19,7 +19,6 @@ from typing import List, Optional
 import aiofiles
 import aiohttp
 import akshare as ak
-import baostock as bs
 import pandas as pd
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from binance_common.configuration import ConfigurationRestAPI
@@ -2284,7 +2283,6 @@ class AUTOA:
     HTTP_TIMEOUT_SECONDS = 10  # HTTP请求超时时间（秒）
     FILE_IO_TIMEOUT_SECONDS = 10  # 文件IO超时时间（秒）
     AKSHARE_TIMEOUT_SECONDS = 15  # akshare请求超时时间（秒）
-    BAOSTOCK_TIMEOUT_SECONDS = 15  # baostock请求超时时间（秒）
 
     # ==================== 均线与筛选常量 ====================
     MA_PERIOD = 10  # 均线周期
@@ -2305,10 +2303,6 @@ class AUTOA:
     _batch_window_id = None
     _batch_observations_snapshot = []
     _http_session = None
-    # 使用协程锁在进入线程前串行化 baostock 查询，避免等待锁的时间也计入单标的超时
-    _bs_async_lock = None
-    _bs_login_lock = None
-    _bs_logged_in = False
     logger = logging.getLogger("AUTOA")
     logger.setLevel(logging.INFO)  # 默认级别
     logger.propagate = False  # 防止日志向上层传播导致重复
@@ -2332,89 +2326,6 @@ class AUTOA:
         except Exception as e:
             AUTOA.logger.error(f"保存AUTOA数据失败: {str(e)}")
             AUTOA.logger.exception("保存AUTOA数据时发生异常")
-        finally:
-            AUTOA._logout_bs_on_exit()
-
-    @classmethod
-    def _get_bs_login_lock(cls):
-        if cls._bs_login_lock is None:
-            cls._bs_login_lock = asyncio.Lock()
-        return cls._bs_login_lock
-
-    @classmethod
-    async def ensure_bs_login(cls, force_relogin=False):
-        async with cls._get_bs_login_lock():
-            if cls._bs_logged_in and not force_relogin:
-                return True
-            if force_relogin and cls._bs_logged_in:
-                try:
-                    await asyncio.wait_for(
-                        asyncio.to_thread(bs.logout),
-                        timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-                    )
-                except Exception:
-                    cls.logger.exception("baostock 重连前登出失败")
-                finally:
-                    cls._bs_logged_in = False
-
-            last_error = None
-            for attempt in range(2):
-                try:
-                    login_result = await asyncio.wait_for(
-                        asyncio.to_thread(bs.login),
-                        timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-                    )
-                    error_code = getattr(login_result, "error_code", "")
-                    if error_code != "0":
-                        error_msg = getattr(login_result, "error_msg", "")
-                        raise RuntimeError(
-                            f"baostock 登录失败: {error_code} {error_msg}"
-                        )
-                    cls._bs_logged_in = True
-                    return True
-                except Exception as e:
-                    last_error = e
-                    cls._bs_logged_in = False
-                    if attempt == 0:
-                        cls.logger.warning("baostock 登录异常，尝试重试一次")
-                        try:
-                            await asyncio.wait_for(
-                                asyncio.to_thread(bs.logout),
-                                timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-                            )
-                        except Exception:
-                            pass
-                    else:
-                        raise last_error
-
-    @classmethod
-    async def _call_bs_with_relogin(cls, func, *args, **kwargs):
-        last_error = None
-        for attempt in range(2):
-            await cls.ensure_bs_login(force_relogin=attempt > 0)
-            try:
-                return await asyncio.wait_for(
-                    asyncio.to_thread(func, *args, **kwargs),
-                    timeout=cls.BAOSTOCK_TIMEOUT_SECONDS,
-                )
-            except Exception as e:
-                last_error = e
-                cls._bs_logged_in = False
-                if attempt == 0:
-                    cls.logger.warning("baostock 请求异常，尝试重登后重试一次")
-                else:
-                    raise last_error
-
-    @classmethod
-    def _logout_bs_on_exit(cls):
-        if not cls._bs_logged_in:
-            return
-        try:
-            bs.logout()
-        except Exception:
-            cls.logger.exception("baostock 退出登出失败")
-        finally:
-            cls._bs_logged_in = False
 
     @classmethod
     def calculate_atr(cls, hist_data, period=None):
@@ -2614,12 +2525,6 @@ class AUTOA:
         return cls._http_session
 
     @classmethod
-    def _get_bs_async_lock(cls):
-        if cls._bs_async_lock is None:
-            cls._bs_async_lock = asyncio.Lock()
-        return cls._bs_async_lock
-
-    @classmethod
     async def send_msg(cls, msg):
         """
         发送消息通知函数
@@ -2725,74 +2630,44 @@ class AUTOA:
             code_pre = "sh" if code[0] == "6" else "sz"
             cls.logger.debug(f"stock_zh_a_hist 调用: code={code}, code_pre={code_pre}")
             if code in cls.hist_cache:
-                data_list = copy.deepcopy(cls.hist_cache[code])
-                cls.logger.debug(
-                    f"从缓存读取 code={code}, data_list前3行={data_list[:3] if data_list else 'empty'}"
-                )
+                hist = cls.hist_cache[code].copy()
             else:
-
-                def fetch_bs_data(
-                    stock_code_pre,
-                    stock_code,
-                    flds,
-                    s_date,
-                    e_date,
-                    freq,
-                    adj_flag,
-                ):
-                    cls.logger.debug(
-                        f"fetch_bs_data 开始获取: {stock_code_pre}.{stock_code}"
-                    )
-                    rs = bs.query_history_k_data_plus(
-                        f"{stock_code_pre}.{stock_code}",  # 股票代码
-                        flds,
-                        start_date=s_date,
-                        end_date=e_date,
-                        frequency=freq,  # 日K
-                        adjustflag=adj_flag,  # 3：前复权；1：不复权；2：后复权
-                    )
-                    dl = []
-                    while (rs.error_code == "0") & rs.next():
-                        dl.append(rs.get_row_data())
-
-                    # 验证返回的数据
-                    if dl and len(dl[0]) > 1:
-                        actual_code = dl[0][1]
-                        expected_code = f"{stock_code_pre}.{stock_code}"
-                        if actual_code != expected_code:
-                            cls.logger.error(
-                                f"数据错误! 请求={expected_code}, 实际={actual_code}"
-                            )
-
-                    cls.logger.debug(
-                        f"fetch_bs_data 完成获取: {stock_code_pre}.{stock_code}, 数据行数={len(dl)}"
-                    )
-                    return dl
-
-                async with cls._get_bs_async_lock():
-                    data_list = await cls._call_bs_with_relogin(
-                        fetch_bs_data,
-                        code_pre,
-                        code,
-                        fields,
-                        start_date,
-                        end_date,
-                        frequency,
-                        adjustflag,
-                    )
-                if data_list:
-                    # 检查data_list中的股票代码
-                    actual_code_in_data = (
-                        data_list[0][1]
-                        if data_list and len(data_list[0]) > 1
-                        else "unknown"
-                    )
-                    cls.logger.debug(
-                        f"准备写入缓存 code={code}, data_list中的股票代码={actual_code_in_data}, 数据行数={len(data_list)}"
-                    )
-                    cls.hist_cache[code] = copy.deepcopy(data_list)
-            if not data_list:
-                return pd.DataFrame()
+                adjust_map = {"3": "qfq", "2": "hfq", "1": ""}
+                period_map = {"d": "daily", "w": "weekly", "m": "monthly"}
+                hist = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        ak.stock_zh_a_hist,
+                        symbol=code,
+                        period=period_map.get(frequency, "daily"),
+                        start_date=(start_date or "19700101").replace("-", ""),
+                        end_date=(end_date or datetime.datetime.today().strftime("%Y%m%d")).replace("-", ""),
+                        adjust=adjust_map.get(adjustflag, "qfq"),
+                    ),
+                    timeout=cls.AKSHARE_TIMEOUT_SECONDS,
+                )
+                if hist is None or hist.empty:
+                    return pd.DataFrame()
+                hist = hist.rename(
+                    columns={
+                        "日期": "date",
+                        "开盘": "open",
+                        "收盘": "close",
+                        "最高": "high",
+                        "最低": "low",
+                        "成交量": "volume",
+                    }
+                )[["date", "open", "high", "low", "close", "volume"]].copy()
+                for col in ["open", "high", "low", "close", "volume"]:
+                    hist[col] = pd.to_numeric(hist[col], errors="coerce")
+                hist = hist.dropna(subset=["open", "high", "low", "close"])
+                if hist.empty:
+                    return pd.DataFrame()
+                target_date = (end_date or datetime.datetime.today().strftime("%Y-%m-%d")).replace("/", "-")
+                if str(hist.iloc[-1]["date"]) == target_date:
+                    hist = hist.iloc[:-1].copy()
+                if hist.empty:
+                    return pd.DataFrame()
+                cls.hist_cache[code] = hist.copy()
 
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -2829,28 +2704,22 @@ class AUTOA:
                 return pd.DataFrame()
             volume = hist_today["v"].fillna(0).sum()
             open_price = hist_today.iloc[0]["p"]
+            high_price = hist_today["p"].max()
+            low_price = hist_today["p"].min()
             close_price = hist_today.iloc[-1]["p"]
-            data_list.append(
+            today_row = pd.DataFrame(
                 [
-                    end_date,
-                    f"{code_pre}.{code}",
-                    open_price,
-                    close_price,
-                    open_price,
-                    close_price,
-                    data_list[-1][5],
-                    volume,
-                    0,
+                    {
+                        "date": end_date,
+                        "open": open_price,
+                        "high": high_price,
+                        "low": low_price,
+                        "close": close_price,
+                        "volume": volume,
+                    }
                 ]
             )
-            hist = pd.DataFrame(data_list, columns=fields.split(","))
-            hist["open"] = pd.to_numeric(hist["open"], errors="coerce")
-            hist["high"] = pd.to_numeric(hist["high"], errors="coerce")
-            hist["low"] = pd.to_numeric(hist["low"], errors="coerce")
-            hist["close"] = pd.to_numeric(hist["close"], errors="coerce")
-            hist["volume"] = pd.to_numeric(hist["volume"], errors="coerce")
-            hist["preclose"] = pd.to_numeric(hist["preclose"], errors="coerce")
-            hist["涨跌幅"] = (hist["close"] - hist["preclose"]) / hist["preclose"]
+            hist = pd.concat([hist, today_row], ignore_index=True)
             return hist
         except Exception as e:
             cls.logger.error(
@@ -3313,7 +3182,6 @@ class AUTOA:
     @classmethod
     async def _monitor_stocks_impl(cls):
         """A股监控的实际实现"""
-        await cls.ensure_bs_login()
 
         # 筛选符合量能条件的股票
         filtered = await cls.filter_stocks()
@@ -3376,7 +3244,6 @@ async def main():
         qy_key=autobn_qy_key,
         signal_qy_key=qy_key,
     )
-
     # 初始化任务调度器，配置全局日志级别
     scheduler = AsyncIOScheduler()
     logging.getLogger("apscheduler").setLevel(
