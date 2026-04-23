@@ -2634,17 +2634,24 @@ class AUTOA:
             else:
                 adjust_map = {"3": "qfq", "2": "hfq", "1": ""}
                 period_map = {"d": "daily", "w": "weekly", "m": "monthly"}
-                hist = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        ak.stock_zh_a_hist,
-                        symbol=code,
-                        period=period_map.get(frequency, "daily"),
-                        start_date=(start_date or "19700101").replace("-", ""),
-                        end_date=(end_date or datetime.datetime.today().strftime("%Y%m%d")).replace("-", ""),
-                        adjust=adjust_map.get(adjustflag, "qfq"),
-                    ),
-                    timeout=cls.AKSHARE_TIMEOUT_SECONDS,
-                )
+                hist = None
+                for _ in range(2):
+                    try:
+                        hist = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                ak.stock_zh_a_hist,
+                                symbol=code,
+                                period=period_map.get(frequency, "daily"),
+                                start_date=(start_date or "19700101").replace("-", ""),
+                                end_date=(end_date or datetime.datetime.today().strftime("%Y%m%d")).replace("-", ""),
+                                adjust=adjust_map.get(adjustflag, "qfq"),
+                            ),
+                            timeout=cls.AKSHARE_TIMEOUT_SECONDS,
+                        )
+                        if hist is not None and not hist.empty:
+                            break
+                    except Exception:
+                        hist = None
                 if hist is None or hist.empty:
                     return pd.DataFrame()
                 hist = hist.rename(
@@ -2699,10 +2706,16 @@ class AUTOA:
             hist_today = hist_today[required_columns].copy()
             hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
             hist_today["p"] = pd.to_numeric(hist_today["p"], errors="coerce")
+            hist_today["tot_v"] = pd.to_numeric(
+                pd.DataFrame(res).get("tot_v"), errors="coerce"
+            )
             hist_today = hist_today.dropna(subset=["p"])
             if hist_today.empty:
                 return pd.DataFrame()
-            volume = hist_today["v"].fillna(0).sum()
+            total_volume = hist_today.iloc[-1]["tot_v"]
+            if pd.isna(total_volume):
+                total_volume = hist_today["v"].fillna(0).sum()
+            volume = total_volume / 100
             open_price = hist_today.iloc[0]["p"]
             high_price = hist_today["p"].max()
             low_price = hist_today["p"].min()
