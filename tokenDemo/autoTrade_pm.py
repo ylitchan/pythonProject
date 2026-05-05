@@ -105,6 +105,21 @@ class Observation(BaseModel):
     name: str
 
 
+def format_strategy_tags(strategies: List[PositionSide | str]) -> str:
+    counts = {}
+    ordered_values = []
+    for strategy in strategies or []:
+        value = strategy.value if isinstance(strategy, Enum) else str(strategy)
+        if value not in counts:
+            counts[value] = 0
+            ordered_values.append(value)
+        counts[value] += 1
+    return ",".join(
+        f"{value}*{counts[value]}" if counts[value] > 1 else value
+        for value in ordered_values
+    )
+
+
 # ==================== 平仓记录管理 ====================
 class CloseRecordManager:
     """
@@ -833,7 +848,8 @@ class AUTOBN:
                 recv_window=60000,
             )
             rate_show = abs(take_profit_price - markPrice) / markPrice
-            msg = f"{symbol} 开仓\n策略:{','.join([ps.value for ps in open_info.strategy])}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n账户余额:{total_balance:.2f}\n仓位比例:{notional / total_balance:.2%}\n收益率:{rate_show:.2%}"
+            strategy_tag = format_strategy_tags(open_info.strategy)
+            msg = f"{symbol} 开仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n账户余额:{total_balance:.2f}\n仓位比例:{notional / total_balance:.2%}\n收益率:{rate_show:.2%}"
             await self.send_msg(msg)
             return account_data
         except Exception as e:
@@ -902,7 +918,7 @@ class AUTOBN:
                 )
                 realized_pnl = price_diff * close_amount
                 pnl_percent = price_diff / entryPrice if entryPrice != 0 else 0
-                strategy_tag = ",".join([ps.value for ps in close_info.strategy])
+                strategy_tag = format_strategy_tags(close_info.strategy)
                 msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}\n平仓依据:{close_info.close_reason}"
                 await self.send_msg(msg)
 
@@ -1002,14 +1018,6 @@ class AUTOBN:
         return oi_1h
 
     async def _ensure_long_oi_guard_threshold(self, symbol, close_info, dtn: datetime):
-        if close_info.oi_guard_threshold > 0:
-            return close_info.oi_guard_threshold
-        oi_1h = await self._get_oi_1h_data(symbol, dtn)
-        if not oi_1h:
-            return close_info.oi_guard_threshold
-        oi_1h_values = [float(item["sumOpenInterest"]) for item in oi_1h]
-        if oi_1h_values:
-            close_info.oi_guard_threshold = min(oi_1h_values)
         return close_info.oi_guard_threshold
 
     async def _should_bypass_initial_stop_loss(self, symbol, close_info, dtn: datetime):
@@ -1217,7 +1225,7 @@ class AUTOBN:
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    oi_guard_threshold = max(oi_hist_for_cheb)
+                    oi_guard_threshold = sum(oi_hist_for_cheb) / len(oi_hist_for_cheb)
                     return (
                         (True, lsrd, oi_guard_threshold)
                         if passed
@@ -1897,12 +1905,13 @@ class AUTOBN:
                             rate_show = (
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
+                            strategy_tag = format_strategy_tags(open_info.strategy)
                             await self.send_msg(
-                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
+                                f"==={symbol}**{strategy_tag}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
                                 qy_key=self.signal_qy_key,
                             )
                             await self.send_msg(
-                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
+                                f"==={symbol}**{strategy_tag}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.BUY
                             should_open = True
@@ -1938,12 +1947,13 @@ class AUTOBN:
                             rate_show = (
                                 atr_value * self.SUPERTREND_FACTOR / current_price
                             )
+                            strategy_tag = format_strategy_tags(open_info.strategy)
                             await self.send_msg(
-                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
+                                f"==={symbol}**{strategy_tag}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
                                 qy_key=self.signal_qy_key,
                             )
                             await self.send_msg(
-                                f"==={symbol}**{','.join([ps.value for ps in open_info.strategy])}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
+                                f"==={symbol}**{strategy_tag}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
                             )
                             open_info.side = OrderSide.SELL
                             should_open = True
@@ -2095,7 +2105,7 @@ class AUTOBN:
                 pos_data = self.alert_all["POSITIONS"][p["symbol"]]
                 if isinstance(pos_data, dict) and "strategy" in pos_data:
                     strategy_list = pos_data["strategy"]
-                    strategy_tag = ",".join(strategy_list) if strategy_list else ""
+                    strategy_tag = format_strategy_tags(strategy_list) if strategy_list else ""
             positions_data.append(
                 f"==={p['symbol']}===\n策略:{strategy_tag}\n开仓价格:{entryPrice} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unRealizedProfit']} USDT\n持仓收益:{unrealized_profit / notional:.2%}"
             )
@@ -2558,7 +2568,7 @@ class AUTOA:
             positions_data = []
             for code, close_info_dict in positions.items():
                 close_info = Position.model_validate(close_info_dict)
-                strategy_tag = ",".join([ps.value for ps in close_info.strategy])
+                strategy_tag = format_strategy_tags(close_info.strategy)
                 positions_data.append(
                     f"==={close_info.name}({code})===\n"
                     f"策略:{strategy_tag}\n"
@@ -2776,6 +2786,7 @@ class AUTOA:
 
         # 获取最新价格
         price_close = float(hist.iloc[-1]["close"])
+        current_volume = float(hist.iloc[-1]["volume"])
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
         prev_close = float(hist.iloc[-2]["close"]) if len(hist) > 1 else price_close
@@ -2787,6 +2798,7 @@ class AUTOA:
             stop_loss_triggered = (
                 price_close <= close_info.stop_loss
                 and prev_close <= close_info.stop_loss
+                and current_volume <= close_info.oi_guard_threshold
             )
         if stop_loss_triggered or price_close >= close_info.take_profit:
             if price_close >= close_info.take_profit:
@@ -2803,7 +2815,7 @@ class AUTOA:
             )
             profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
             realized_pnl = (price_close - entry_price) * cls.DEFAULT_POSITION_SHARES
-            strategy_tag = ",".join([ps.value for ps in close_info.strategy])
+            strategy_tag = format_strategy_tags(close_info.strategy)
             msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}\n平仓依据:{close_info.close_reason}"
             await cls.send_msg(msg)
 
@@ -2836,7 +2848,7 @@ class AUTOA:
                 and price_close < close_info.entry_price - atr_value
             ):
                 close_info.strategy.append(PositionSide.DCA)
-                strategy_tag = ",".join([ps.value for ps in close_info.strategy])
+                strategy_tag = format_strategy_tags(close_info.strategy)
                 msg = (
                     f"{close_info.name} 加仓\n"
                     f"策略:{strategy_tag}\n"
@@ -2956,6 +2968,7 @@ class AUTOA:
                 cls.VOLUME_CHEB_SAMPLE_START_OFFSET : cls.VOLUME_CHEB_SAMPLE_END_OFFSET
             ]
             current_volume = hist_volume[-1]
+            volume_guard_threshold = float(sum(volume_sample) / len(volume_sample))
             # 先计算 supertrend 和 ATR（两种策略都需要）
             current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
             if (
@@ -2999,11 +3012,13 @@ class AUTOA:
                     name=open_info.name,
                     date=int(today.strftime("%Y%m%d")),
                     strategy=open_info.strategy,
+                    oi_guard_threshold=volume_guard_threshold,
                 ).model_dump()
 
                 # 5. 发送买入通知
+                strategy_tag = format_strategy_tags(open_info.strategy)
                 msg = (
-                    f"==={open_info.name}**{','.join([ps.value for ps in open_info.strategy])}**===\n"
+                    f"==={open_info.name}**{strategy_tag}**===\n"
                     f"价格:{price_close:.2f}\n"
                     f"止盈:{take_profit:.2f}\n"
                     f"止损:{stop_loss:.2f}\n"
