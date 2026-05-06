@@ -2793,47 +2793,15 @@ class AUTOA:
         skip_initial_stop_loss = (
             not close_info.close_reason and PositionSide.N in close_info.strategy
         )
+        take_profit_triggered = price_close >= close_info.take_profit
         stop_loss_triggered = price_close <= close_info.stop_loss
         if not close_info.close_reason and not skip_initial_stop_loss:
             stop_loss_triggered = (
-                price_close <= close_info.stop_loss
+                stop_loss_triggered
                 and prev_close <= close_info.stop_loss
                 and current_volume <= close_info.oi_guard_threshold
             )
-        if stop_loss_triggered or price_close >= close_info.take_profit:
-            if price_close >= close_info.take_profit:
-                close_info.close_reason = "止盈"
-            else:
-                if not close_info.close_reason:
-                    close_info.close_reason = "初始止损"
-            # 从持仓列表移除
-            cls.alert_all["POSITIONS"].pop(code)
-
-            # 发送平仓通知
-            entry_price = (
-                close_info.entry_price if close_info.entry_price > 0 else price_close
-            )
-            profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
-            realized_pnl = (price_close - entry_price) * cls.DEFAULT_POSITION_SHARES
-            strategy_tag = format_strategy_tags(close_info.strategy)
-            msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}\n平仓依据:{close_info.close_reason}"
-            await cls.send_msg(msg)
-
-            # 记录平仓到Excel
-            await CloseRecordManager.record_close_async(
-                source="AUTOA",
-                symbol=f"{close_info.name} {code}",
-                position_side="LONG",  # A股默认做多
-                entry_price=entry_price,
-                close_price=price_close,
-                close_amount=cls.DEFAULT_POSITION_SHARES,
-                realized_pnl=realized_pnl,
-                pnl_percent=profit_rate,
-                close_ratio=1.0,
-                strategy_tag=strategy_tag,
-                close_reason=close_info.close_reason,
-            )
-        else:
+        if not take_profit_triggered and not stop_loss_triggered:
             # 未触及止盈止损，执行移动止损逻辑
             # 参照 AUTOBN 的动态止盈止损逻辑（使用当前hl2与ATR计算上下轨）
             DECAY = cls.STOP_LOSS_DECAY
@@ -2908,6 +2876,34 @@ class AUTOA:
                         close_info.close_reason = "移动止损(轨道)"
 
             cls.alert_all["POSITIONS"][code] = close_info.model_dump()
+            return
+
+        if take_profit_triggered:
+            close_info.close_reason = "止盈"
+        elif not close_info.close_reason:
+            close_info.close_reason = "初始止损"
+
+        cls.alert_all["POSITIONS"].pop(code)
+        entry_price = close_info.entry_price if close_info.entry_price > 0 else price_close
+        profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
+        realized_pnl = (price_close - entry_price) * cls.DEFAULT_POSITION_SHARES
+        strategy_tag = format_strategy_tags(close_info.strategy)
+        msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}\n平仓依据:{close_info.close_reason}"
+        await cls.send_msg(msg)
+
+        await CloseRecordManager.record_close_async(
+            source="AUTOA",
+            symbol=f"{close_info.name} {code}",
+            position_side="LONG",
+            entry_price=entry_price,
+            close_price=price_close,
+            close_amount=cls.DEFAULT_POSITION_SHARES,
+            realized_pnl=realized_pnl,
+            pnl_percent=profit_rate,
+            close_ratio=1.0,
+            strategy_tag=strategy_tag,
+            close_reason=close_info.close_reason,
+        )
 
     @classmethod
     async def on_observations(cls, code, zt_dates, open_info_dict, today):
