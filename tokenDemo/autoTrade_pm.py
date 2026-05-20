@@ -2297,7 +2297,7 @@ class AUTOA:
     # ==================== 均线与筛选常量 ====================
     MA_PERIOD = 10  # 均线周期
     BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
-    DEFAULT_POSITION_SHARES = 100  # 假设持仓股数（用于盈亏计算）
+    DEFAULT_POSITION_SHARES = 100  # 单次开仓固定股数
     VOLUME_CHEB_SAMPLE_START_OFFSET = -30  # 成交量切比雪夫样本窗口起点（含）
     VOLUME_CHEB_SAMPLE_END_OFFSET = -10  # 成交量切比雪夫样本窗口终点（不含）
     VOLUME_CHEB_REQUIRED_HISTORY = 30  # 切片[-30:-10]所需最少历史K线数
@@ -2555,6 +2555,25 @@ class AUTOA:
                     cls.logger.error(f"消息发送失败，状态码: {response.status}")
         except Exception as e:
             cls.logger.error(f"消息发送异常: {str(e)}")
+
+    @classmethod
+    def _get_position_share_count(cls, close_info: Position) -> int:
+        dca_count = sum(
+            1 for strategy in close_info.strategy if strategy == PositionSide.DCA
+        )
+        return cls.DEFAULT_POSITION_SHARES * (1 + dca_count)
+
+    @classmethod
+    def _calculate_weighted_entry_price(
+        cls, current_entry_price: float, open_price: float, existing_shares: int
+    ) -> float:
+        if current_entry_price <= 0 or existing_shares <= 0:
+            return open_price
+        total_cost = (
+            current_entry_price * existing_shares
+            + open_price * cls.DEFAULT_POSITION_SHARES
+        )
+        return total_cost / (existing_shares + cls.DEFAULT_POSITION_SHARES)
 
     @classmethod
     async def push_daily_positions(cls):
@@ -2815,6 +2834,7 @@ class AUTOA:
                 and close_info.entry_price > 0
                 and price_close < close_info.entry_price - atr_value
             ):
+                existing_shares = cls._get_position_share_count(close_info)
                 close_info.strategy.append(PositionSide.DCA)
                 strategy_tag = format_strategy_tags(close_info.strategy)
                 msg = (
@@ -2825,7 +2845,11 @@ class AUTOA:
                     f"止损:{close_info.stop_loss:.2f}"
                 )
                 await cls.send_msg(msg)
-                close_info.entry_price = (close_info.entry_price + price_close) / 2
+                close_info.entry_price = cls._calculate_weighted_entry_price(
+                    close_info.entry_price,
+                    price_close,
+                    existing_shares,
+                )
                 dca_count = sum(
                     1
                     for strategy in close_info.strategy
@@ -2883,10 +2907,11 @@ class AUTOA:
         elif not close_info.close_reason:
             close_info.close_reason = "初始止损"
 
+        position_shares = cls._get_position_share_count(close_info)
         cls.alert_all["POSITIONS"].pop(code)
         entry_price = close_info.entry_price if close_info.entry_price > 0 else price_close
         profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
-        realized_pnl = (price_close - entry_price) * cls.DEFAULT_POSITION_SHARES
+        realized_pnl = (price_close - entry_price) * position_shares
         strategy_tag = format_strategy_tags(close_info.strategy)
         msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}\n平仓依据:{close_info.close_reason}"
         await cls.send_msg(msg)
@@ -2897,7 +2922,7 @@ class AUTOA:
             position_side="LONG",
             entry_price=entry_price,
             close_price=price_close,
-            close_amount=cls.DEFAULT_POSITION_SHARES,
+            close_amount=position_shares,
             realized_pnl=realized_pnl,
             pnl_percent=profit_rate,
             close_ratio=1.0,
