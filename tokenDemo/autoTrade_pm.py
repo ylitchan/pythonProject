@@ -83,6 +83,7 @@ class Position(BaseModel):
     close_reason: str = (
         ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损等）
     )
+    last_stop_alert_date: int = 0  # 最近一次止损提醒日期（YYYYMMDD）
 
 
 class Observation(BaseModel):
@@ -118,6 +119,14 @@ def format_strategy_tags(strategies: List[PositionSide | str]) -> str:
         f"{value}*{counts[value]}" if counts[value] > 1 else value
         for value in ordered_values
     )
+
+
+def is_alert_only_stop_reason(reason: str) -> bool:
+    return reason in {"", "初始止损", "移动止损(轨道)"}
+
+
+def is_profit_protect_stop_reason(reason: str) -> bool:
+    return reason in {"止盈后追踪止损", "追踪止损(保护盈利)"}
 
 
 # ==================== 平仓记录管理 ====================
@@ -1598,16 +1607,16 @@ class AUTOBN:
                 prev_close_price = kline_close[-2]
 
                 # 止损触发条件：
-                # - 保护盈利类（止盈后追踪止损/追踪止损）使用当前价触发
-                # - 初始止损要求“当前价与昨收同时满足”，用多空最值实现
+                # - 保护盈利类（止盈后追踪止损/追踪止损）使用当前价触发并自动平仓
+                # - 初始止损/移动止损(轨道)共用初始止损保护条件，只提醒不自动平仓
                 # - 其他止损使用昨日收盘价触发
-                use_current_price_sl = close_info.close_reason in (
-                    "止盈后追踪止损",
-                    "追踪止损(保护盈利)",
+                alert_only_stop = is_alert_only_stop_reason(close_info.close_reason)
+                profit_protect_stop = is_profit_protect_stop_reason(
+                    close_info.close_reason
                 )
-                if use_current_price_sl:
+                if profit_protect_stop:
                     sl_ref_price = current_price
-                elif not close_info.close_reason:
+                elif alert_only_stop:
                     sl_ref_price = (
                         max(current_price, prev_close_price)
                         if is_long
@@ -1616,18 +1625,14 @@ class AUTOBN:
                 else:
                     sl_ref_price = prev_close_price
                 initial_stop_loss_bypassed = (
-                    not close_info.close_reason and PositionSide.N in close_info.strategy
+                    alert_only_stop and PositionSide.N in close_info.strategy
                 )
                 sl_triggered = False
                 if not initial_stop_loss_bypassed:
                     sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
                         not is_long and sl_ref_price >= close_info.stop_loss
                     )
-                if (
-                    sl_triggered
-                    and not close_info.close_reason
-                    and not initial_stop_loss_bypassed
-                ):
+                if sl_triggered and alert_only_stop and not initial_stop_loss_bypassed:
                     initial_stop_loss_bypassed = await self._should_bypass_initial_stop_loss(
                         symbol, close_info, dtn
                     )
@@ -1638,9 +1643,19 @@ class AUTOBN:
                     is_long and current_price >= close_info.take_profit
                 ) or (not is_long and current_price <= close_info.take_profit)
 
-                if sl_triggered:  # 触及止损 - 全仓平仓
-                    if not close_info.close_reason:
-                        close_info.close_reason = "初始止损"
+                if sl_triggered:
+                    if alert_only_stop:
+                        if not close_info.close_reason:
+                            close_info.close_reason = "初始止损"
+                        alert_date = int(dtn.strftime("%Y%m%d"))
+                        if close_info.last_stop_alert_date != alert_date:
+                            strategy_tag = format_strategy_tags(close_info.strategy)
+                            await self.send_msg(
+                                f"{symbol} 止损提醒\n策略:{strategy_tag}\n持仓方向:{close_info.position_side.value}\n当前价格:{current_price}\n止损价格:{close_info.stop_loss}\n依据:{close_info.close_reason}"
+                            )
+                            close_info.last_stop_alert_date = alert_date
+                        self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
+                        return
                     await self.close_bn_position(
                         symbol, close_info, atr_value, current_price, 1
                     )
@@ -2809,17 +2824,21 @@ class AUTOA:
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
         prev_close = float(hist.iloc[-2]["close"]) if len(hist) > 1 else price_close
+        alert_only_stop = is_alert_only_stop_reason(close_info.close_reason)
         skip_initial_stop_loss = (
-            not close_info.close_reason and PositionSide.N in close_info.strategy
+            alert_only_stop and PositionSide.N in close_info.strategy
         )
         take_profit_triggered = price_close >= close_info.take_profit
         stop_loss_triggered = price_close <= close_info.stop_loss
-        if not close_info.close_reason and not skip_initial_stop_loss:
-            stop_loss_triggered = (
-                stop_loss_triggered
-                and prev_close <= close_info.stop_loss
-                and prev_volume <= close_info.oi_guard_threshold
-            )
+        if alert_only_stop:
+            if skip_initial_stop_loss:
+                stop_loss_triggered = False
+            else:
+                stop_loss_triggered = (
+                    stop_loss_triggered
+                    and prev_close <= close_info.stop_loss
+                    and prev_volume <= close_info.oi_guard_threshold
+                )
         if not take_profit_triggered and not stop_loss_triggered:
             # 未触及止盈止损，执行移动止损逻辑
             # 参照 AUTOBN 的动态止盈止损逻辑（使用当前hl2与ATR计算上下轨）
@@ -2904,6 +2923,18 @@ class AUTOA:
 
         if take_profit_triggered:
             close_info.close_reason = "止盈"
+        elif stop_loss_triggered and alert_only_stop:
+            if not close_info.close_reason:
+                close_info.close_reason = "初始止损"
+            alert_date = int(today.strftime("%Y%m%d"))
+            if close_info.last_stop_alert_date != alert_date:
+                strategy_tag = format_strategy_tags(close_info.strategy)
+                await cls.send_msg(
+                    f"{close_info.name}({code}) 止损提醒\n策略:{strategy_tag}\n当前价格:{price_close:.2f}\n止损价格:{close_info.stop_loss:.2f}\n依据:{close_info.close_reason}"
+                )
+                close_info.last_stop_alert_date = alert_date
+            cls.alert_all["POSITIONS"][code] = close_info.model_dump()
+            return
         elif not close_info.close_reason:
             close_info.close_reason = "初始止损"
 
