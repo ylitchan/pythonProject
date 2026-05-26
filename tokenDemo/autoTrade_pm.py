@@ -3104,15 +3104,15 @@ class AUTOA:
             today.hour == cls.MARKET_CLOSE_HOUR
             and today.minute > cls.MARKET_CLOSE_MINUTE
         )
-        if (
-            (cls.zt_dates and today.strftime("%Y-%m-%d") not in cls.zt_dates)
-            or is_before_open
-            or is_after_close
-        ):
+        today_str = today.strftime("%Y-%m-%d")
+        if is_before_open or is_after_close:
             return []
-        if not cls.zt_dates:
+        if not cls.zt_dates or today_str not in cls.zt_dates:
             cls.zt_dates = await cls.get_last_trading_days(today)
-            if not cls.zt_dates:
+            cls.hist_cache.clear()
+            cls._batch_window_id = None
+            cls._batch_observations_snapshot = []
+            if not cls.zt_dates or today_str not in cls.zt_dates:
                 return []
         selected = set()  # 存储符合条件的股票
         if today.hour == cls.MARKET_CLOSE_HOUR:
