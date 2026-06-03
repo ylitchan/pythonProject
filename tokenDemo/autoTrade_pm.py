@@ -2116,13 +2116,27 @@ class AUTOBN:
                 )
                 continue
             strategy_tag = ""
+            take_profit = 0.0
+            stop_loss = 0.0
+            open_date = "N/A"
             if p["symbol"] in self.alert_all["POSITIONS"]:
                 pos_data = self.alert_all["POSITIONS"][p["symbol"]]
-                if isinstance(pos_data, dict) and "strategy" in pos_data:
-                    strategy_list = pos_data["strategy"]
-                    strategy_tag = format_strategy_tags(strategy_list) if strategy_list else ""
+                pos_obj = Position.model_validate(pos_data)
+                strategy_tag = format_strategy_tags(pos_obj.strategy)
+                take_profit = pos_obj.take_profit
+                stop_loss = pos_obj.stop_loss
+                open_date = pos_obj.date
             positions_data.append(
-                f"==={p['symbol']}===\n策略:{strategy_tag}\n开仓价格:{entryPrice} USDT\n持仓方向:{p['positionSide']}\n名义价值:{p['notional']} USDT\n持仓盈亏:{p['unRealizedProfit']} USDT\n持仓收益:{unrealized_profit / notional:.2%}"
+                f"==={p['symbol']}===\n"
+                f"策略:{strategy_tag}\n"
+                f"开仓价格:{entryPrice} USDT\n"
+                f"持仓方向:{p['positionSide']}\n"
+                f"名义价值:{p['notional']} USDT\n"
+                f"持仓盈亏:{p['unRealizedProfit']} USDT\n"
+                f"持仓收益:{unrealized_profit / notional:.2%}\n"
+                f"止盈:{take_profit}\n"
+                f"止损:{stop_loss}\n"
+                f"开仓日期:{open_date}"
             )
 
             if p["symbol"] not in self.alert_all["POSITIONS"]:
@@ -2600,14 +2614,45 @@ class AUTOA:
                 return
 
             positions_data = []
+            today = datetime.datetime.today()
+            if not cls.zt_dates:
+                cls.zt_dates = await cls.get_last_trading_days(today)
             for code, close_info_dict in positions.items():
                 close_info = Position.model_validate(close_info_dict)
                 strategy_tag = format_strategy_tags(close_info.strategy)
+                position_shares = cls._get_position_share_count(close_info)
+                current_price = 0.0
+                if cls.zt_dates:
+                    hist = await cls.stock_zh_a_hist(
+                        code,
+                        "date,code,open,high,low,close,preclose,volume,amount",
+                        start_date=cls.zt_dates[-1],
+                        end_date=cls.zt_dates[0],
+                        frequency="d",
+                        adjustflag="3",
+                    )
+                    if not hist.empty:
+                        current_price = float(hist.iloc[-1]["close"])
+                entry_price = close_info.entry_price if close_info.entry_price > 0 else current_price
+                notional = current_price * position_shares if current_price > 0 else 0.0
+                unrealized_pnl = (
+                    (current_price - entry_price) * position_shares
+                    if current_price > 0 and entry_price > 0
+                    else 0.0
+                )
+                profit_rate = (
+                    (current_price / entry_price - 1)
+                    if current_price > 0 and entry_price > 0
+                    else 0.0
+                )
                 positions_data.append(
                     f"==={close_info.name}({code})===\n"
                     f"策略:{strategy_tag}\n"
                     f"开仓价格:{close_info.entry_price:.2f} CNY\n"
                     f"持仓方向:{close_info.position_side.value}\n"
+                    f"名义价值:{notional:.2f} CNY\n"
+                    f"持仓盈亏:{unrealized_pnl:.2f} CNY\n"
+                    f"持仓收益:{profit_rate:.2%}\n"
                     f"止盈:{close_info.take_profit:.2f}\n"
                     f"止损:{close_info.stop_loss:.2f}\n"
                     f"开仓日期:{close_info.date}"
@@ -2944,7 +2989,16 @@ class AUTOA:
         profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
         realized_pnl = (price_close - entry_price) * position_shares
         strategy_tag = format_strategy_tags(close_info.strategy)
-        msg = f"{close_info.name} 平仓\n策略:{strategy_tag}\n委托价格:{price_close:.2f}\n平仓收益:{profit_rate:.2%}\n平仓依据:{close_info.close_reason}"
+        msg = (
+            f"{close_info.name} 平仓\n"
+            f"策略:{strategy_tag}\n"
+            f"持仓方向:{close_info.position_side.value}\n"
+            f"委托价格:{price_close:.2f}\n"
+            f"委托数量:{position_shares}\n"
+            f"平仓盈亏:{realized_pnl:.2f} CNY\n"
+            f"平仓收益:{profit_rate:.2%}\n"
+            f"平仓依据:{close_info.close_reason}"
+        )
         await cls.send_msg(msg)
 
         await CloseRecordManager.record_close_async(
