@@ -722,7 +722,7 @@ class AUTOBN:
         参数：
             symbol: 交易对符号，如'BTCUSDT'
         返回：
-            持仓数量（绝对值），无持仓返回0
+            成功返回[持仓数量绝对值, 开仓均价]，确认无持仓返回[0, 0]，查询失败返回None
         """
         try:
             position_risk = await self._call_api(
@@ -737,7 +737,7 @@ class AUTOBN:
             }
             return position.get(symbol, [0, 0])
         except Exception:
-            return 0
+            return None
 
     async def open_bn_position(
         self,
@@ -888,8 +888,15 @@ class AUTOBN:
             成功返回symbol，失败返回None
         """
         amount_price = await self.get_amount_close(symbol)
+        if amount_price is None:
+            await self.send_msg(f"{symbol} 平仓跳过：查询持仓数量失败")
+            return
         amount = amount_price[0]
         if not amount:
+            await self.send_msg(f"{symbol} 平仓跳过：确认持仓数量为0")
+            self.alert_all.setdefault("CLOSE_TS", {})[symbol] = time.time()
+            if symbol in self.alert_all["POSITIONS"]:
+                self.alert_all["POSITIONS"].pop(symbol)
             return
         close_ratio = (
             1 if amount * close_ratio * price_close < self.MIN_NOTIONAL else close_ratio
@@ -901,7 +908,7 @@ class AUTOBN:
             )
         )
         if close_amount <= 0:
-            self.alert_all["POSITIONS"].pop(symbol)
+            await self.send_msg(f"{symbol} 平仓跳过：平仓数量精度处理后为0")
             return
         side = close_info.close_side.value
         positionSide = close_info.position_side.value
@@ -946,6 +953,11 @@ class AUTOBN:
                 )
 
                 remaining_amount_price = await self.get_amount_close(symbol)
+                if remaining_amount_price is None:
+                    await self.send_msg(
+                        f"{symbol} 平仓后查询剩余持仓失败，暂不清理本地仓位"
+                    )
+                    return symbol
                 remaining_amount = remaining_amount_price[0]
                 if remaining_amount == 0:
                     self.alert_all.setdefault("CLOSE_TS", {})[symbol] = time.time()
@@ -974,7 +986,21 @@ class AUTOBN:
                 msg = f"bn平仓{symbol}失败，当前价格:{price_close}"
                 await self.send_msg(msg)
                 current_amount_price = await self.get_amount_close(symbol)
-                close_amount = current_amount_price[0] * close_ratio
+                if current_amount_price is None:
+                    await self.send_msg(
+                        f"{symbol} 平仓跳过：重试后查询持仓数量失败"
+                    )
+                    return None
+                current_amount = current_amount_price[0]
+                if not current_amount:
+                    await self.send_msg(
+                        f"{symbol} 平仓跳过：重试后确认持仓数量为0"
+                    )
+                    self.alert_all.setdefault("CLOSE_TS", {})[symbol] = time.time()
+                    if symbol in self.alert_all["POSITIONS"]:
+                        self.alert_all["POSITIONS"].pop(symbol)
+                    return None
+                close_amount = current_amount * close_ratio
                 close_amount = float(
                     Decimal(str(close_amount)).quantize(
                         self.symbols_info.get(symbol)["quantityPrecision"],
@@ -1697,7 +1723,12 @@ class AUTOBN:
                                 close_info,
                             ):
                                 amount_price = await self.get_amount_close(symbol)
-                                close_info.entry_price = amount_price[1]
+                                if amount_price is None:
+                                    await self.send_msg(
+                                        f"{symbol} 加仓后查询持仓均价失败"
+                                    )
+                                elif amount_price[1] > 0:
+                                    close_info.entry_price = amount_price[1]
                                 dca_count = sum(
                                     1
                                     for strategy in close_info.strategy
@@ -1790,7 +1821,12 @@ class AUTOBN:
                                 close_info,
                             ):
                                 amount_price = await self.get_amount_close(symbol)
-                                close_info.entry_price = amount_price[1]
+                                if amount_price is None:
+                                    await self.send_msg(
+                                        f"{symbol} 加仓后查询持仓均价失败"
+                                    )
+                                elif amount_price[1] > 0:
+                                    close_info.entry_price = amount_price[1]
                                 dca_count = sum(
                                     1
                                     for strategy in close_info.strategy
