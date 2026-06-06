@@ -79,11 +79,13 @@ class Position(BaseModel):
     date: int
     strategy: List[PositionSide]
     tp_count: int = 0  # 止盈次数，每次部分止盈后+1，衰减加速系数
-    oi_guard_threshold: float = 0.0  # OI保护阈值（多头开仓通过时记录，初始止损绕过判断时用于风控）
+    stop_guard_threshold: float = 0.0  # 止损触发辅助阈值（AUTOBN/AUTOA按各自策略写入）
     close_reason: str = (
         ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损等）
     )
     last_stop_alert_date: int = 0  # 最近一次止损提醒日期（YYYYMMDD）
+    long_short_ratio: str = ""  # 开仓信号当时的多空比
+    basis_rate: str = ""  # 开仓信号当时的基差率
 
 
 class Observation(BaseModel):
@@ -168,6 +170,8 @@ class CloseRecordManager:
         "平仓比例",
         "策略标签",  # Supertrend/BZ/BD 等
         "平仓依据",
+        "多空比",
+        "基差率",
     ]
 
     @classmethod
@@ -184,10 +188,10 @@ class CloseRecordManager:
         close_ratio: float = 1.0,
         strategy_tag: str = "",
         close_reason: str = "",
+        long_short_ratio: str = "",
+        basis_rate: str = "",
     ):
         """
-        记录一笔平仓交易
-
         参数：
             source: 交易来源 ("AUTOBN" 或 "AUTOA")
             symbol: 交易品种（如'BTCUSDT'或'000001'）
@@ -218,6 +222,8 @@ class CloseRecordManager:
                     "平仓比例": f"{close_ratio:.2%}",
                     "策略标签": strategy_tag,
                     "平仓依据": close_reason,
+                    "多空比": long_short_ratio,
+                    "基差率": basis_rate,
                 }
 
                 # 读取现有数据
@@ -272,6 +278,8 @@ class CloseRecordManager:
         close_ratio: float = 1.0,
         strategy_tag: str = "",
         close_reason: str = "",
+        long_short_ratio: str = "",
+        basis_rate: str = "",
     ):
         await asyncio.wait_for(
             asyncio.to_thread(
@@ -287,6 +295,8 @@ class CloseRecordManager:
                 close_ratio,
                 strategy_tag,
                 close_reason,
+                long_short_ratio,
+                basis_rate,
             ),
             timeout=cls.IO_TIMEOUT_SECONDS,
         )
@@ -358,14 +368,15 @@ class AUTOBN:
     BATCH_WINDOW_MINUTES = 5  # 分批窗口时长（分钟）
     BATCH_SLOT_COUNT = 5  # 窗口内批次数（每分钟一批）
     MESSAGE_TIMEOUT_SECONDS = 10  # 消息发送超时时间（秒）
+    ENABLE_MESSAGES = False  # AUTOBN消息发送开关（临时关闭，后续需要时改回True）
     FILE_IO_TIMEOUT_SECONDS = 10  # 文件IO超时时间（秒）
 
     # ==================== 交易配置常量 ====================
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
-    OPEN_LONG_SHORT_RATIO_THRESHOLD = 55 / 45
-    INITIAL_STOP_LOSS_BYPASS_LONG_SHORT_RATIO_THRESHOLD = 6 / 4
+    OPEN_LONG_SHORT_RATIO_THRESHOLD = 50 / 50
+    LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD = 6 / 4
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
 
@@ -638,6 +649,8 @@ class AUTOBN:
         """
         try:
             self.logger.info(f"发送消息: {msg}")
+            if not self.ENABLE_MESSAGES:
+                return
             timeout = aiohttp.ClientTimeout(total=self.MESSAGE_TIMEOUT_SECONDS)
 
             if wx:
@@ -935,6 +948,8 @@ class AUTOBN:
                 realized_pnl = price_diff * close_amount
                 pnl_percent = price_diff / entryPrice if entryPrice != 0 else 0
                 strategy_tag = format_strategy_tags(close_info.strategy)
+                long_short_ratio_show = close_info.long_short_ratio
+                basis_rate_show = close_info.basis_rate
                 msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}\n平仓依据:{close_info.close_reason}"
                 await self.send_msg(msg)
 
@@ -950,6 +965,8 @@ class AUTOBN:
                     close_ratio=close_ratio,
                     strategy_tag=strategy_tag,
                     close_reason=close_info.close_reason,
+                    long_short_ratio=long_short_ratio_show,
+                    basis_rate=basis_rate_show,
                 )
 
                 remaining_amount_price = await self.get_amount_close(symbol)
@@ -1052,8 +1069,8 @@ class AUTOBN:
             }
         return oi_1h
 
-    async def _ensure_long_oi_guard_threshold(self, symbol, close_info, dtn: datetime):
-        return close_info.oi_guard_threshold
+    async def _ensure_long_stop_guard_threshold(self, symbol, close_info, dtn: datetime):
+        return close_info.stop_guard_threshold
 
     async def _should_bypass_initial_stop_loss(self, symbol, close_info, dtn: datetime):
         long_short_ratio_data = await self.get_long_short_ratio(symbol)
@@ -1068,21 +1085,21 @@ class AUTOBN:
             lsr_bypass_ok = (
                 latest_lsr is not None
                 and latest_lsr
-                < self.INITIAL_STOP_LOSS_BYPASS_LONG_SHORT_RATIO_THRESHOLD
+                < self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
             )
-            await self._ensure_long_oi_guard_threshold(symbol, close_info, dtn)
+            await self._ensure_long_stop_guard_threshold(symbol, close_info, dtn)
             oi_bypass_ok = False
-            if close_info.oi_guard_threshold > 0:
+            if close_info.stop_guard_threshold > 0:
                 oi_5m = await self._get_oi_5m_data(symbol)
                 oi_bypass_ok = (
                     oi_5m
                     and float(oi_5m[-1]["sumOpenInterest"])
-                    > close_info.oi_guard_threshold
+                    > close_info.stop_guard_threshold
                 )
             return lsr_bypass_ok or oi_bypass_ok
 
         return latest_lsr is not None and latest_lsr > (
-            self.INITIAL_STOP_LOSS_BYPASS_LONG_SHORT_RATIO_THRESHOLD
+            self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
         )
 
     async def check_side(
@@ -1260,9 +1277,9 @@ class AUTOBN:
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    oi_guard_threshold = sum(oi_hist_for_cheb) / len(oi_hist_for_cheb)
+                    stop_guard_threshold = sum(oi_hist_for_cheb) / len(oi_hist_for_cheb)
                     return (
-                        (True, lsrd, oi_guard_threshold)
+                        (True, lsrd, stop_guard_threshold)
                         if passed
                         else (False, None, None)
                     )
@@ -1633,8 +1650,8 @@ class AUTOBN:
                 prev_close_price = kline_close[-2]
 
                 # 止损触发条件：
-                # - 保护盈利类（止盈后追踪止损/追踪止损）使用当前价触发并自动平仓
-                # - 初始止损/移动止损(轨道)共用初始止损保护条件，只提醒不自动平仓
+                # - 保护盈利类（止盈后追踪止损/追踪止损）使用当前价触发
+                # - 初始止损/移动止损(轨道)共用初始止损价格条件
                 # - 其他止损使用昨日收盘价触发
                 alert_only_stop = is_alert_only_stop_reason(close_info.close_reason)
                 profit_protect_stop = is_profit_protect_stop_reason(
@@ -1650,38 +1667,43 @@ class AUTOBN:
                     )
                 else:
                     sl_ref_price = prev_close_price
-                initial_stop_loss_bypassed = (
-                    alert_only_stop and PositionSide.N in close_info.strategy
+                sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
+                    not is_long and sl_ref_price >= close_info.stop_loss
                 )
-                sl_triggered = False
-                if not initial_stop_loss_bypassed:
-                    sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
-                        not is_long and sl_ref_price >= close_info.stop_loss
-                    )
-                if sl_triggered and alert_only_stop and not initial_stop_loss_bypassed:
-                    initial_stop_loss_bypassed = await self._should_bypass_initial_stop_loss(
-                        symbol, close_info, dtn
-                    )
-                    if initial_stop_loss_bypassed:
-                        sl_triggered = False
                 # 止盈触发条件
                 tp_triggered = (
                     is_long and current_price >= close_info.take_profit
                 ) or (not is_long and current_price <= close_info.take_profit)
-
-                if sl_triggered:
-                    if alert_only_stop:
-                        if not close_info.close_reason:
-                            close_info.close_reason = "初始止损"
-                        alert_date = int(dtn.strftime("%Y%m%d"))
-                        if close_info.last_stop_alert_date != alert_date:
-                            strategy_tag = format_strategy_tags(close_info.strategy)
-                            await self.send_msg(
-                                f"{symbol} 止损提醒\n策略:{strategy_tag}\n持仓方向:{close_info.position_side.value}\n当前价格:{current_price}\n止损价格:{close_info.stop_loss}\n依据:{close_info.close_reason}"
+                long_short_stop_triggered = False
+                if not sl_triggered and not tp_triggered:
+                    long_short_ratio_data = await self.get_long_short_ratio(symbol)
+                    latest_lsr = None
+                    if long_short_ratio_data:
+                        try:
+                            latest_lsr = float(
+                                long_short_ratio_data[-1]["longShortRatio"]
                             )
-                            close_info.last_stop_alert_date = alert_date
-                        self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
-                        return
+                        except (KeyError, TypeError, ValueError):
+                            latest_lsr = None
+                    if latest_lsr is not None:
+                        long_short_stop_triggered = (
+                            is_long
+                            and latest_lsr
+                            >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                        ) or (
+                            not is_long
+                            and latest_lsr
+                            <= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                        )
+
+                if long_short_stop_triggered:
+                    close_info.close_reason = "多空比止损"
+                    await self.close_bn_position(
+                        symbol, close_info, atr_value, current_price, 1
+                    )
+                elif sl_triggered:
+                    if not close_info.close_reason:
+                        close_info.close_reason = "初始止损"
                     await self.close_bn_position(
                         symbol, close_info, atr_value, current_price, 1
                     )
@@ -1760,9 +1782,12 @@ class AUTOBN:
                                 * self.STOP_LOSS_DECAY_PER_MINUTE
                                 * decay_multiplier
                             )
-                            # 止盈下移: 取衰减后的值和当前上轨的较大值（止盈不低于当前上轨）
+                            # 止盈下移: 取衰减后的值和当前上轨的较小值，最多下移到成本价
                             decayed_tp = close_info.take_profit - tp_decay_step
-                            close_info.take_profit = min(decayed_tp, current_upper)
+                            close_info.take_profit = max(
+                                min(decayed_tp, current_upper),
+                                close_info.entry_price,
+                            )
 
                             if close_info.tp_count > 0:
                                 profit = current_price - close_info.entry_price
@@ -1858,9 +1883,12 @@ class AUTOBN:
                                 * self.STOP_LOSS_DECAY_PER_MINUTE
                                 * decay_multiplier
                             )
-                            # 止盈上移: 取衰减后的值和当前下轨的较小值（止盈不高于当前下轨）
+                            # 止盈上移: 取衰减后的值和当前下轨的较大值，最多上移到成本价
                             decayed_tp = close_info.take_profit + tp_decay_step
-                            close_info.take_profit = max(decayed_tp, current_lower)
+                            close_info.take_profit = min(
+                                max(decayed_tp, current_lower),
+                                close_info.entry_price,
+                            )
 
                             if close_info.tp_count > 0:
                                 profit = close_info.entry_price - current_price
@@ -1921,7 +1949,7 @@ class AUTOBN:
                     atr_value = None
                     hl2 = None
 
-                    long_ok, long_lsr, long_oi_guard_threshold = False, None, None
+                    long_ok, long_lsr, long_stop_guard_threshold = False, None, None
                     if (
                         PositionSide.BZ in open_info.strategy
                         and kline_close[-2] < current_price
@@ -1929,7 +1957,7 @@ class AUTOBN:
                         (
                             long_ok,
                             long_lsr,
-                            long_oi_guard_threshold,
+                            long_stop_guard_threshold,
                         ) = await self.check_side(
                             semaphore,
                             symbol,
@@ -1948,8 +1976,9 @@ class AUTOBN:
                         )
                         if not (zy_msg == 0 and zs_msg == 0):
                             basis_rate = await self.get_basis_rate(symbol)
-                            if basis_rate < -self.BASIS_RATE_THRESHOLD:
-                                open_info.strategy.append(PositionSide.Basis)
+                            if basis_rate >= 0:
+                                return
+                            open_info.strategy.append(PositionSide.Basis)
                             lsr_show = (
                                 f"{long_lsr:.4f}" if long_lsr is not None else "N/A"
                             )
@@ -1990,8 +2019,9 @@ class AUTOBN:
                         )
                         if not (zy_msg == 0 and zs_msg == 0):
                             basis_rate = await self.get_basis_rate(symbol)
-                            if basis_rate > self.BASIS_RATE_THRESHOLD:
-                                open_info.strategy.append(PositionSide.Basis)
+                            if basis_rate <= 0:
+                                return
+                            open_info.strategy.append(PositionSide.Basis)
                             lsr_show = (
                                 f"{short_lsr:.4f}" if short_lsr is not None else "N/A"
                             )
@@ -2051,11 +2081,21 @@ class AUTOBN:
                             name=symbol,
                             date=int(dtn.strftime("%Y%m%d")),
                             strategy=open_info.strategy,
-                            oi_guard_threshold=(
-                                long_oi_guard_threshold
-                                if is_long and long_oi_guard_threshold is not None
+                            stop_guard_threshold=(
+                                long_stop_guard_threshold
+                                if is_long and long_stop_guard_threshold is not None
                                 else 0.0
                             ),
+                            long_short_ratio=(
+                                f"{long_lsr:.4f}"
+                                if is_long and long_lsr is not None
+                                else (
+                                    f"{short_lsr:.4f}"
+                                    if (not is_long) and short_lsr is not None
+                                    else ""
+                                )
+                            ),
+                            basis_rate=f"{basis_rate:.4%}",
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                         open_info.strategy = [open_info.strategy[0]]
@@ -2899,28 +2939,20 @@ class AUTOA:
         if hist.empty:
             return
 
-        # 获取最新价格
+        # 获取最新价格与成交量
         price_close = float(hist.iloc[-1]["close"])
-        prev_volume = float(hist.iloc[-2]["volume"]) if len(hist) > 1 else 0.0
+        current_volume = float(hist.iloc[-1]["volume"])
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
-        prev_close = float(hist.iloc[-2]["close"]) if len(hist) > 1 else price_close
-        alert_only_stop = is_alert_only_stop_reason(close_info.close_reason)
-        skip_initial_stop_loss = (
-            alert_only_stop and PositionSide.N in close_info.strategy
-        )
         take_profit_triggered = price_close >= close_info.take_profit
         stop_loss_triggered = price_close <= close_info.stop_loss
-        if alert_only_stop:
-            if skip_initial_stop_loss:
-                stop_loss_triggered = False
-            else:
-                stop_loss_triggered = (
-                    stop_loss_triggered
-                    and prev_close <= close_info.stop_loss
-                    and prev_volume <= close_info.oi_guard_threshold
-                )
-        if not take_profit_triggered and not stop_loss_triggered:
+        volume_stop_triggered = (
+            not take_profit_triggered
+            and not stop_loss_triggered
+            and close_info.stop_guard_threshold > 0
+            and current_volume <= close_info.stop_guard_threshold
+        )
+        if not take_profit_triggered and not stop_loss_triggered and not volume_stop_triggered:
             # 未触及止盈止损，执行移动止损逻辑
             # 参照 AUTOBN 的动态止盈止损逻辑（使用当前hl2与ATR计算上下轨）
             DECAY = cls.STOP_LOSS_DECAY
@@ -2965,11 +2997,14 @@ class AUTOA:
                 )
             else:
                 # 做多: 止盈在上方，止损在下方
-                # 止盈下移: 取衰减后的值和当前上轨的较小值
+                # 止盈下移: 取衰减后的值和当前上轨的较小值，最多下移到成本价
                 initial_tp_gap = close_info.take_profit - close_info.entry_price
                 tp_decay_step = initial_tp_gap * DECAY
                 decayed_tp = close_info.take_profit - tp_decay_step
-                close_info.take_profit = min(decayed_tp, current_upper)
+                close_info.take_profit = max(
+                    min(decayed_tp, current_upper),
+                    close_info.entry_price,
+                )
 
                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                 profit = price_close - close_info.entry_price
@@ -3004,18 +3039,10 @@ class AUTOA:
 
         if take_profit_triggered:
             close_info.close_reason = "止盈"
-        elif stop_loss_triggered and alert_only_stop:
-            if not close_info.close_reason:
-                close_info.close_reason = "初始止损"
-            alert_date = int(today.strftime("%Y%m%d"))
-            if close_info.last_stop_alert_date != alert_date:
-                strategy_tag = format_strategy_tags(close_info.strategy)
-                await cls.send_msg(
-                    f"{close_info.name}({code}) 止损提醒\n策略:{strategy_tag}\n当前价格:{price_close:.2f}\n止损价格:{close_info.stop_loss:.2f}\n依据:{close_info.close_reason}"
-                )
-                close_info.last_stop_alert_date = alert_date
-            cls.alert_all["POSITIONS"][code] = close_info.model_dump()
-            return
+        elif volume_stop_triggered:
+            close_info.close_reason = "成交量止损"
+        elif stop_loss_triggered and not close_info.close_reason:
+            close_info.close_reason = "初始止损"
         elif not close_info.close_reason:
             close_info.close_reason = "初始止损"
 
@@ -3154,7 +3181,7 @@ class AUTOA:
                     name=open_info.name,
                     date=int(today.strftime("%Y%m%d")),
                     strategy=open_info.strategy,
-                    oi_guard_threshold=volume_guard_threshold,
+                    stop_guard_threshold=volume_guard_threshold,
                 ).model_dump()
 
                 # 5. 发送买入通知
