@@ -2497,8 +2497,8 @@ class AUTOA:
         # 计算10日均线
         ma10 = hist["close"].rolling(window=cls.MA_PERIOD).mean()
 
-        # 检查前两根K线（不含今天）是否都收盘在10日均线下方
-        # 即 hist.iloc[-2] 和 hist.iloc[-3] 的收盘价都 < 10日均线
+        # 检查前两根K线（不含今天）是否至少一根收盘在10日均线下方
+        # 即 hist.iloc[-2] 或 hist.iloc[-3] 的收盘价 < 10日均线
         yesterday_below_ma10 = pd.notna(ma10.iloc[-2]) and float(
             hist.iloc[-2]["close"]
         ) < float(ma10.iloc[-2])
@@ -2506,7 +2506,7 @@ class AUTOA:
             hist.iloc[-3]["close"]
         ) < float(ma10.iloc[-3])
 
-        if not (yesterday_below_ma10 and day_before_below_ma10):
+        if not (yesterday_below_ma10 or day_before_below_ma10):
             return False
 
         # 今天跳空高开：开盘价 > 昨日最高价
