@@ -649,7 +649,8 @@ class AUTOBN:
         """
         try:
             self.logger.info(f"发送消息: {msg}")
-            if not self.ENABLE_MESSAGES:
+            target_qy_key = qy_key or self.qy_key
+            if not self.ENABLE_MESSAGES and target_qy_key != self.signal_qy_key:
                 return
             timeout = aiohttp.ClientTimeout(total=self.MESSAGE_TIMEOUT_SECONDS)
 
@@ -672,7 +673,7 @@ class AUTOBN:
                 json_msg = {"msgtype": "text", "text": {"content": msg}}
                 url = (
                     "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
-                    f"{qy_key or self.qy_key}"
+                    f"{target_qy_key}"
                 )
 
             async with aiohttp.ClientSession(timeout=timeout) as http_session:
