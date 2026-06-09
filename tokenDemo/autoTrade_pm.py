@@ -1070,39 +1070,6 @@ class AUTOBN:
             }
         return oi_1h
 
-    async def _ensure_long_stop_guard_threshold(self, symbol, close_info, dtn: datetime):
-        return close_info.stop_guard_threshold
-
-    async def _should_bypass_initial_stop_loss(self, symbol, close_info, dtn: datetime):
-        long_short_ratio_data = await self.get_long_short_ratio(symbol)
-        latest_lsr = None
-        if long_short_ratio_data:
-            try:
-                latest_lsr = float(long_short_ratio_data[-1]["longShortRatio"])
-            except (KeyError, TypeError, ValueError):
-                latest_lsr = None
-
-        if close_info.position_side.value == PositionSide.LONG.value:
-            lsr_bypass_ok = (
-                latest_lsr is not None
-                and latest_lsr
-                < self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-            )
-            await self._ensure_long_stop_guard_threshold(symbol, close_info, dtn)
-            oi_bypass_ok = False
-            if close_info.stop_guard_threshold > 0:
-                oi_5m = await self._get_oi_5m_data(symbol)
-                oi_bypass_ok = (
-                    oi_5m
-                    and float(oi_5m[-1]["sumOpenInterest"])
-                    > close_info.stop_guard_threshold
-                )
-            return lsr_bypass_ok or oi_bypass_ok
-
-        return latest_lsr is not None and latest_lsr > (
-            self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-        )
-
     async def check_side(
         self,
         semaphore,
@@ -1676,29 +1643,40 @@ class AUTOBN:
                     is_long and current_price >= close_info.take_profit
                 ) or (not is_long and current_price <= close_info.take_profit)
                 long_short_stop_triggered = False
+                oi_stop_triggered = False
                 if not sl_triggered and not tp_triggered:
-                    long_short_ratio_data = await self.get_long_short_ratio(symbol)
-                    latest_lsr = None
-                    if long_short_ratio_data:
-                        try:
-                            latest_lsr = float(
-                                long_short_ratio_data[-1]["longShortRatio"]
-                            )
-                        except (KeyError, TypeError, ValueError):
-                            latest_lsr = None
-                    if latest_lsr is not None:
-                        long_short_stop_triggered = (
-                            is_long
-                            and latest_lsr
-                            >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-                        ) or (
-                            not is_long
-                            and latest_lsr
-                            <= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                    if is_long and close_info.stop_guard_threshold > 0:
+                        oi_5m = await self._get_oi_5m_data(symbol)
+                        oi_stop_triggered = (
+                            oi_5m
+                            and float(oi_5m[-1]["sumOpenInterest"])
+                            <= close_info.stop_guard_threshold
                         )
+                    if not oi_stop_triggered:
+                        long_short_ratio_data = await self.get_long_short_ratio(symbol)
+                        latest_lsr = None
+                        if long_short_ratio_data:
+                            try:
+                                latest_lsr = float(
+                                    long_short_ratio_data[-1]["longShortRatio"]
+                                )
+                            except (KeyError, TypeError, ValueError):
+                                latest_lsr = None
+                        if latest_lsr is not None:
+                            long_short_stop_triggered = (
+                                is_long
+                                and latest_lsr
+                                >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                            ) or (
+                                not is_long
+                                and latest_lsr
+                                <= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                            )
 
-                if long_short_stop_triggered:
-                    close_info.close_reason = "多空比止损"
+                if long_short_stop_triggered or oi_stop_triggered:
+                    close_info.close_reason = (
+                        "多空比止损" if long_short_stop_triggered else "OI止损"
+                    )
                     await self.close_bn_position(
                         symbol, close_info, atr_value, current_price, 1
                     )
