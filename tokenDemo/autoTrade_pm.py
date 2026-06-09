@@ -2918,9 +2918,9 @@ class AUTOA:
         if hist.empty:
             return
 
-        # 获取最新价格与成交量
+        # 获取最新价格与上一根已完成日K成交量
         price_close = float(hist.iloc[-1]["close"])
-        current_volume = float(hist.iloc[-1]["volume"])
+        prev_volume = float(hist.iloc[-2]["volume"]) if len(hist) > 1 else 0.0
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
         take_profit_triggered = price_close >= close_info.take_profit
@@ -2929,7 +2929,8 @@ class AUTOA:
             not take_profit_triggered
             and not stop_loss_triggered
             and close_info.stop_guard_threshold > 0
-            and current_volume <= close_info.stop_guard_threshold
+            and prev_volume > 0
+            and prev_volume <= close_info.stop_guard_threshold
         )
         if not take_profit_triggered and not stop_loss_triggered and not volume_stop_triggered:
             # 未触及止盈止损，执行移动止损逻辑
