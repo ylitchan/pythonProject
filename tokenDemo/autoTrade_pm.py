@@ -1644,8 +1644,17 @@ class AUTOBN:
                 ) or (not is_long and current_price <= close_info.take_profit)
                 long_short_stop_triggered = False
                 oi_stop_triggered = False
+                current_profit = (
+                    current_price - close_info.entry_price
+                    if is_long
+                    else close_info.entry_price - current_price
+                )
                 if not sl_triggered and not tp_triggered:
-                    if is_long and close_info.stop_guard_threshold > 0:
+                    if (
+                        is_long
+                        and current_profit > 0
+                        and close_info.stop_guard_threshold > 0
+                    ):
                         oi_5m = await self._get_oi_5m_data(symbol)
                         oi_stop_triggered = (
                             oi_5m
