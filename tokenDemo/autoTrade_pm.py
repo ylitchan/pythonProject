@@ -2937,6 +2937,7 @@ class AUTOA:
         volume_stop_triggered = (
             not take_profit_triggered
             and not stop_loss_triggered
+            and PositionSide.N not in close_info.strategy
             and close_info.stop_guard_threshold > 0
             and prev_volume > 0
             and prev_volume <= close_info.stop_guard_threshold
