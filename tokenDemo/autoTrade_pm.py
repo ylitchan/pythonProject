@@ -324,7 +324,7 @@ class AUTOBN:
     LONG_SHORT_RATIO_LONG_LIMIT = 3 / 7  # LONG额外放行阈值（多空比）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
     LONG_SHORT_RATIO_EXTREME_LOOKBACK = 10  # LONG极值判定回看窗口（不含当前值）
-    OI_DELTA_LONG_RATIO_WEIGHT = 0.5  # LONG融合公式中(oi_5m-oi_1h)项权重
+    OI_DELTA_LONG_RATIO_WEIGHT = 0.4  # LONG融合公式中(oi_5m-oi_1h)项权重
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
