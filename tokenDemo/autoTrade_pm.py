@@ -1234,7 +1234,7 @@ class AUTOBN:
                         + (oi_5m_last - latest_oi_1h) * self.OI_DELTA_LONG_RATIO_WEIGHT
                     ) / current_total_oi
 
-                    if blend <= long_ratio_5m:
+                    if blend < long_ratio_5m:
                         return False, None, None
 
                     passed = (
@@ -1966,7 +1966,8 @@ class AUTOBN:
                             basis_rate = await self.get_basis_rate(symbol)
                             if basis_rate >= 0:
                                 return
-                            open_info.strategy.append(PositionSide.Basis)
+                            if basis_rate < -self.BASIS_RATE_THRESHOLD:
+                                open_info.strategy.append(PositionSide.Basis)
                             lsr_show = (
                                 f"{long_lsr:.4f}" if long_lsr is not None else "N/A"
                             )
