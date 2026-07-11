@@ -111,7 +111,7 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
             "000002": self.make_position("失败股票", [PositionSide.BZ]).model_dump(),
         }
 
-        async def get_price(code):
+        async def get_price(code, trading_days):
             return 10.5 if code == "000001" else None
 
         with (
@@ -147,6 +147,50 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("名义价值:0.00", message)
         self.assertNotIn("持仓盈亏:0.00", message)
         self.assertNotIn("持仓收益:0.00%", message)
+
+    async def test_daily_positions_reuses_one_trading_calendar_snapshot(self):
+        positions = {
+            "000001": self.make_position("股票一").model_dump(),
+            "000002": self.make_position("股票二").model_dump(),
+        }
+        trading_days = ["20260711", "20260710"]
+
+        async def get_price(code, supplied_days):
+            self.assertIs(supplied_days, trading_days)
+            return 10.5
+
+        with (
+            patch.object(AUTOA, "alert_all", {"POSITIONS": positions}),
+            patch.object(AUTOA, "zt_dates", []),
+            patch.object(
+                AUTOA,
+                "get_last_trading_days",
+                new=AsyncMock(return_value=trading_days),
+            ) as get_days,
+            patch.object(AUTOA, "_get_auction_price", side_effect=get_price) as get_price_mock,
+            patch.object(AUTOA, "send_msg", new=AsyncMock()),
+        ):
+            await AUTOA.push_daily_positions()
+
+        get_days.assert_awaited_once()
+        self.assertEqual(get_price_mock.await_count, 2)
+
+    async def test_auction_prices_still_fetch_each_stock_independently(self):
+        trading_days = ["20260711", "20260710"]
+        hist = pd.DataFrame([{"close": 10.5}])
+        with patch.object(
+            AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)
+        ) as stock_hist:
+            first = await AUTOA._get_auction_price("000001", trading_days)
+            second = await AUTOA._get_auction_price("000002", trading_days)
+
+        self.assertEqual(first, 10.5)
+        self.assertEqual(second, 10.5)
+        self.assertEqual(stock_hist.await_count, 2)
+        self.assertEqual(
+            [call.args[0] for call in stock_hist.await_args_list],
+            ["000001", "000002"],
+        )
 
 
 class CloseRecordManagerCharacterizationTest(unittest.IsolatedAsyncioTestCase):

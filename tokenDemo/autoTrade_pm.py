@@ -2717,9 +2717,9 @@ class AUTOA:
         return total_cost / (existing_shares + cls.DEFAULT_POSITION_SHARES)
 
     @classmethod
-    async def _get_auction_price(cls, code: str) -> Optional[float]:
-        today = datetime.datetime.today()
-        trading_days = cls.zt_dates or await cls.get_last_trading_days(today)
+    async def _get_auction_price(
+        cls, code: str, trading_days: List[str]
+    ) -> Optional[float]:
         if not trading_days:
             return None
         hist = await cls.stock_zh_a_hist(
@@ -2760,10 +2760,12 @@ class AUTOA:
 
             positions_data = []
             total_notional = 0.0
+            today = datetime.datetime.today()
+            trading_days = cls.zt_dates or await cls.get_last_trading_days(today)
             for code, close_info_dict in positions.items():
                 close_info = Position.model_validate(close_info_dict)
                 strategy_tag = format_strategy_tags(close_info.strategy)
-                current_price = await cls._get_auction_price(code)
+                current_price = await cls._get_auction_price(code, trading_days)
                 position_header = (
                     f"==={close_info.name}({code})===\n"
                     f"策略:{strategy_tag}\n"
