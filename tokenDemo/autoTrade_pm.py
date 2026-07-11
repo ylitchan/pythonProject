@@ -106,6 +106,7 @@ class Observation(BaseModel):
     side: OrderSide
     strategy: List[PositionSide]
     name: str
+    bz_reference_high: Optional[float] = None
 
 
 def format_strategy_tags(strategies: List[PositionSide | str]) -> str:
@@ -121,14 +122,6 @@ def format_strategy_tags(strategies: List[PositionSide | str]) -> str:
         f"{value}*{counts[value]}" if counts[value] > 1 else value
         for value in ordered_values
     )
-
-
-def is_alert_only_stop_reason(reason: str) -> bool:
-    return reason in {"", "初始止损", "移动止损(轨道)"}
-
-
-def is_profit_protect_stop_reason(reason: str) -> bool:
-    return reason in {"止盈后追踪止损", "追踪止损(保护盈利)"}
 
 
 # ==================== 平仓记录管理 ====================
@@ -150,6 +143,9 @@ class CloseRecordManager:
         os.path.dirname(os.path.abspath(__file__)), "close_records.xlsx"
     )
     _logger = logging.getLogger("CloseRecordManager")
+    _pending_records = []
+    _batch_lock = None
+    _batch_lock_loop = None
 
     # Sheet名称映射
     SHEET_NAMES = {
@@ -265,6 +261,30 @@ class CloseRecordManager:
                 cls._logger.exception("保存平仓记录时发生异常")
 
     @classmethod
+    def _record_close_batch(cls, records):
+        with cls._lock:
+            existing_sheets = {}
+            if os.path.exists(cls._excel_file):
+                try:
+                    with pd.ExcelFile(cls._excel_file, engine="openpyxl") as xls:
+                        for name in xls.sheet_names:
+                            existing_sheets[name] = pd.read_excel(xls, sheet_name=name)
+                except Exception:
+                    pass
+
+            for record in records:
+                sheet_name = cls.SHEET_NAMES.get(record["source"], record["source"])
+                df = existing_sheets.get(sheet_name, pd.DataFrame(columns=cls.COLUMNS))
+                new_record = {key: value for key, value in record.items() if key != "source"}
+                existing_sheets[sheet_name] = pd.concat(
+                    [df, pd.DataFrame([new_record])], ignore_index=True
+                )
+
+            with pd.ExcelWriter(cls._excel_file, engine="openpyxl") as writer:
+                for name, data in existing_sheets.items():
+                    data.to_excel(writer, sheet_name=name, index=False)
+
+    @classmethod
     async def record_close_async(
         cls,
         source: str,
@@ -281,25 +301,60 @@ class CloseRecordManager:
         long_short_ratio: str = "",
         basis_rate: str = "",
     ):
-        await asyncio.wait_for(
-            asyncio.to_thread(
-                cls.record_close,
-                source,
-                symbol,
-                position_side,
-                entry_price,
-                close_price,
-                close_amount,
-                realized_pnl,
-                pnl_percent,
-                close_ratio,
-                strategy_tag,
-                close_reason,
-                long_short_ratio,
-                basis_rate,
-            ),
-            timeout=cls.IO_TIMEOUT_SECONDS,
-        )
+        record = {
+            "source": source,
+            "平仓时间": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "交易品种": symbol,
+            "持仓方向": position_side,
+            "开仓价格": entry_price,
+            "平仓价格": close_price,
+            "平仓数量": close_amount,
+            "平仓盈亏(USDT/CNY)": realized_pnl,
+            "平仓收益率": f"{pnl_percent:.2%}",
+            "平仓比例": f"{close_ratio:.2%}",
+            "策略标签": strategy_tag,
+            "平仓依据": close_reason,
+            "多空比": long_short_ratio,
+            "基差率": basis_rate,
+        }
+        cls._pending_records.append(record)
+        await asyncio.sleep(0)
+        current_loop = asyncio.get_running_loop()
+        if cls._batch_lock is None or cls._batch_lock_loop is not current_loop:
+            cls._batch_lock = asyncio.Lock()
+            cls._batch_lock_loop = current_loop
+        async with cls._batch_lock:
+            if record not in cls._pending_records:
+                return
+            records = cls._pending_records[:]
+            try:
+                await asyncio.to_thread(cls._record_close_batch, records)
+            except Exception:
+                cls._logger.exception("批量保存平仓记录失败，记录保留待后续重试")
+                return
+            else:
+                del cls._pending_records[: len(records)]
+                cls._logger.info(f"平仓记录批量保存完成，共{len(records)}条")
+
+    @classmethod
+    async def flush_pending_records(cls):
+        if not cls._pending_records:
+            return
+        current_loop = asyncio.get_running_loop()
+        if cls._batch_lock is None or cls._batch_lock_loop is not current_loop:
+            cls._batch_lock = asyncio.Lock()
+            cls._batch_lock_loop = current_loop
+        async with cls._batch_lock:
+            records = cls._pending_records[:]
+            if not records:
+                return
+            try:
+                await asyncio.to_thread(cls._record_close_batch, records)
+            except Exception:
+                cls._logger.exception("退出前刷新平仓记录失败")
+                return
+            del cls._pending_records[: len(records)]
+            cls._logger.info(f"退出前刷新平仓记录完成，共{len(records)}条")
 
 
 class AUTOBN:
@@ -320,6 +375,7 @@ class AUTOBN:
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
     LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
+    EXCHANGE_INFO_CACHE_TTL = 6 * 60 * 60  # 交易所元数据缓存过期时间（6小时）
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
     LONG_SHORT_RATIO_LONG_LIMIT = 3 / 7  # LONG额外放行阈值（多空比）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
@@ -499,6 +555,9 @@ class AUTOBN:
         # 含义:用于控制单次下单的资金使用上限(与 open_ratio 一起作用)
         obj.slot_balance = kwargs.get("slot_balance", [0.0])
         obj.symbols_info = {}
+        obj._exchange_info_cache = None
+        obj._exchange_info_cache_timestamp = 0.0
+        obj._http_session = None
         obj.is_early_morning = False
         # 初始化多空比缓存: {symbol: {"data": [...], "timestamp": float}}
         obj._long_short_ratio_cache = {}
@@ -631,6 +690,17 @@ class AUTOBN:
             )
         )
 
+    async def _get_http_session(self):
+        if self._http_session is None or self._http_session.closed:
+            timeout = aiohttp.ClientTimeout(total=self.MESSAGE_TIMEOUT_SECONDS)
+            self._http_session = aiohttp.ClientSession(timeout=timeout)
+        return self._http_session
+
+    async def close_http_session(self):
+        if self._http_session is not None and not self._http_session.closed:
+            await self._http_session.close()
+        self._http_session = None
+
     async def send_msg(
         self, msg: str, wx: bool = False, qy_key: Optional[str] = None
     ) -> None:
@@ -652,8 +722,6 @@ class AUTOBN:
             target_qy_key = qy_key or self.qy_key
             if not self.ENABLE_MESSAGES and target_qy_key != self.signal_qy_key:
                 return
-            timeout = aiohttp.ClientTimeout(total=self.MESSAGE_TIMEOUT_SECONDS)
-
             if wx:
                 json_msg = {
                     "MsgItem": [
@@ -676,13 +744,13 @@ class AUTOBN:
                     f"{target_qy_key}"
                 )
 
-            async with aiohttp.ClientSession(timeout=timeout) as http_session:
-                async with http_session.post(url=url, json=json_msg) as response:
-                    if response.status != 200:
-                        response_text = await response.text()
-                        self.logger.error(
-                            f"消息发送失败，状态码: {response.status}，响应: {response_text}"
-                        )
+            http_session = await self._get_http_session()
+            async with http_session.post(url=url, json=json_msg) as response:
+                if response.status != 200:
+                    response_text = await response.text()
+                    self.logger.error(
+                        f"消息发送失败，状态码: {response.status}，响应: {response_text}"
+                    )
         except Exception as e:
             self.logger.error(f"消息发送异常: {str(e)}")
 
@@ -1345,7 +1413,15 @@ class AUTOBN:
                     f"{symbol}获取多空比数据失败: {type(e).__name__}: {e!r}"
                 )
             data2 = []
-        return data + data2
+        fresh_data2 = []
+        freshness_time = time.time()
+        for item in data2:
+            timestamp = float(item.get("timestamp", 0) or 0)
+            if timestamp > 10**12:
+                timestamp /= 1000
+            if 0 <= freshness_time - timestamp <= 5 * 60:
+                fresh_data2.append(item)
+        return data + fresh_data2
 
     async def get_basis_rate(self, symbol: str) -> float:
         """
@@ -1615,26 +1691,9 @@ class AUTOBN:
                 # 多头: take_profit=高价, stop_loss=低价
                 # 空头: take_profit=低价, stop_loss=高价
                 is_long = close_info.position_side.value == PositionSide.LONG.value
-                prev_close_price = kline_close[-2]
 
-                # 止损触发条件：
-                # - 保护盈利类（止盈后追踪止损/追踪止损）使用当前价触发
-                # - 初始止损/移动止损(轨道)共用初始止损价格条件
-                # - 其他止损使用昨日收盘价触发
-                alert_only_stop = is_alert_only_stop_reason(close_info.close_reason)
-                profit_protect_stop = is_profit_protect_stop_reason(
-                    close_info.close_reason
-                )
-                if profit_protect_stop:
-                    sl_ref_price = current_price
-                elif alert_only_stop:
-                    sl_ref_price = (
-                        max(current_price, prev_close_price)
-                        if is_long
-                        else min(current_price, prev_close_price)
-                    )
-                else:
-                    sl_ref_price = prev_close_price
+                # 价格止损统一使用当前价触发
+                sl_ref_price = current_price
                 sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
                     not is_long and sl_ref_price >= close_info.stop_loss
                 )
@@ -1644,15 +1703,20 @@ class AUTOBN:
                 ) or (not is_long and current_price <= close_info.take_profit)
                 long_short_stop_triggered = False
                 oi_stop_triggered = False
-                current_profit = (
-                    current_price - close_info.entry_price
-                    if is_long
-                    else close_info.entry_price - current_price
-                )
                 if not sl_triggered and not tp_triggered:
+                    long_short_ratio_data = await self.get_long_short_ratio(symbol)
+                    latest_lsr = None
+                    if long_short_ratio_data:
+                        try:
+                            latest_lsr = float(
+                                long_short_ratio_data[-1]["longShortRatio"]
+                            )
+                        except (KeyError, TypeError, ValueError):
+                            latest_lsr = None
                     if (
                         is_long
-                        and current_profit > 0
+                        and latest_lsr is not None
+                        and latest_lsr > 1
                         and close_info.stop_guard_threshold > 0
                     ):
                         oi_5m = await self._get_oi_5m_data(symbol)
@@ -1661,26 +1725,16 @@ class AUTOBN:
                             and float(oi_5m[-1]["sumOpenInterest"])
                             <= close_info.stop_guard_threshold
                         )
-                    if not oi_stop_triggered:
-                        long_short_ratio_data = await self.get_long_short_ratio(symbol)
-                        latest_lsr = None
-                        if long_short_ratio_data:
-                            try:
-                                latest_lsr = float(
-                                    long_short_ratio_data[-1]["longShortRatio"]
-                                )
-                            except (KeyError, TypeError, ValueError):
-                                latest_lsr = None
-                        if latest_lsr is not None:
-                            long_short_stop_triggered = (
-                                is_long
-                                and latest_lsr
-                                >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-                            ) or (
-                                not is_long
-                                and latest_lsr
-                                <= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-                            )
+                    if not oi_stop_triggered and latest_lsr is not None:
+                        long_short_stop_triggered = (
+                            is_long
+                            and latest_lsr
+                            >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                        ) or (
+                            not is_long
+                            and latest_lsr
+                            <= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                        )
 
                 if long_short_stop_triggered or oi_stop_triggered:
                     close_info.close_reason = (
@@ -2136,6 +2190,21 @@ class AUTOBN:
             self.logger.exception(f"处理标的 {symbol} 时发生异常")
             return
 
+    async def get_exchange_info(self):
+        current_time = time.time()
+        if (
+            self._exchange_info_cache is not None
+            and current_time - self._exchange_info_cache_timestamp
+            < self.EXCHANGE_INFO_CACHE_TTL
+        ):
+            return self._exchange_info_cache
+        exchange_info = await self._call_api(
+            self.market_client.rest_api.exchange_information
+        )
+        self._exchange_info_cache = exchange_info
+        self._exchange_info_cache_timestamp = current_time
+        return exchange_info
+
     def get_symbols_info(self, exchange_info=None):
         # 获取交易所信息（公开合约元信息使用 USDS-M Futures 新 SDK）
         if exchange_info is None:
@@ -2284,9 +2353,7 @@ class AUTOBN:
                         self.papi_client.rest_api.query_um_position_information
                     )
                     positions_data = self.get_position_risk(position_risk_data)
-                    exchange_info = await self._call_api(
-                        self.market_client.rest_api.exchange_information
-                    )
+                    exchange_info = await self.get_exchange_info()
                     self.get_symbols_info(exchange_info)
                     self.symbols = list(self.symbols_info.keys())
                     break
@@ -2388,9 +2455,7 @@ class AUTOA:
     FILE_IO_TIMEOUT_SECONDS = 10  # 文件IO超时时间（秒）
     AKSHARE_TIMEOUT_SECONDS = 15  # akshare请求超时时间（秒）
 
-    # ==================== 均线与筛选常量 ====================
-    MA_PERIOD = 10  # 均线周期
-    BREAK_MA_LOOKBACK_DAYS = 5  # 跌破均线检查天数
+    # ==================== 筛选常量 ====================
     DEFAULT_POSITION_SHARES = 100  # 单次开仓固定股数
     VOLUME_CHEB_SAMPLE_START_OFFSET = -30  # 成交量切比雪夫样本窗口起点（含）
     VOLUME_CHEB_SAMPLE_END_OFFSET = -10  # 成交量切比雪夫样本窗口终点（不含）
@@ -2466,42 +2531,18 @@ class AUTOA:
         return min(atr, atr_cap) if atr_cap > 0 else atr
 
     @classmethod
-    def check_gap_up_after_break_ma10(cls, hist: pd.DataFrame) -> bool:
-        """
-        检查是否满足"10日线下跳空高开"
-
-        条件：
-        1. 前两根K线（不含今天）收盘都在10日均线下方
-        2. 今天跳空高开（开盘价 > 昨日最高价）
-
-        参数:
-            hist: K线数据DataFrame，需包含 open, high, close 列
-        返回:
-            bool: 是否满足条件
-        """
-        if len(hist) < cls.MA_PERIOD + 2:
+    def check_gap_up_after_bz_reference(
+        cls, hist: pd.DataFrame, bz_reference_high: Optional[float]
+    ) -> bool:
+        """检查昨日回踩 BZ 基准后，今天是否跳空高开。"""
+        if len(hist) < 2 or bz_reference_high is None or bz_reference_high <= 0:
             return False
 
-        # 计算10日均线
-        ma10 = hist["close"].rolling(window=cls.MA_PERIOD).mean()
-
-        # 检查前两根K线（不含今天）是否至少一根收盘在10日均线下方
-        # 即 hist.iloc[-2] 或 hist.iloc[-3] 的收盘价 < 10日均线
-        yesterday_below_ma10 = pd.notna(ma10.iloc[-2]) and float(
-            hist.iloc[-2]["close"]
-        ) < float(ma10.iloc[-2])
-        day_before_below_ma10 = pd.notna(ma10.iloc[-3]) and float(
-            hist.iloc[-3]["close"]
-        ) < float(ma10.iloc[-3])
-
-        if not (yesterday_below_ma10 or day_before_below_ma10):
-            return False
-
-        # 今天跳空高开：开盘价 > 昨日最高价
+        yesterday_low = float(hist.iloc[-2]["low"])
         today_open = float(hist.iloc[-1]["open"])
         yesterday_high = float(hist.iloc[-2]["high"])
 
-        return today_open > yesterday_high
+        return yesterday_low < bz_reference_high and today_open > yesterday_high
 
     @classmethod
     def calculate_chebyshev_probability(cls, data, value):
@@ -2629,6 +2670,12 @@ class AUTOA:
         return cls._http_session
 
     @classmethod
+    async def close_http_session(cls):
+        if cls._http_session is not None and not cls._http_session.closed:
+            await cls._http_session.close()
+        cls._http_session = None
+
+    @classmethod
     async def send_msg(cls, msg):
         """
         发送消息通知函数
@@ -2670,60 +2717,89 @@ class AUTOA:
         return total_cost / (existing_shares + cls.DEFAULT_POSITION_SHARES)
 
     @classmethod
+    async def _get_auction_price(cls, code: str) -> Optional[float]:
+        today = datetime.datetime.today()
+        trading_days = cls.zt_dates or await cls.get_last_trading_days(today)
+        if not trading_days:
+            return None
+        hist = await cls.stock_zh_a_hist(
+            code,
+            "date,code,open,high,low,close,preclose,volume,amount",
+            start_date=trading_days[-1],
+            end_date=trading_days[0],
+            frequency="d",
+            adjustflag="3",
+        )
+        if hist.empty:
+            return None
+        try:
+            price = float(hist.iloc[-1]["close"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        return price if price > 0 else None
+
+    @classmethod
+    def _calculate_position_valuation(
+        cls, close_info: Position, current_price: float
+    ) -> tuple[int, float, float, float]:
+        position_shares = cls._get_position_share_count(close_info)
+        notional = current_price * position_shares
+        position_cost = close_info.entry_price * position_shares
+        unrealized_pnl = notional - position_cost
+        profit_rate = unrealized_pnl / position_cost if position_cost > 0 else 0.0
+        return position_shares, notional, unrealized_pnl, profit_rate
+
+    @classmethod
     async def push_daily_positions(cls):
-        """每日推送一次A股持仓信息（模板参考AUTOBN）"""
+        """每日推送一次A股策略持仓估值。"""
         try:
             positions = cls.alert_all.get("POSITIONS", {})
             if not positions:
-                await cls.send_msg("账户余额:\nN/A\n持仓信息:\n暂无持仓")
+                await cls.send_msg("总持仓金额:\n0.00 CNY\n持仓信息:\n暂无持仓")
                 return
 
             positions_data = []
-            today = datetime.datetime.today()
-            if not cls.zt_dates:
-                cls.zt_dates = await cls.get_last_trading_days(today)
+            total_notional = 0.0
             for code, close_info_dict in positions.items():
                 close_info = Position.model_validate(close_info_dict)
                 strategy_tag = format_strategy_tags(close_info.strategy)
-                position_shares = cls._get_position_share_count(close_info)
-                current_price = 0.0
-                if cls.zt_dates:
-                    hist = await cls.stock_zh_a_hist(
-                        code,
-                        "date,code,open,high,low,close,preclose,volume,amount",
-                        start_date=cls.zt_dates[-1],
-                        end_date=cls.zt_dates[0],
-                        frequency="d",
-                        adjustflag="3",
-                    )
-                    if not hist.empty:
-                        current_price = float(hist.iloc[-1]["close"])
-                entry_price = close_info.entry_price if close_info.entry_price > 0 else current_price
-                notional = current_price * position_shares if current_price > 0 else 0.0
-                unrealized_pnl = (
-                    (current_price - entry_price) * position_shares
-                    if current_price > 0 and entry_price > 0
-                    else 0.0
-                )
-                profit_rate = (
-                    (current_price / entry_price - 1)
-                    if current_price > 0 and entry_price > 0
-                    else 0.0
-                )
-                positions_data.append(
+                current_price = await cls._get_auction_price(code)
+                position_header = (
                     f"==={close_info.name}({code})===\n"
                     f"策略:{strategy_tag}\n"
                     f"开仓价格:{close_info.entry_price:.2f} CNY\n"
                     f"持仓方向:{close_info.position_side.value}\n"
-                    f"名义价值:{notional:.2f} CNY\n"
-                    f"持仓盈亏:{unrealized_pnl:.2f} CNY\n"
-                    f"持仓收益:{profit_rate:.2%}\n"
-                    f"止盈:{close_info.take_profit:.2f}\n"
-                    f"止损:{close_info.stop_loss:.2f}\n"
-                    f"开仓日期:{close_info.date}"
+                )
+                if current_price is None:
+                    positions_data.append(
+                        position_header
+                        + "行情获取失败，暂不可估值（未计入总持仓金额）\n"
+                        + f"止盈:{close_info.take_profit:.2f}\n"
+                        + f"止损:{close_info.stop_loss:.2f}\n"
+                        + f"开仓日期:{close_info.date}"
+                    )
+                    continue
+
+                position_shares, notional, unrealized_pnl, profit_rate = (
+                    cls._calculate_position_valuation(close_info, current_price)
+                )
+                total_notional += notional
+                positions_data.append(
+                    position_header
+                    + f"策略持仓股数:{position_shares}\n"
+                    + f"竞价行情价:{current_price:.2f} CNY\n"
+                    + f"名义价值:{notional:.2f} CNY\n"
+                    + f"持仓盈亏:{unrealized_pnl:.2f} CNY\n"
+                    + f"持仓收益:{profit_rate:.2%}\n"
+                    + f"止盈:{close_info.take_profit:.2f}\n"
+                    + f"止损:{close_info.stop_loss:.2f}\n"
+                    + f"开仓日期:{close_info.date}"
                 )
 
-            await cls.send_msg("账户余额:\nN/A\n持仓信息:\n" + "\n\n".join(positions_data))
+            await cls.send_msg(
+                f"总持仓金额:\n{total_notional:.2f} CNY\n持仓信息:\n"
+                + "\n\n".join(positions_data)
+            )
         except Exception:
             cls.logger.exception("A股每日持仓推送失败")
 
@@ -3140,12 +3216,16 @@ class AUTOA:
                 )["chebyshev_upper_bound"]
                 < cls.CHEBYSHEV_EXTREME_THRESHOLD
             ):
+                open_info.bz_reference_high = float(hist_high[-2])
                 if PositionSide.BZ not in open_info.strategy:
                     open_info.strategy.append(PositionSide.BZ)
+                cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
                 should_open = True
             elif (
                 PositionSide.BZ in open_info.strategy
-                and cls.check_gap_up_after_break_ma10(hist)
+                and cls.check_gap_up_after_bz_reference(
+                    hist, open_info.bz_reference_high
+                )
             ):
                 if PositionSide.N not in open_info.strategy:
                     open_info.strategy.append(PositionSide.N)
@@ -3238,43 +3318,50 @@ class AUTOA:
                 timeout=cls.AKSHARE_TIMEOUT_SECONDS,
             )
             stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
-            for code in stock_codes:
-                try:
-                    hist = await cls.stock_zh_a_hist(
-                        code[0],  # 股票代码
-                        "date,code,open,high,low,close,preclose,volume,amount",
-                        start_date=cls.zt_dates[-1],
-                        end_date=cls.zt_dates[0],
-                        frequency="d",  # 日K
-                        adjustflag="3",  # 3：前复权；1：不复权；2：后复权
-                    )
-                    if hist.empty:
-                        continue
-                    price_close = hist.iloc[-1]["close"]
+            semaphore = asyncio.Semaphore(cls.MAX_CONCURRENT_REQUESTS)
 
-                    # 已在观察列表且当日再次涨停：刷新观察时间（即使在持仓也允许更新）
-                    if code[0] in cls.alert_all["OBSERVATIONS"]:
-                        open_info = Observation.model_validate(
-                            cls.alert_all["OBSERVATIONS"][code[0]]
+            async def _update_close_observation(code):
+                async with semaphore:
+                    try:
+                        hist = await cls.stock_zh_a_hist(
+                            code[0],
+                            "date,code,open,high,low,close,preclose,volume,amount",
+                            start_date=cls.zt_dates[-1],
+                            end_date=cls.zt_dates[0],
+                            frequency="d",
+                            adjustflag="3",
                         )
-                        open_info.price = float(price_close)
-                        open_info.timestamp = today.timestamp()
-                        cls.alert_all["OBSERVATIONS"][code[0]] = open_info.model_dump()
-                        continue
+                        if hist.empty:
+                            return
+                        price_close = hist.iloc[-1]["close"]
 
-                    selected.add(f"{code[1]}")
-                    cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
-                        price=float(price_close),
-                        timestamp=today.timestamp(),
-                        side=OrderSide.BUY,
-                        strategy=[],
-                        name=code[1],  # 股票名称
-                    ).model_dump()
-                except Exception as e:
-                    cls.logger.error(
-                        f"{code[0]} 收盘更新观察列表失败: {type(e).__name__}: {e!r}"
-                    )
-                    continue
+                        # 已在观察列表且当日再次涨停：刷新观察时间（即使在持仓也允许更新）
+                        if code[0] in cls.alert_all["OBSERVATIONS"]:
+                            open_info = Observation.model_validate(
+                                cls.alert_all["OBSERVATIONS"][code[0]]
+                            )
+                            open_info.price = float(price_close)
+                            open_info.timestamp = today.timestamp()
+                            cls.alert_all["OBSERVATIONS"][code[0]] = open_info.model_dump()
+                            return
+
+                        selected.add(f"{code[1]}")
+                        cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
+                            price=float(price_close),
+                            timestamp=today.timestamp(),
+                            side=OrderSide.BUY,
+                            strategy=[],
+                            name=code[1],
+                        ).model_dump()
+                    except Exception as e:
+                        cls.logger.error(
+                            f"{code[0]} 收盘更新观察列表失败: {type(e).__name__}: {e!r}"
+                        )
+
+            if stock_codes:
+                await asyncio.gather(
+                    *(_update_close_observation(code) for code in stock_codes)
+                )
 
             cls.zt_dates.clear()
             cls.hist_cache.clear()
@@ -3460,7 +3547,7 @@ async def main():
         AUTOA.push_daily_positions,
         "cron",
         hour=9,
-        minute=0,
+        minute=25,
         second=0,
         timezone="Asia/Shanghai",
         misfire_grace_time=300,
@@ -3494,7 +3581,13 @@ async def main():
 
     # 创建一个永不触发的事件，使程序一直运行
     stop_event = asyncio.Event()
-    await stop_event.wait()  # 等待事件触发（实际不会发生）
+    try:
+        await stop_event.wait()  # 等待事件触发（实际不会发生）
+    finally:
+        scheduler.shutdown(wait=False)
+        await CloseRecordManager.flush_pending_records()
+        await AUTOA.close_http_session()
+        await autobn.close_http_session()
 
 
 if __name__ == "__main__":

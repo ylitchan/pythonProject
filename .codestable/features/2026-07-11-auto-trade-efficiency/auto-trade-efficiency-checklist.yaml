@@ -1,0 +1,78 @@
+feature: 2026-07-11-auto-trade-efficiency
+created: 2026-07-11
+
+steps:
+  - action: "行为安全网：固化 Excel、AUTOA 收盘、AUTOBN API 与 Session 当前契约"
+    exit_signal: "目标路径在不修改生产逻辑时均有可运行的 characterization tests"
+    status: done
+  - action: "平仓持久化：使用单写者批次减少 Excel 全量读写"
+    exit_signal: "同批多笔记录一次落盘且路径、sheet、列、格式、顺序不变，失败记录可重试"
+    status: done
+  - action: "AUTOA 收盘编排：涨停池按既有并发上限受控并发"
+    exit_signal: "并发不超上限，结果与串行语义一致，单只失败不影响其他股票"
+    status: done
+  - action: "AUTOBN 数据复用：exchangeInfo 长 TTL 与 position risk 刷新周期快照"
+    exit_signal: "元数据调用次数下降，仓位保持15分钟刷新且交易后确认仍远端查询"
+    status: done
+  - action: "多空比新鲜度：仅合并距离当前不超过 5 分钟的 5m 记录"
+    exit_signal: "恰好 5 分钟可用，超过 5 分钟不可用且不以过期缓存兜底"
+    status: done
+  - action: "Session 生命周期：AUTOA 与 AUTOBN 各自共享并统一幂等关闭"
+    exit_signal: "重复消息复用连接，退出后均关闭，关闭后可重新初始化"
+    status: done
+  - action: "整体回归：验证性能边界和交易时效范围守护"
+    exit_signal: "目标测试与既有测试全部通过，明确不做项无代码偏离"
+    status: done
+
+checks:
+  - item: "平仓记录批量写入后仍使用原 Excel 路径、sheet 和列定义"
+    source: 名词契约
+    status: passed
+  - item: "同一批次的平仓记录保持提交顺序且其他 sheet 内容不变"
+    source: 流程级约束
+    status: passed
+  - item: "Excel 写入失败时待写记录不静默丢失且可再次刷新"
+    source: 错误语义
+    status: passed
+  - item: "AUTOA 收盘处理并发数不超过 MAX_CONCURRENT_REQUESTS"
+    source: 并发约束
+    status: passed
+  - item: "单只 A 股行情失败不取消其他股票的 observation 更新"
+    source: 错误语义
+    status: passed
+  - item: "exchangeInfo 在 TTL 内复用且过期后刷新"
+    source: 验收场景
+    status: passed
+  - item: "position risk 保持15分钟刷新节奏且非刷新分钟不新增请求"
+    source: 流程级约束
+    status: passed
+  - item: "下单和平仓后的仓位确认始终执行新的远端查询"
+    source: 范围守护
+    status: passed
+  - item: "5m 多空比恰好 5 分钟可用，超过 5 分钟不可用"
+    source: 验收场景
+    status: passed
+  - item: "5m 多空比缺失时不重试且不使用过期缓存"
+    source: 关键决策
+    status: passed
+  - item: "AUTOA 与 AUTOBN 消息分别复用共享 HTTP Session"
+    source: 名词契约
+    status: passed
+  - item: "Session 退出时关闭、重复关闭幂等且关闭后可重新创建"
+    source: 验收场景
+    status: passed
+  - item: "AUTOA 持仓仍每分钟检查且实时行情不跨轮复用"
+    source: 范围守护
+    status: passed
+  - item: "同时存在于 observation 和 positions 的代码只走持仓分支"
+    source: 范围守护
+    status: passed
+  - item: "未实现 AUTOA single-flight"
+    source: 明确不做
+    status: passed
+  - item: "通知文本和交易策略条件保持不变"
+    source: 范围守护
+    status: passed
+  - item: "未新增 SQLite、CSV 或第三方依赖"
+    source: 明确不做
+    status: passed
