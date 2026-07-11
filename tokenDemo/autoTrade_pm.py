@@ -171,96 +171,6 @@ class CloseRecordManager:
     ]
 
     @classmethod
-    def record_close(
-        cls,
-        source: str,  # "AUTOBN" 或 "AUTOA"
-        symbol: str,
-        position_side: str,
-        entry_price: float,
-        close_price: float,
-        close_amount: float,
-        realized_pnl: float,
-        pnl_percent: float,
-        close_ratio: float = 1.0,
-        strategy_tag: str = "",
-        close_reason: str = "",
-        long_short_ratio: str = "",
-        basis_rate: str = "",
-    ):
-        """
-        参数：
-            source: 交易来源 ("AUTOBN" 或 "AUTOA")
-            symbol: 交易品种（如'BTCUSDT'或'000001'）
-            position_side: 持仓方向（'LONG'或'SHORT'）
-            entry_price: 开仓价格
-            close_price: 平仓价格
-            close_amount: 平仓数量
-            realized_pnl: 平仓盈亏（USDT或CNY）
-            pnl_percent: 平仓收益率
-            close_ratio: 平仓比例（默认1.0表示全平）
-            strategy_tag: 策略标签（如'Supertrend'、'BZ'等）
-        """
-        with cls._lock:
-            try:
-                close_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                sheet_name = cls.SHEET_NAMES.get(source, source)
-
-                # 准备新记录（不再包含交易来源列，因为已经分sheet）
-                new_record = {
-                    "平仓时间": close_time,
-                    "交易品种": symbol,
-                    "持仓方向": position_side,
-                    "开仓价格": entry_price,
-                    "平仓价格": close_price,
-                    "平仓数量": close_amount,
-                    "平仓盈亏(USDT/CNY)": realized_pnl,
-                    "平仓收益率": f"{pnl_percent:.2%}",
-                    "平仓比例": f"{close_ratio:.2%}",
-                    "策略标签": strategy_tag,
-                    "平仓依据": close_reason,
-                    "多空比": long_short_ratio,
-                    "基差率": basis_rate,
-                }
-
-                # 读取现有数据
-                existing_sheets = {}
-                if os.path.exists(cls._excel_file):
-                    try:
-                        # 读取所有现有sheet
-                        with pd.ExcelFile(cls._excel_file, engine="openpyxl") as xls:
-                            for name in xls.sheet_names:
-                                existing_sheets[name] = pd.read_excel(
-                                    xls, sheet_name=name
-                                )
-                    except Exception:
-                        pass
-
-                # 获取或创建目标sheet的DataFrame
-                if sheet_name in existing_sheets:
-                    df = existing_sheets[sheet_name]
-                else:
-                    df = pd.DataFrame(columns=cls.COLUMNS)
-
-                # 追加新记录
-                new_df = pd.DataFrame([new_record])
-                df = pd.concat([df, new_df], ignore_index=True)
-                existing_sheets[sheet_name] = df
-
-                # 写入Excel（所有sheet）
-                with pd.ExcelWriter(cls._excel_file, engine="openpyxl") as writer:
-                    for name, data in existing_sheets.items():
-                        data.to_excel(writer, sheet_name=name, index=False)
-
-                cls._logger.info(
-                    f"平仓记录已保存到[{sheet_name}]: {symbol} {position_side} "
-                    f"盈亏:{realized_pnl:.4f} 收益率:{pnl_percent:.2%}"
-                )
-
-            except Exception as e:
-                cls._logger.error(f"保存平仓记录失败: {str(e)}")
-                cls._logger.exception("保存平仓记录时发生异常")
-
-    @classmethod
     def _record_close_batch(cls, records):
         with cls._lock:
             existing_sheets = {}
@@ -272,12 +182,17 @@ class CloseRecordManager:
                 except Exception:
                     pass
 
+            records_by_sheet = {}
             for record in records:
                 sheet_name = cls.SHEET_NAMES.get(record["source"], record["source"])
+                records_by_sheet.setdefault(sheet_name, []).append(
+                    {key: value for key, value in record.items() if key != "source"}
+                )
+
+            for sheet_name, sheet_records in records_by_sheet.items():
                 df = existing_sheets.get(sheet_name, pd.DataFrame(columns=cls.COLUMNS))
-                new_record = {key: value for key, value in record.items() if key != "source"}
                 existing_sheets[sheet_name] = pd.concat(
-                    [df, pd.DataFrame([new_record])], ignore_index=True
+                    [df, pd.DataFrame(sheet_records)], ignore_index=True
                 )
 
             with pd.ExcelWriter(cls._excel_file, engine="openpyxl") as writer:
@@ -1626,6 +1541,354 @@ class AUTOBN:
 
         return result
 
+    async def _close_triggered_position(
+        self, symbol, close_info, atr_value, current_price
+    ):
+        is_long = close_info.position_side.value == PositionSide.LONG.value
+        sl_triggered = (is_long and current_price <= close_info.stop_loss) or (
+            not is_long and current_price >= close_info.stop_loss
+        )
+        tp_triggered = (
+            is_long and current_price >= close_info.take_profit
+        ) or (not is_long and current_price <= close_info.take_profit)
+        long_short_stop_triggered = False
+        oi_stop_triggered = False
+        if not sl_triggered and not tp_triggered:
+            long_short_ratio_data = await self.get_long_short_ratio(symbol)
+            latest_lsr = None
+            if long_short_ratio_data:
+                try:
+                    latest_lsr = float(
+                        long_short_ratio_data[-1]["longShortRatio"]
+                    )
+                except (KeyError, TypeError, ValueError):
+                    latest_lsr = None
+            if (
+                is_long
+                and latest_lsr is not None
+                and latest_lsr > 1
+                and close_info.stop_guard_threshold > 0
+            ):
+                oi_5m = await self._get_oi_5m_data(symbol)
+                oi_stop_triggered = (
+                    oi_5m
+                    and float(oi_5m[-1]["sumOpenInterest"])
+                    <= close_info.stop_guard_threshold
+                )
+            if not oi_stop_triggered and latest_lsr is not None:
+                long_short_stop_triggered = (
+                    is_long
+                    and latest_lsr
+                    >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                ) or (
+                    not is_long
+                    and latest_lsr
+                    <= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                )
+
+        if long_short_stop_triggered or oi_stop_triggered:
+            close_info.close_reason = (
+                "多空比止损" if long_short_stop_triggered else "OI止损"
+            )
+            await self.close_bn_position(
+                symbol, close_info, atr_value, current_price, 1
+            )
+        elif sl_triggered:
+            if not close_info.close_reason:
+                close_info.close_reason = "初始止损"
+            await self.close_bn_position(
+                symbol, close_info, atr_value, current_price, 1
+            )
+        elif tp_triggered:
+            close_info.tp_count += 1
+            close_info.close_reason = "止盈"
+            await self.close_bn_position(
+                symbol,
+                close_info,
+                atr_value,
+                current_price,
+                self.PARTIAL_CLOSE_RATIO,
+            )
+
+        return long_short_stop_triggered or oi_stop_triggered or sl_triggered or tp_triggered
+
+    async def _manage_long_position(
+        self, symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
+    ):
+        if current_price < close_info.entry_price - atr_value:
+            close_info.strategy.append(PositionSide.DCA)
+            if await self.open_bn_position(
+                symbol,
+                OrderSide.BUY.value,
+                PositionSide.LONG.value,
+                close_info.take_profit,
+                close_info.stop_loss,  # 止损价用于计算风险仓位
+                close_info,
+            ):
+                amount_price = await self.get_amount_close(symbol)
+                if amount_price is None:
+                    await self.send_msg(
+                        f"{symbol} 加仓后查询持仓均价失败"
+                    )
+                elif amount_price[1] > 0:
+                    close_info.entry_price = amount_price[1]
+                dca_count = sum(
+                    1
+                    for strategy in close_info.strategy
+                    if strategy == PositionSide.DCA
+                )
+                target_take_profit = (
+                    close_info.entry_price
+                    + self.DCA_TP_ATR_RATIO * atr_value * dca_count
+                )
+                close_info.take_profit = min(
+                    close_info.take_profit,
+                    target_take_profit,
+                )
+            else:
+                if (
+                    close_info.strategy
+                    and close_info.strategy[-1] == PositionSide.DCA
+                ):
+                    close_info.strategy.pop()
+        else:
+            # 做多: 基于入场价格计算初始距离，线性衰减
+            # 衰减系数 = 1 + tp_count (每次止盈后加速)
+            decay_multiplier = 1 + close_info.tp_count
+            initial_tp_gap = (
+                close_info.take_profit - close_info.entry_price
+            )  # 止盈到入场价的初始距离
+            tp_decay_step = (
+                initial_tp_gap
+                * self.STOP_LOSS_DECAY_PER_MINUTE
+                * decay_multiplier
+            )
+            # 止盈下移: 取衰减后的值和当前上轨的较小值，最多下移到成本价
+            decayed_tp = close_info.take_profit - tp_decay_step
+            close_info.take_profit = max(
+                min(decayed_tp, current_upper),
+                close_info.entry_price,
+            )
+
+            if close_info.tp_count > 0:
+                profit = current_price - close_info.entry_price
+                trailing_stop = (
+                    close_info.entry_price
+                    + profit * self.TRAILING_STOP_PROFIT_RATIO
+                )
+                new_stop_loss = max(
+                    close_info.stop_loss,
+                    trailing_stop,
+                )
+                if new_stop_loss != close_info.stop_loss:
+                    close_info.stop_loss = new_stop_loss
+                    close_info.close_reason = "止盈后追踪止损"
+            else:
+                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
+                profit = current_price - close_info.entry_price
+                target_profit = min(
+                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR,
+                    atr_trigger,
+                )  # 预期收益的1/3 与 ATR触发阈值取较小值
+                if profit >= target_profit:
+                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
+                    # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
+                    trailing_stop = (
+                        close_info.entry_price
+                        + profit * self.TRAILING_STOP_PROFIT_RATIO
+                    )
+                    new_stop_loss = max(
+                        close_info.stop_loss,
+                        trailing_stop,
+                    )
+                    if new_stop_loss != close_info.stop_loss:
+                        close_info.stop_loss = new_stop_loss
+                        close_info.close_reason = "追踪止损(保护盈利)"
+                else:
+                    # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
+                    # 取当前下轨和原止损的较大值
+                    new_stop_loss = max(
+                        close_info.stop_loss,
+                        current_lower,
+                    )
+                    if new_stop_loss != close_info.stop_loss:
+                        close_info.stop_loss = new_stop_loss
+                        close_info.close_reason = "移动止损(轨道)"
+
+
+    async def _manage_short_position(
+        self, symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
+    ):
+        if current_price > close_info.entry_price + atr_value:
+            close_info.strategy.append(PositionSide.DCA)
+            if await self.open_bn_position(
+                symbol,
+                OrderSide.SELL.value,
+                PositionSide.SHORT.value,
+                close_info.take_profit,
+                close_info.stop_loss,  # 止损价用于计算风险仓位
+                close_info,
+            ):
+                amount_price = await self.get_amount_close(symbol)
+                if amount_price is None:
+                    await self.send_msg(
+                        f"{symbol} 加仓后查询持仓均价失败"
+                    )
+                elif amount_price[1] > 0:
+                    close_info.entry_price = amount_price[1]
+                dca_count = sum(
+                    1
+                    for strategy in close_info.strategy
+                    if strategy == PositionSide.DCA
+                )
+                target_take_profit = (
+                    close_info.entry_price
+                    - self.DCA_TP_ATR_RATIO * atr_value * dca_count
+                )
+                close_info.take_profit = max(
+                    close_info.take_profit,
+                    target_take_profit,
+                )
+            else:
+                if (
+                    close_info.strategy
+                    and close_info.strategy[-1] == PositionSide.DCA
+                ):
+                    close_info.strategy.pop()
+        else:
+            # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
+            # 衰减系数 = 1 + tp_count (每次止盈后加速)
+            decay_multiplier = 1 + close_info.tp_count
+            initial_tp_gap = (
+                close_info.entry_price - close_info.take_profit
+            )  # 入场价到止盈的初始距离
+            tp_decay_step = (
+                initial_tp_gap
+                * self.STOP_LOSS_DECAY_PER_MINUTE
+                * decay_multiplier
+            )
+            # 止盈上移: 取衰减后的值和当前下轨的较大值，最多上移到成本价
+            decayed_tp = close_info.take_profit + tp_decay_step
+            close_info.take_profit = min(
+                max(decayed_tp, current_lower),
+                close_info.entry_price,
+            )
+
+            if close_info.tp_count > 0:
+                profit = close_info.entry_price - current_price
+                trailing_stop = (
+                    close_info.entry_price
+                    - profit * self.TRAILING_STOP_PROFIT_RATIO
+                )
+                new_stop_loss = min(
+                    close_info.stop_loss,
+                    trailing_stop,
+                )
+                if new_stop_loss != close_info.stop_loss:
+                    close_info.stop_loss = new_stop_loss
+                    close_info.close_reason = "止盈后追踪止损"
+            else:
+                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
+                profit = close_info.entry_price - current_price
+                target_profit = min(
+                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR,
+                    atr_trigger,
+                )  # 预期收益的1/3 与 ATR触发阈值取较小值
+                if profit >= target_profit:
+                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
+                    # 止损 = 入场价 - 盈利 * TRAILING_STOP_PROFIT_RATIO
+                    trailing_stop = (
+                        close_info.entry_price
+                        - profit * self.TRAILING_STOP_PROFIT_RATIO
+                    )
+                    new_stop_loss = min(
+                        close_info.stop_loss,
+                        trailing_stop,
+                    )
+                    if new_stop_loss != close_info.stop_loss:
+                        close_info.stop_loss = new_stop_loss
+                        close_info.close_reason = "追踪止损(保护盈利)"
+                else:
+                    # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
+                    # 取当前上轨和原止损的较小值
+                    new_stop_loss = min(
+                        close_info.stop_loss,
+                        current_upper,
+                    )
+                    if new_stop_loss != close_info.stop_loss:
+                        close_info.stop_loss = new_stop_loss
+                        close_info.close_reason = "移动止损(轨道)"
+
+
+    async def _manage_position(
+        self, symbol, close_info, open_info, kline, current_price, current_timestamp
+    ):
+        # 获取15分钟K线数据用于ATR计算（与supertrend保持一致）
+        atr_value = self.calculate_atr(kline)
+        # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
+        if (
+            close_info.take_profit == 0 or close_info.stop_loss == 0
+        ) and atr_value > 0:
+            is_long = close_info.position_side.value == PositionSide.LONG.value
+            # 使用hl2中间价计算止盈止损，与supertrend保持一致
+            hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
+            tp, sl = self.calc_stop_profit_loss(
+                hl2, is_long=is_long, atr=atr_value
+            )
+            close_info.take_profit = tp
+            close_info.stop_loss = sl
+            order_side = OrderSide.BUY if is_long else OrderSide.SELL
+            # 转换为 Observation 对象并保存
+            open_info = Observation(
+                price=current_price,
+                timestamp=current_timestamp,
+                side=order_side,
+                strategy=[close_info.strategy[0]],
+                name=symbol,
+            )
+            # 更新到字典
+            self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
+            self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
+            self.logger.info(
+                f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}"
+            )
+
+        # 根据持仓方向判断止盈止损触发
+        # 多头: take_profit=高价, stop_loss=低价
+        # 空头: take_profit=低价, stop_loss=高价
+        is_long = close_info.position_side.value == PositionSide.LONG.value
+
+        if await self._close_triggered_position(
+            symbol, close_info, atr_value, current_price
+        ):
+            return open_info
+
+        # 计算当前supertrend上下轨，用于止盈边界限制
+        hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
+        current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
+        current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
+        # ATR触发阈值：用于收益阈值比较（与1/3预期收益取较小值）
+        atr_trigger = max(
+            min(
+                atr_value,
+                close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO,
+            ),
+            self.MIN_ATR_TRIGGER,
+        )
+
+        if close_info.position_side.value == PositionSide.LONG.value:
+            await self._manage_long_position(
+                symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
+            )
+        elif close_info.position_side.value == PositionSide.SHORT.value:
+            await self._manage_short_position(
+                symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
+            )
+
+        # 更新回字典
+        self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
+        return open_info
+
     async def rzq_token(self, semaphore, symbol, success, dtn):
         """
         核心交易逻辑：分析K线数据并执行交易决策
@@ -1657,328 +1920,14 @@ class AUTOBN:
 
             # 检查现有持仓是否需要平仓
             if close_info:
-                # 获取15分钟K线数据用于ATR计算（与supertrend保持一致）
-                atr_value = self.calculate_atr(kline)
-                # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
-                if (
-                    close_info.take_profit == 0 or close_info.stop_loss == 0
-                ) and atr_value > 0:
-                    is_long = close_info.position_side.value == PositionSide.LONG.value
-                    # 使用hl2中间价计算止盈止损，与supertrend保持一致
-                    hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
-                    tp, sl = self.calc_stop_profit_loss(
-                        hl2, is_long=is_long, atr=atr_value
-                    )
-                    close_info.take_profit = tp
-                    close_info.stop_loss = sl
-                    order_side = OrderSide.BUY if is_long else OrderSide.SELL
-                    # 转换为 Observation 对象并保存
-                    open_info = Observation(
-                        price=current_price,
-                        timestamp=current_timestamp,
-                        side=order_side,
-                        strategy=[close_info.strategy[0]],
-                        name=symbol,
-                    )
-                    # 更新到字典
-                    self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
-                    self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
-                    self.logger.info(
-                        f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}"
-                    )
-
-                # 根据持仓方向判断止盈止损触发
-                # 多头: take_profit=高价, stop_loss=低价
-                # 空头: take_profit=低价, stop_loss=高价
-                is_long = close_info.position_side.value == PositionSide.LONG.value
-
-                # 价格止损统一使用当前价触发
-                sl_ref_price = current_price
-                sl_triggered = (is_long and sl_ref_price <= close_info.stop_loss) or (
-                    not is_long and sl_ref_price >= close_info.stop_loss
+                open_info = await self._manage_position(
+                    symbol,
+                    close_info,
+                    open_info,
+                    kline,
+                    current_price,
+                    current_timestamp,
                 )
-                # 止盈触发条件
-                tp_triggered = (
-                    is_long and current_price >= close_info.take_profit
-                ) or (not is_long and current_price <= close_info.take_profit)
-                long_short_stop_triggered = False
-                oi_stop_triggered = False
-                if not sl_triggered and not tp_triggered:
-                    long_short_ratio_data = await self.get_long_short_ratio(symbol)
-                    latest_lsr = None
-                    if long_short_ratio_data:
-                        try:
-                            latest_lsr = float(
-                                long_short_ratio_data[-1]["longShortRatio"]
-                            )
-                        except (KeyError, TypeError, ValueError):
-                            latest_lsr = None
-                    if (
-                        is_long
-                        and latest_lsr is not None
-                        and latest_lsr > 1
-                        and close_info.stop_guard_threshold > 0
-                    ):
-                        oi_5m = await self._get_oi_5m_data(symbol)
-                        oi_stop_triggered = (
-                            oi_5m
-                            and float(oi_5m[-1]["sumOpenInterest"])
-                            <= close_info.stop_guard_threshold
-                        )
-                    if not oi_stop_triggered and latest_lsr is not None:
-                        long_short_stop_triggered = (
-                            is_long
-                            and latest_lsr
-                            >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-                        ) or (
-                            not is_long
-                            and latest_lsr
-                            <= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-                        )
-
-                if long_short_stop_triggered or oi_stop_triggered:
-                    close_info.close_reason = (
-                        "多空比止损" if long_short_stop_triggered else "OI止损"
-                    )
-                    await self.close_bn_position(
-                        symbol, close_info, atr_value, current_price, 1
-                    )
-                elif sl_triggered:
-                    if not close_info.close_reason:
-                        close_info.close_reason = "初始止损"
-                    await self.close_bn_position(
-                        symbol, close_info, atr_value, current_price, 1
-                    )
-                elif tp_triggered:  # 触及止盈 - 部分平仓
-                    # 止盈次数+1，加速后续衰减
-                    close_info.tp_count += 1
-                    close_info.close_reason = "止盈"
-                    await self.close_bn_position(
-                        symbol,
-                        close_info,
-                        atr_value,
-                        current_price,
-                        self.PARTIAL_CLOSE_RATIO,
-                    )
-
-                else:
-                    # 计算当前supertrend上下轨，用于止盈边界限制
-                    hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
-                    current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
-                    current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
-                    # ATR触发阈值：用于收益阈值比较（与1/3预期收益取较小值）
-                    atr_trigger = max(
-                        min(
-                            atr_value,
-                            close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO,
-                        ),
-                        self.MIN_ATR_TRIGGER,
-                    )
-
-                    if close_info.position_side.value == PositionSide.LONG.value:
-                        if current_price < close_info.entry_price - atr_value:
-                            close_info.strategy.append(PositionSide.DCA)
-                            if await self.open_bn_position(
-                                symbol,
-                                OrderSide.BUY.value,
-                                PositionSide.LONG.value,
-                                close_info.take_profit,
-                                close_info.stop_loss,  # 止损价用于计算风险仓位
-                                close_info,
-                            ):
-                                amount_price = await self.get_amount_close(symbol)
-                                if amount_price is None:
-                                    await self.send_msg(
-                                        f"{symbol} 加仓后查询持仓均价失败"
-                                    )
-                                elif amount_price[1] > 0:
-                                    close_info.entry_price = amount_price[1]
-                                dca_count = sum(
-                                    1
-                                    for strategy in close_info.strategy
-                                    if strategy == PositionSide.DCA
-                                )
-                                target_take_profit = (
-                                    close_info.entry_price
-                                    + self.DCA_TP_ATR_RATIO * atr_value * dca_count
-                                )
-                                close_info.take_profit = min(
-                                    close_info.take_profit,
-                                    target_take_profit,
-                                )
-                            else:
-                                if (
-                                    close_info.strategy
-                                    and close_info.strategy[-1] == PositionSide.DCA
-                                ):
-                                    close_info.strategy.pop()
-                        else:
-                            # 做多: 基于入场价格计算初始距离，线性衰减
-                            # 衰减系数 = 1 + tp_count (每次止盈后加速)
-                            decay_multiplier = 1 + close_info.tp_count
-                            initial_tp_gap = (
-                                close_info.take_profit - close_info.entry_price
-                            )  # 止盈到入场价的初始距离
-                            tp_decay_step = (
-                                initial_tp_gap
-                                * self.STOP_LOSS_DECAY_PER_MINUTE
-                                * decay_multiplier
-                            )
-                            # 止盈下移: 取衰减后的值和当前上轨的较小值，最多下移到成本价
-                            decayed_tp = close_info.take_profit - tp_decay_step
-                            close_info.take_profit = max(
-                                min(decayed_tp, current_upper),
-                                close_info.entry_price,
-                            )
-
-                            if close_info.tp_count > 0:
-                                profit = current_price - close_info.entry_price
-                                trailing_stop = (
-                                    close_info.entry_price
-                                    + profit * self.TRAILING_STOP_PROFIT_RATIO
-                                )
-                                new_stop_loss = max(
-                                    close_info.stop_loss,
-                                    trailing_stop,
-                                )
-                                if new_stop_loss != close_info.stop_loss:
-                                    close_info.stop_loss = new_stop_loss
-                                    close_info.close_reason = "止盈后追踪止损"
-                            else:
-                                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
-                                profit = current_price - close_info.entry_price
-                                target_profit = min(
-                                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR,
-                                    atr_trigger,
-                                )  # 预期收益的1/3 与 ATR触发阈值取较小值
-                                if profit >= target_profit:
-                                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                                    # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
-                                    trailing_stop = (
-                                        close_info.entry_price
-                                        + profit * self.TRAILING_STOP_PROFIT_RATIO
-                                    )
-                                    new_stop_loss = max(
-                                        close_info.stop_loss,
-                                        trailing_stop,
-                                    )
-                                    if new_stop_loss != close_info.stop_loss:
-                                        close_info.stop_loss = new_stop_loss
-                                        close_info.close_reason = "追踪止损(保护盈利)"
-                                else:
-                                    # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
-                                    # 取当前下轨和原止损的较大值
-                                    new_stop_loss = max(
-                                        close_info.stop_loss,
-                                        current_lower,
-                                    )
-                                    if new_stop_loss != close_info.stop_loss:
-                                        close_info.stop_loss = new_stop_loss
-                                        close_info.close_reason = "移动止损(轨道)"
-
-                    elif close_info.position_side.value == PositionSide.SHORT.value:
-                        if current_price > close_info.entry_price + atr_value:
-                            close_info.strategy.append(PositionSide.DCA)
-                            if await self.open_bn_position(
-                                symbol,
-                                OrderSide.SELL.value,
-                                PositionSide.SHORT.value,
-                                close_info.take_profit,
-                                close_info.stop_loss,  # 止损价用于计算风险仓位
-                                close_info,
-                            ):
-                                amount_price = await self.get_amount_close(symbol)
-                                if amount_price is None:
-                                    await self.send_msg(
-                                        f"{symbol} 加仓后查询持仓均价失败"
-                                    )
-                                elif amount_price[1] > 0:
-                                    close_info.entry_price = amount_price[1]
-                                dca_count = sum(
-                                    1
-                                    for strategy in close_info.strategy
-                                    if strategy == PositionSide.DCA
-                                )
-                                target_take_profit = (
-                                    close_info.entry_price
-                                    - self.DCA_TP_ATR_RATIO * atr_value * dca_count
-                                )
-                                close_info.take_profit = max(
-                                    close_info.take_profit,
-                                    target_take_profit,
-                                )
-                            else:
-                                if (
-                                    close_info.strategy
-                                    and close_info.strategy[-1] == PositionSide.DCA
-                                ):
-                                    close_info.strategy.pop()
-                        else:
-                            # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
-                            # 衰减系数 = 1 + tp_count (每次止盈后加速)
-                            decay_multiplier = 1 + close_info.tp_count
-                            initial_tp_gap = (
-                                close_info.entry_price - close_info.take_profit
-                            )  # 入场价到止盈的初始距离
-                            tp_decay_step = (
-                                initial_tp_gap
-                                * self.STOP_LOSS_DECAY_PER_MINUTE
-                                * decay_multiplier
-                            )
-                            # 止盈上移: 取衰减后的值和当前下轨的较大值，最多上移到成本价
-                            decayed_tp = close_info.take_profit + tp_decay_step
-                            close_info.take_profit = min(
-                                max(decayed_tp, current_lower),
-                                close_info.entry_price,
-                            )
-
-                            if close_info.tp_count > 0:
-                                profit = close_info.entry_price - current_price
-                                trailing_stop = (
-                                    close_info.entry_price
-                                    - profit * self.TRAILING_STOP_PROFIT_RATIO
-                                )
-                                new_stop_loss = min(
-                                    close_info.stop_loss,
-                                    trailing_stop,
-                                )
-                                if new_stop_loss != close_info.stop_loss:
-                                    close_info.stop_loss = new_stop_loss
-                                    close_info.close_reason = "止盈后追踪止损"
-                            else:
-                                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
-                                profit = close_info.entry_price - current_price
-                                target_profit = min(
-                                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR,
-                                    atr_trigger,
-                                )  # 预期收益的1/3 与 ATR触发阈值取较小值
-                                if profit >= target_profit:
-                                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                                    # 止损 = 入场价 - 盈利 * TRAILING_STOP_PROFIT_RATIO
-                                    trailing_stop = (
-                                        close_info.entry_price
-                                        - profit * self.TRAILING_STOP_PROFIT_RATIO
-                                    )
-                                    new_stop_loss = min(
-                                        close_info.stop_loss,
-                                        trailing_stop,
-                                    )
-                                    if new_stop_loss != close_info.stop_loss:
-                                        close_info.stop_loss = new_stop_loss
-                                        close_info.close_reason = "追踪止损(保护盈利)"
-                                else:
-                                    # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
-                                    # 取当前上轨和原止损的较小值
-                                    new_stop_loss = min(
-                                        close_info.stop_loss,
-                                        current_upper,
-                                    )
-                                    if new_stop_loss != close_info.stop_loss:
-                                        close_info.stop_loss = new_stop_loss
-                                        close_info.close_reason = "移动止损(轨道)"
-
-                    # 更新回字典
-                    self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             elif open_info:
                 if (
                     current_timestamp - open_info.timestamp

@@ -201,20 +201,24 @@ class CloseRecordManagerCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             with pd.ExcelWriter(excel_file, engine="openpyxl") as writer:
                 other.to_excel(writer, sheet_name="其他", index=False)
 
+            record = {
+                "source": "AUTOA",
+                "平仓时间": "2026-07-11 10:00:00",
+                "交易品种": "000001",
+                "持仓方向": "LONG",
+                "开仓价格": 10,
+                "平仓价格": 11,
+                "平仓数量": 100,
+                "平仓盈亏(USDT/CNY)": 100,
+                "平仓收益率": "10.00%",
+                "平仓比例": "70.00%",
+                "策略标签": "BZ",
+                "平仓依据": "止盈",
+                "多空比": "",
+                "基差率": "",
+            }
             with patch.object(CloseRecordManager, "_excel_file", str(excel_file)):
-                CloseRecordManager.record_close(
-                    "AUTOA",
-                    "000001",
-                    "LONG",
-                    10,
-                    11,
-                    100,
-                    100,
-                    0.1,
-                    close_ratio=0.7,
-                    strategy_tag="BZ",
-                    close_reason="止盈",
-                )
+                CloseRecordManager._record_close_batch([record])
 
             sheets = pd.read_excel(excel_file, sheet_name=None)
             self.assertEqual(sheets["其他"].to_dict("records"), [{"保留字段": "保留值"}])
@@ -224,6 +228,34 @@ class CloseRecordManagerCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(record["平仓比例"], "70.00%")
             self.assertEqual(record["策略标签"], "BZ")
             self.assertEqual(record["平仓依据"], "止盈")
+    def test_batch_groups_records_by_sheet_with_one_concat_each(self):
+        records = [
+            {"source": "AUTOA", "交易品种": "000001"},
+            {"source": "AUTOBN", "交易品种": "BTCUSDT"},
+            {"source": "AUTOA", "交易品种": "000002"},
+        ]
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.object(
+                CloseRecordManager,
+                "_excel_file",
+                str(Path(temp_dir) / "records.xlsx"),
+            ),
+            patch("tokenDemo.autoTrade_pm.pd.concat", wraps=pd.concat) as concat,
+        ):
+            CloseRecordManager._record_close_batch(records)
+            sheets = pd.read_excel(CloseRecordManager._excel_file, sheet_name=None)
+
+        self.assertEqual(concat.call_count, 2)
+        self.assertEqual(
+            sheets[CloseRecordManager.SHEET_NAMES["AUTOA"]]["交易品种"].tolist(),
+            [1, 2],
+        )
+        self.assertEqual(
+            sheets[CloseRecordManager.SHEET_NAMES["AUTOBN"]]["交易品种"].tolist(),
+            ["BTCUSDT"],
+        )
+
     async def test_async_records_in_same_loop_are_written_as_one_batch(self):
         records = []
 
@@ -472,6 +504,72 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         obj.get_long_short_ratio.assert_awaited_once_with("BTCUSDT")
         obj._get_oi_5m_data.assert_not_awaited()
+
+    async def test_take_profit_skips_ratio_oi_and_position_management(self):
+        obj = self.make_autobn()
+        position = self.make_position(take_profit=11, stop_loss=5)
+
+        await self.run_position(obj, position, self.make_kline(10, 11))
+
+        obj.close_bn_position.assert_awaited_once()
+        self.assertEqual(obj.close_bn_position.await_args.args[-1], obj.PARTIAL_CLOSE_RATIO)
+        obj.get_long_short_ratio.assert_not_awaited()
+        obj._get_oi_5m_data.assert_not_awaited()
+        obj.open_bn_position.assert_not_awaited()
+
+    async def test_oi_stop_keeps_priority_over_long_short_ratio_stop(self):
+        obj = self.make_autobn()
+        position = self.make_position(stop_guard_threshold=100)
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.get_kline = AsyncMock(return_value=self.make_kline(10, 10))
+        obj.calculate_atr = MagicMock(return_value=1)
+        obj.close_bn_position = AsyncMock()
+        obj.get_long_short_ratio = AsyncMock(
+            return_value=[{"longShortRatio": "9.0"}]
+        )
+        obj._get_oi_5m_data = AsyncMock(
+            return_value=[{"sumOpenInterest": "90"}]
+        )
+        obj.open_bn_position = AsyncMock(return_value=False)
+
+        await obj.rzq_token(
+            __import__("asyncio").Semaphore(1),
+            "BTCUSDT",
+            set(),
+            pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
+        )
+
+        obj.close_bn_position.assert_awaited_once()
+        self.assertEqual(obj.close_bn_position.await_args.args[1].close_reason, "OI止损")
+        obj.open_bn_position.assert_not_awaited()
+
+    async def test_failed_long_dca_removes_appended_strategy_and_writes_back(self):
+        obj = self.make_autobn()
+        position = self.make_position(entry_price=12, take_profit=20, stop_loss=5)
+
+        await self.run_position(obj, position, self.make_kline(10, 10))
+
+        obj.open_bn_position.assert_awaited_once()
+        stored = Position.model_validate(obj.alert_all["POSITIONS"]["BTCUSDT"])
+        self.assertEqual(stored.strategy, [PositionSide.BZ])
+
+    async def test_failed_short_dca_removes_appended_strategy_and_writes_back(self):
+        obj = self.make_autobn()
+        position = self.make_position(
+            position_side=PositionSide.SHORT,
+            entry_price=8,
+            take_profit=5,
+            stop_loss=15,
+        )
+
+        await self.run_position(obj, position, self.make_kline(10, 10))
+
+        obj.open_bn_position.assert_awaited_once()
+        stored = Position.model_validate(obj.alert_all["POSITIONS"]["BTCUSDT"])
+        self.assertEqual(stored.strategy, [PositionSide.BZ])
 
     async def test_cached_hour_ratio_still_requests_five_minute_ratio(self):
         obj = self.make_autobn()
