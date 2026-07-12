@@ -1665,10 +1665,25 @@ class AUTOBN:
             )
             # 止盈下移: 取衰减后的值和当前上轨的较小值，最多下移到成本价
             decayed_tp = close_info.take_profit - tp_decay_step
-            close_info.take_profit = max(
-                min(decayed_tp, current_upper),
-                close_info.entry_price,
+            dca_count = sum(
+                1
+                for strategy in close_info.strategy
+                if strategy == PositionSide.DCA
             )
+            if dca_count > 0:
+                dca_tp = (
+                    close_info.entry_price
+                    + atr_value * self.DCA_TP_ATR_RATIO**dca_count
+                )
+                close_info.take_profit = max(
+                    min(decayed_tp, current_upper, dca_tp),
+                    close_info.entry_price,
+                )
+            else:
+                close_info.take_profit = max(
+                    min(decayed_tp, current_upper),
+                    close_info.entry_price,
+                )
 
             if close_info.tp_count > 0:
                 profit = current_price - close_info.entry_price
@@ -1769,10 +1784,25 @@ class AUTOBN:
             )
             # 止盈上移: 取衰减后的值和当前下轨的较大值，最多上移到成本价
             decayed_tp = close_info.take_profit + tp_decay_step
-            close_info.take_profit = min(
-                max(decayed_tp, current_lower),
-                close_info.entry_price,
+            dca_count = sum(
+                1
+                for strategy in close_info.strategy
+                if strategy == PositionSide.DCA
             )
+            if dca_count > 0:
+                dca_tp = (
+                    close_info.entry_price
+                    - atr_value * self.DCA_TP_ATR_RATIO**dca_count
+                )
+                close_info.take_profit = min(
+                    max(decayed_tp, current_lower, dca_tp),
+                    close_info.entry_price,
+                )
+            else:
+                close_info.take_profit = min(
+                    max(decayed_tp, current_lower),
+                    close_info.entry_price,
+                )
 
             if close_info.tp_count > 0:
                 profit = close_info.entry_price - current_price
@@ -3019,10 +3049,25 @@ class AUTOA:
                 initial_tp_gap = close_info.take_profit - close_info.entry_price
                 tp_decay_step = initial_tp_gap * DECAY
                 decayed_tp = close_info.take_profit - tp_decay_step
-                close_info.take_profit = max(
-                    min(decayed_tp, current_upper),
-                    close_info.entry_price,
+                dca_count = sum(
+                    1
+                    for strategy in close_info.strategy
+                    if strategy == PositionSide.DCA
                 )
+                if dca_count > 0:
+                    dca_tp = (
+                        close_info.entry_price
+                        + atr_value * cls.DCA_TP_ATR_RATIO**dca_count
+                    )
+                    close_info.take_profit = max(
+                        min(decayed_tp, current_upper, dca_tp),
+                        close_info.entry_price,
+                    )
+                else:
+                    close_info.take_profit = max(
+                        min(decayed_tp, current_upper),
+                        close_info.entry_price,
+                    )
 
                 # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
                 profit = price_close - close_info.entry_price

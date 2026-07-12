@@ -126,6 +126,33 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored.entry_price, 11)
         self.assertEqual(stored.take_profit, 11.5)
 
+    async def test_existing_dca_recalculates_take_profit_with_current_atr(self):
+        position = self.make_position(strategies=[PositionSide.BZ, PositionSide.DCA])
+        position.take_profit = 20
+        hist = pd.DataFrame([
+            {"high": 12, "low": 10, "close": 11, "volume": 100},
+            {"high": 12, "low": 10, "close": 11, "volume": 100},
+        ])
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {"000001": position.model_dump()},
+                "OBSERVATIONS": {},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(AUTOA, "calculate_atr", return_value=2),
+        ):
+            await AUTOA.on_positions(
+                "000001",
+                ["20260711", "20260710"],
+                position.model_dump(),
+                pd.Timestamp("2026-07-11").to_pydatetime(),
+            )
+            stored = Position.model_validate(
+                AUTOA.alert_all["POSITIONS"]["000001"]
+            )
+
+        self.assertEqual(stored.take_profit, 11)
+
     async def test_pushes_zero_total_when_no_positions(self):
         with (
             patch.object(AUTOA, "alert_all", {"POSITIONS": {}}),
@@ -633,6 +660,50 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(position.entry_price, 10)
         self.assertEqual(position.take_profit, 9.5)
+
+    async def test_existing_long_dca_recalculates_take_profit_with_current_atr(self):
+        obj = self.make_autobn()
+        position = self.make_position(entry_price=10, take_profit=20, stop_loss=5)
+        position.strategy.extend([PositionSide.DCA, PositionSide.DCA])
+
+        await obj._manage_long_position(position.name, position, 2, 10, 30, 5, 1)
+
+        self.assertEqual(position.take_profit, 10.5)
+
+    async def test_existing_short_dca_recalculates_take_profit_with_current_atr(self):
+        obj = self.make_autobn()
+        position = self.make_position(
+            position_side=PositionSide.SHORT,
+            entry_price=10,
+            take_profit=1,
+            stop_loss=15,
+        )
+        position.strategy.extend([PositionSide.DCA, PositionSide.DCA])
+
+        await obj._manage_short_position(position.name, position, 2, 10, 20, 0, 1)
+
+        self.assertEqual(position.take_profit, 9.5)
+
+    async def test_long_without_dca_keeps_original_dynamic_take_profit(self):
+        obj = self.make_autobn()
+        position = self.make_position(entry_price=10, take_profit=20, stop_loss=5)
+
+        await obj._manage_long_position(position.name, position, 2, 10, 30, 5, 1)
+
+        self.assertEqual(position.take_profit, 19.999)
+
+    async def test_short_without_dca_keeps_original_dynamic_take_profit(self):
+        obj = self.make_autobn()
+        position = self.make_position(
+            position_side=PositionSide.SHORT,
+            entry_price=10,
+            take_profit=1,
+            stop_loss=15,
+        )
+
+        await obj._manage_short_position(position.name, position, 2, 10, 20, 0, 1)
+
+        self.assertEqual(position.take_profit, 1.0009)
 
     async def test_cached_hour_ratio_still_requests_five_minute_ratio(self):
         obj = self.make_autobn()
