@@ -1639,7 +1639,7 @@ class AUTOBN:
                 )
                 target_take_profit = (
                     close_info.entry_price
-                    + self.DCA_TP_ATR_RATIO * atr_value * dca_count
+                    + atr_value * self.DCA_TP_ATR_RATIO**dca_count
                 )
                 close_info.take_profit = min(
                     close_info.take_profit,
@@ -1743,7 +1743,7 @@ class AUTOBN:
                 )
                 target_take_profit = (
                     close_info.entry_price
-                    - self.DCA_TP_ATR_RATIO * atr_value * dca_count
+                    - atr_value * self.DCA_TP_ATR_RATIO**dca_count
                 )
                 close_info.take_profit = max(
                     close_info.take_profit,
@@ -3007,7 +3007,7 @@ class AUTOA:
                 )
                 target_take_profit = (
                     close_info.entry_price
-                    + cls.DCA_TP_ATR_RATIO * atr_value * dca_count
+                    + atr_value * cls.DCA_TP_ATR_RATIO**dca_count
                 )
                 close_info.take_profit = min(
                     close_info.take_profit,

@@ -94,6 +94,38 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pnl, 100)
         self.assertEqual(rate, 0.05)
 
+    async def test_second_dca_uses_quarter_atr_take_profit_distance(self):
+        position = self.make_position(
+            strategies=[PositionSide.BZ, PositionSide.DCA]
+        )
+        position.entry_price = 12
+        position.take_profit = 20
+        hist = pd.DataFrame([
+            {"high": 10, "low": 8, "close": 9, "volume": 100},
+            {"high": 10, "low": 8, "close": 9, "volume": 100},
+        ])
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {"000001": position.model_dump()},
+                "OBSERVATIONS": {},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(AUTOA, "calculate_atr", return_value=2),
+            patch.object(AUTOA, "send_msg", new=AsyncMock()),
+        ):
+            await AUTOA.on_positions(
+                "000001",
+                ["20260711", "20260710"],
+                position.model_dump(),
+                pd.Timestamp("2026-07-11").to_pydatetime(),
+            )
+            stored = Position.model_validate(
+                AUTOA.alert_all["POSITIONS"]["000001"]
+            )
+
+        self.assertEqual(stored.entry_price, 11)
+        self.assertEqual(stored.take_profit, 11.5)
+
     async def test_pushes_zero_total_when_no_positions(self):
         with (
             patch.object(AUTOA, "alert_all", {"POSITIONS": {}}),
@@ -570,6 +602,37 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj.open_bn_position.assert_awaited_once()
         stored = Position.model_validate(obj.alert_all["POSITIONS"]["BTCUSDT"])
         self.assertEqual(stored.strategy, [PositionSide.BZ])
+
+    async def test_second_long_dca_uses_quarter_atr_take_profit_distance(self):
+        obj = self.make_autobn()
+        position = self.make_position(entry_price=12, take_profit=20, stop_loss=5)
+        position.strategy.append(PositionSide.DCA)
+        obj.open_bn_position = AsyncMock(return_value=True)
+        obj.get_amount_close = AsyncMock(return_value=(1, 10))
+        obj.send_msg = AsyncMock()
+
+        await obj._manage_long_position(position.name, position, 2, 8, 20, 5, 1)
+
+        self.assertEqual(position.entry_price, 10)
+        self.assertEqual(position.take_profit, 10.5)
+
+    async def test_second_short_dca_uses_quarter_atr_take_profit_distance(self):
+        obj = self.make_autobn()
+        position = self.make_position(
+            position_side=PositionSide.SHORT,
+            entry_price=8,
+            take_profit=5,
+            stop_loss=15,
+        )
+        position.strategy.append(PositionSide.DCA)
+        obj.open_bn_position = AsyncMock(return_value=True)
+        obj.get_amount_close = AsyncMock(return_value=(1, 10))
+        obj.send_msg = AsyncMock()
+
+        await obj._manage_short_position(position.name, position, 2, 12, 20, 5, 1)
+
+        self.assertEqual(position.entry_price, 10)
+        self.assertEqual(position.take_profit, 9.5)
 
     async def test_cached_hour_ratio_still_requests_five_minute_ratio(self):
         obj = self.make_autobn()
