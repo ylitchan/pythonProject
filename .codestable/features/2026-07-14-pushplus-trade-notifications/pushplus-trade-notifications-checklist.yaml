@@ -1,0 +1,60 @@
+feature: 2026-07-14-pushplus-trade-notifications
+created: 2026-07-14
+
+steps:
+  - action: "微重构：建立独立 PushPlus 交易通知模块并保持原交易行为"
+    exit_signal: "交易文件只保留业务筛选和调用，通知模块可独立导入且原测试通过"
+    status: done
+  - action: "格式节点：生成成功与失败交易的 Markdown 标题和正文"
+    exit_signal: "输出包含状态、市场、动作、标的、策略及有序交易字段且无 HTML"
+    status: done
+  - action: "发送节点：接通环境 token、成功响应和失败隔离"
+    exit_signal: "token 缺失静默跳过，HTTP或业务失败只记录错误且不抛向交易流程"
+    status: done
+  - action: "AUTOBN 接入：覆盖成功开平仓和交易动作失败"
+    exit_signal: "目标交易事件各最多推送一次，一般系统异常不进入 PushPlus"
+    status: done
+  - action: "AUTOA 接入：只覆盖含 N 策略的成功开平仓"
+    exit_signal: "含N调用PushPlus，非N不调用，企业微信行为不变"
+    status: done
+  - action: "端到端验证：运行回归测试并发送真实 Markdown 测试消息"
+    exit_signal: "自动化测试通过且 PushPlus 返回业务 code 200"
+    status: done
+
+checks:
+  - item: "PushPlus 使用 Markdown 标题、粗体和列表展示交易信息"
+    source: 名词契约
+    status: passed
+  - item: "标题包含状态、市场、动作和标的"
+    source: 名词契约
+    status: passed
+  - item: "AUTOBN 成功开仓和平仓进入 PushPlus"
+    source: 编排骨架
+    status: passed
+  - item: "AUTOBN 明确交易失败和持仓查询异常跳过进入 PushPlus"
+    source: 编排骨架
+    status: passed
+  - item: "一般扫描、行情和系统异常不进入 PushPlus"
+    source: 范围守护
+    status: passed
+  - item: "AUTOA 仅含 N 策略的成功开仓和平仓进入 PushPlus"
+    source: 编排骨架
+    status: passed
+  - item: "AUTOA 非 N 策略及行情监控异常不进入 PushPlus"
+    source: 范围守护
+    status: passed
+  - item: "token 只从运行环境或测试脚本命令行读取"
+    source: 流程级约束
+    status: passed
+  - item: "PushPlus 失败不影响交易、持仓更新、Excel 和企业微信"
+    source: 流程级约束
+    status: passed
+  - item: "企业微信正文、发送范围和每日持仓通知保持不变"
+    source: 范围守护
+    status: passed
+  - item: "不引入 HTML 模板、第三方依赖、持久化队列或重试系统"
+    source: 范围守护
+    status: passed
+  - item: "真实 Markdown 测试推送返回业务 code 200"
+    source: 验收场景
+    status: passed

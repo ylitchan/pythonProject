@@ -36,6 +36,19 @@ from binance_sdk_derivatives_trading_usds_futures.derivatives_trading_usds_futur
 from pydantic import BaseModel
 from requests.adapters import HTTPAdapter
 
+try:
+    from tokenDemo.pushplus_notifications import (
+        classify_autobn_message,
+        format_trade_notification,
+        send_pushplus,
+    )
+except ModuleNotFoundError:
+    from pushplus_notifications import (
+        classify_autobn_message,
+        format_trade_notification,
+        send_pushplus,
+    )
+
 # ==================== 类型定义 ====================
 
 
@@ -635,6 +648,13 @@ class AUTOBN:
         try:
             self.logger.info(f"发送消息: {msg}")
             target_qy_key = qy_key or self.qy_key
+            http_session = await self._get_http_session()
+            pushplus_notification = classify_autobn_message(msg)
+            if pushplus_notification:
+                try:
+                    await send_pushplus(http_session, pushplus_notification)
+                except Exception as e:
+                    self.logger.error(f"PushPlus 消息发送异常: {str(e)}")
             if not self.ENABLE_MESSAGES and target_qy_key != self.signal_qy_key:
                 return
             if wx:
@@ -2655,18 +2675,24 @@ class AUTOA:
         cls._http_session = None
 
     @classmethod
-    async def send_msg(cls, msg):
+    async def send_msg(cls, msg, pushplus_notification=None):
         """
         发送消息通知函数
 
         功能：通过企业微信发送交易通知消息
         参数：
             msg: 要发送的消息内容
+            pushplus_notification: 可选的 PushPlus 交易通知
         """
         try:
             cls.logger.info(f"发送消息: {msg}")
             json_msg = {"msgtype": "text", "text": {"content": msg}}
             http_session = await cls._get_http_session()
+            if pushplus_notification:
+                try:
+                    await send_pushplus(http_session, pushplus_notification)
+                except Exception as e:
+                    cls.logger.error(f"PushPlus 消息发送异常: {str(e)}")
             async with http_session.post(
                 url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={cls.qy_key}",
                 json=json_msg,
@@ -3125,7 +3151,12 @@ class AUTOA:
             f"平仓收益:{profit_rate:.2%}\n"
             f"平仓依据:{close_info.close_reason}"
         )
-        await cls.send_msg(msg)
+        pushplus_notification = None
+        if PositionSide.N in close_info.strategy:
+            pushplus_notification = format_trade_notification(
+                "AUTOA", "平仓", close_info.name, msg
+            )
+        await cls.send_msg(msg, pushplus_notification)
 
         await CloseRecordManager.record_close_async(
             source="AUTOA",
@@ -3260,7 +3291,12 @@ class AUTOA:
                     f"止损:{stop_loss:.2f}\n"
                     f"收益率:{atr_percent:.2%}\n"
                 )
-                await cls.send_msg(msg)
+                pushplus_notification = None
+                if PositionSide.N in open_info.strategy:
+                    pushplus_notification = format_trade_notification(
+                        "AUTOA", "开仓", open_info.name, msg
+                    )
+                await cls.send_msg(msg, pushplus_notification)
 
                 # 6. 从观察列表移除
                 cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
