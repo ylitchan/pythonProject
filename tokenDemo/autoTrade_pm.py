@@ -34,6 +34,7 @@ from binance_sdk_derivatives_trading_usds_futures.derivatives_trading_usds_futur
     DerivativesTradingUsdsFutures,
 )
 from pydantic import BaseModel
+from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 
 try:
@@ -387,8 +388,7 @@ class AUTOBN:
         # 支持键：qy_key, leverage, health4open, margin_mode/position_mode,
         #        session/session_verify/session_headers,
         #        wx_key, user_name,
-        #        bn_api_file, alert_all_file/allert_all_file,
-        #        api_key, api_secret, slot_balance
+        #        alert_all_file/allert_all_file, api_key, api_secret, slot_balance
         obj.qy_key = kwargs.get("qy_key") or kwargs.get("qyWechatKey")
         if not obj.qy_key:
             raise ValueError("from_cfg 需要提供 qy_key")
@@ -426,34 +426,20 @@ class AUTOBN:
         obj.user_name = kwargs.get(
             "user_name", os.getenv("USER_NAME", "49124710049@chatroom")
         )
-        bn_api_file = kwargs.get("bn_api_file", "bn.json")
         obj.alert_all_file = kwargs.get(
             "alert_all_file", kwargs.get("allert_all_file", "alert_all.json")
         )
 
-        # 加载币安API配置并允许 kwargs 覆盖
-        with open(bn_api_file, "r") as f:
-            bn_api = json.load(f)
-
-        # 优先级：kwargs参数 > JSON配置文件 > 环境变量
-        api_key = (
-            kwargs.get("api_key")
-            or bn_api.get("api_key")
-            or os.getenv("BINANCE_API_KEY")
-        )
-        api_secret = (
-            kwargs.get("api_secret")
-            or bn_api.get("api_secret")
-            or os.getenv("BINANCE_API_SECRET")
-        )
+        # 优先级：kwargs参数 > 环境变量
+        api_key = kwargs.get("api_key") or os.getenv("BINANCE_API_KEY")
+        api_secret = kwargs.get("api_secret") or os.getenv("BINANCE_API_SECRET")
 
         # 安全检查：确保密钥已配置
         if not api_key or not api_secret:
             raise ValueError(
-                "币安API密钥未配置！请通过以下方式之一提供：\n"
-                "1. 在 bn.json 中配置 api_key 和 api_secret\n"
-                "2. 设置环境变量 BINANCE_API_KEY 和 BINANCE_API_SECRET\n"
-                "3. 在调用 from_cfg() 时传入 api_key 和 api_secret 参数"
+                "币安API密钥未配置！请设置环境变量 BINANCE_API_KEY 和 "
+                "BINANCE_API_SECRET，或在调用 from_cfg() 时传入 api_key 和 "
+                "api_secret 参数"
             )
 
         # 初始化币安统一账户(PAPI)交易客户端 + 官方 USDS-M 行情客户端
@@ -652,7 +638,7 @@ class AUTOBN:
             pushplus_notification = classify_autobn_message(msg)
             if pushplus_notification:
                 try:
-                    await send_pushplus(http_session, pushplus_notification)
+                    await send_pushplus(pushplus_notification)
                 except Exception as e:
                     self.logger.error(f"PushPlus 消息发送异常: {str(e)}")
             if not self.ENABLE_MESSAGES and target_qy_key != self.signal_qy_key:
@@ -2690,7 +2676,7 @@ class AUTOA:
             http_session = await cls._get_http_session()
             if pushplus_notification:
                 try:
-                    await send_pushplus(http_session, pushplus_notification)
+                    await send_pushplus(pushplus_notification)
                 except Exception as e:
                     cls.logger.error(f"PushPlus 消息发送异常: {str(e)}")
             async with http_session.post(
@@ -3534,8 +3520,9 @@ async def main():
     任务2：币安市场分析（每分钟执行）
     """
     current_dir = os.path.dirname(os.path.abspath(__file__))
+    load_dotenv(os.path.join(os.path.dirname(current_dir), ".env"))
 
-    # 从环境变量或配置文件加载密钥
+    # 从环境变量加载密钥
     qy_key = os.getenv("QY_WECHAT_KEY", "095984b1-5bc0-43ac-8037-d65a9608d120")
     if not qy_key:
         logger = logging.getLogger("AUTOA")
@@ -3546,7 +3533,6 @@ async def main():
     autobn_qy_key = AUTOA.qy_key
 
     autobn = AUTOBN.from_cfg(
-        bn_api_file=os.path.join(current_dir, "bn.json"),
         alert_all_file=os.path.join(current_dir, "alert_all.json"),
         qy_key=autobn_qy_key,
         signal_qy_key=qy_key,

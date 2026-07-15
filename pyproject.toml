@@ -19,4 +19,6 @@ dependencies = [
     "binance-sdk-derivatives-trading-usds-futures>=9.0.0",
     "aiohttp>=3.13.2",
     "aiofiles>=25.1.0",
+    "perk-pushplus-sdk>=1.0.1",
+    "python-dotenv>=1.2.2",
 ]

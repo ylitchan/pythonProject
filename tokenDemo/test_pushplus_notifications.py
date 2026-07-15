@@ -1,36 +1,22 @@
+import asyncio
 import os
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
+
+from perk_pushplus import Template
 
 from tokenDemo.pushplus_notifications import (
+    _get_pushplus_client,
     classify_autobn_message,
     format_trade_notification,
     send_pushplus,
 )
 
 
-class AsyncResponse:
-    def __init__(self, status=200, payload=None):
-        self.status = status
-        self.payload = payload or {"code": 200, "msg": "执行成功"}
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, traceback):
-        return False
-
-    async def json(self, content_type=None):
-        return self.payload
-
-
-class Session:
-    def __init__(self, response=None):
-        self.response = response or AsyncResponse()
-        self.post = unittest.mock.MagicMock(return_value=self.response)
-
-
 class PushPlusNotificationTest(unittest.IsolatedAsyncioTestCase):
+    def tearDown(self):
+        _get_pushplus_client.cache_clear()
+
     def test_formats_markdown_trade_notification(self):
         notification = format_trade_notification(
             "AUTOBN",
@@ -69,42 +55,101 @@ class PushPlusNotificationTest(unittest.IsolatedAsyncioTestCase):
     def test_ignores_non_trade_message(self):
         self.assertIsNone(classify_autobn_message("市场分析任务超时"))
 
-    async def test_missing_token_skips_request(self):
-        session = Session()
+    async def test_missing_token_skips_sdk(self):
         notification = format_trade_notification(
             "AUTOBN", "开仓", "BTCUSDT", "BTCUSDT 开仓"
         )
 
-        with patch.dict(os.environ, {}, clear=True):
-            sent = await send_pushplus(session, notification)
+        with (
+            patch.dict(os.environ, {}, clear=True),
+            patch(
+                "tokenDemo.pushplus_notifications._send_pushplus_sync"
+            ) as send_sync,
+        ):
+            sent = await send_pushplus(notification)
 
         self.assertFalse(sent)
-        session.post.assert_not_called()
+        send_sync.assert_not_called()
 
-    async def test_sends_markdown_payload(self):
-        session = Session()
+    async def test_sends_markdown_with_sdk_in_worker_thread(self):
         notification = format_trade_notification(
             "AUTOA", "平仓", "测试股票", "测试股票 平仓\n策略:BZ,N"
         )
+        client = MagicMock()
+        builder = MagicMock()
+        builder.token.return_value = builder
+        builder.secret_key.return_value = builder
+        builder.build.return_value = client
 
-        sent = await send_pushplus(session, notification, token="test-token")
+        with (
+            patch(
+                "tokenDemo.pushplus_notifications.PushPlusClient.builder",
+                return_value=builder,
+            ),
+            patch("asyncio.to_thread", wraps=asyncio.to_thread) as to_thread,
+        ):
+            sent = await send_pushplus(
+                notification,
+                token="test-token",
+                secret_key="test-secret",
+            )
 
         self.assertTrue(sent)
-        payload = session.post.call_args.kwargs["json"]
-        self.assertEqual(payload["template"], "markdown")
-        self.assertEqual(payload["title"], notification.title)
-        self.assertEqual(payload["content"], notification.content)
+        to_thread.assert_awaited_once()
+        builder.token.assert_called_once_with("test-token")
+        builder.secret_key.assert_called_once_with("test-secret")
+        request = client.send.call_args.args[0]
+        self.assertEqual(request.title, notification.title)
+        self.assertEqual(request.content, notification.content)
+        self.assertEqual(request.template, Template.MARKDOWN)
 
-    async def test_business_failure_raises_without_token_leak(self):
-        session = Session(AsyncResponse(payload={"code": 500, "msg": "失败"}))
+    async def test_secret_key_is_optional_for_message_send(self):
         notification = format_trade_notification(
             "AUTOBN", "开仓", "BTCUSDT", "BTCUSDT 开仓"
         )
+        client = MagicMock()
+        builder = MagicMock()
+        builder.token.return_value = builder
+        builder.build.return_value = client
 
-        with self.assertRaisesRegex(RuntimeError, "PushPlus 推送失败") as caught:
-            await send_pushplus(session, notification, token="secret-token")
+        with patch(
+            "tokenDemo.pushplus_notifications.PushPlusClient.builder",
+            return_value=builder,
+        ):
+            sent = await send_pushplus(
+                notification,
+                token="test-token",
+                secret_key="",
+            )
+
+        self.assertTrue(sent)
+        builder.secret_key.assert_not_called()
+        client.send.assert_called_once()
+
+    async def test_sdk_failure_does_not_leak_credentials(self):
+        notification = format_trade_notification(
+            "AUTOBN", "开仓", "BTCUSDT", "BTCUSDT 开仓"
+        )
+        client = MagicMock()
+        client.send.side_effect = RuntimeError("PushPlus SDK 发送失败")
+        builder = MagicMock()
+        builder.token.return_value = builder
+        builder.secret_key.return_value = builder
+        builder.build.return_value = client
+
+        with patch(
+            "tokenDemo.pushplus_notifications.PushPlusClient.builder",
+            return_value=builder,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "PushPlus SDK 发送失败") as caught:
+                await send_pushplus(
+                    notification,
+                    token="secret-token",
+                    secret_key="secret-key",
+                )
 
         self.assertNotIn("secret-token", str(caught.exception))
+        self.assertNotIn("secret-key", str(caught.exception))
 
 
 if __name__ == "__main__":

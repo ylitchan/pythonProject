@@ -1,10 +1,12 @@
+import asyncio
 import datetime
 import os
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Optional
 
-import aiohttp
+from perk_pushplus import PushPlusClient, SendRequest, Template
 
 
 @dataclass(frozen=True)
@@ -83,27 +85,45 @@ def classify_autobn_message(message: str) -> Optional[TradeNotification]:
     return format_trade_notification("AUTOBN", action, symbol, message, success)
 
 
+@lru_cache(maxsize=4)
+def _get_pushplus_client(token: str, secret_key: str) -> PushPlusClient:
+    builder = PushPlusClient.builder().token(token)
+    if secret_key:
+        builder = builder.secret_key(secret_key)
+    return builder.build()
+
+
+def _send_pushplus_sync(
+    notification: TradeNotification,
+    token: str,
+    secret_key: str,
+) -> None:
+    request = (
+        SendRequest.builder()
+        .title(notification.title)
+        .content(notification.content)
+        .template(Template.MARKDOWN)
+        .build()
+    )
+    _get_pushplus_client(token, secret_key).send(request)
+
+
 async def send_pushplus(
-    session: aiohttp.ClientSession,
     notification: TradeNotification,
     token: Optional[str] = None,
+    secret_key: Optional[str] = None,
 ) -> bool:
     target_token = token or os.getenv("PUSHPLUS_TOKEN")
     if not target_token:
         return False
 
-    async with session.post(
-        "https://www.pushplus.plus/send",
-        json={
-            "token": target_token,
-            "title": notification.title,
-            "content": notification.content,
-            "template": "markdown",
-        },
-    ) as response:
-        result = await response.json(content_type=None)
-        if response.status != 200 or result.get("code") != 200:
-            raise RuntimeError(
-                f"PushPlus 推送失败，状态码:{response.status}，响应:{result}"
-            )
+    target_secret_key = secret_key
+    if target_secret_key is None:
+        target_secret_key = os.getenv("PUSHPLUS_SECRET_KEY", "")
+    await asyncio.to_thread(
+        _send_pushplus_sync,
+        notification,
+        target_token,
+        target_secret_key,
+    )
     return True
