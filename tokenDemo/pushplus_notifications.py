@@ -24,7 +24,7 @@ def format_trade_notification(
 ) -> TradeNotification:
     status_icon = "✅" if success else "❌"
     status_text = "成功" if success else "失败"
-    title = f"{status_icon} {market} {action}{status_text} · {symbol}"
+    title = f"{symbol} {action}{status_text}"
 
     lines = [line.strip() for line in message.splitlines() if line.strip()]
     detail_lines = []

@@ -25,7 +25,7 @@ class PushPlusNotificationTest(unittest.IsolatedAsyncioTestCase):
             "BTCUSDT 开仓\n策略:N,DCA\n委托价格:64320.5\n杠杆:5x",
         )
 
-        self.assertEqual(notification.title, "✅ AUTOBN 开仓成功 · BTCUSDT")
+        self.assertEqual(notification.title, "BTCUSDT 开仓成功")
         self.assertIn("# ✅ AUTOBN · 开仓成功", notification.content)
         self.assertIn("## BTCUSDT", notification.content)
         self.assertIn("- **策略：** N,DCA", notification.content)
@@ -35,7 +35,7 @@ class PushPlusNotificationTest(unittest.IsolatedAsyncioTestCase):
     def test_formats_failure_with_reason_and_time(self):
         notification = classify_autobn_message("BTCUSDT 开仓失败：可用余额为零")
 
-        self.assertEqual(notification.title, "❌ AUTOBN 开仓失败 · BTCUSDT")
+        self.assertEqual(notification.title, "BTCUSDT 开仓失败")
         self.assertIn("- **原因：** 可用余额为零", notification.content)
         self.assertIn("**时间：**", notification.content)
         self.assertIn("请检查账户、持仓及运行日志", notification.content)
@@ -43,14 +43,14 @@ class PushPlusNotificationTest(unittest.IsolatedAsyncioTestCase):
     def test_classifies_legacy_close_failure_symbol(self):
         notification = classify_autobn_message("bn平仓BTCUSDT失败，当前价格:64000")
 
-        self.assertEqual(notification.title, "❌ AUTOBN 平仓失败 · BTCUSDT")
+        self.assertEqual(notification.title, "BTCUSDT 平仓失败")
 
     def test_classifies_close_skip_as_failure(self):
         notification = classify_autobn_message(
             "BTCUSDT 平仓跳过：查询持仓数量失败"
         )
 
-        self.assertEqual(notification.title, "❌ AUTOBN 平仓失败 · BTCUSDT")
+        self.assertEqual(notification.title, "BTCUSDT 平仓失败")
 
     def test_ignores_non_trade_message(self):
         self.assertIsNone(classify_autobn_message("市场分析任务超时"))
@@ -75,6 +75,7 @@ class PushPlusNotificationTest(unittest.IsolatedAsyncioTestCase):
         notification = format_trade_notification(
             "AUTOA", "平仓", "测试股票", "测试股票 平仓\n策略:BZ,N"
         )
+        self.assertEqual(notification.title, "测试股票 平仓成功")
         client = MagicMock()
         builder = MagicMock()
         builder.token.return_value = builder

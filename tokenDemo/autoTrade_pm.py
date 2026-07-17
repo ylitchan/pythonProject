@@ -2708,9 +2708,41 @@ class AUTOA:
         return total_cost / (existing_shares + cls.DEFAULT_POSITION_SHARES)
 
     @classmethod
+    async def _get_sina_intraday_price(cls, code: str) -> Optional[float]:
+        code_pre = "sh" if code.startswith("6") else "sz"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://finance.sina.com.cn/",
+        }
+        try:
+            http_session = await cls._get_http_session()
+            async with http_session.get(
+                url=(
+                    "https://cn.finance.sina.com.cn/minline/getMinlineData"
+                    f"?symbol={code_pre}{code}"
+                ),
+                headers=headers,
+            ) as response:
+                payload = await response.json(content_type=None)
+            data = payload.get("result", {}).get("data", [])
+            if not data or not isinstance(data[-1], dict):
+                return None
+            price = float(data[-1].get("p", 0) or 0)
+            return price if price > 0 else None
+        except Exception as e:
+            cls.logger.warning(
+                f"{code} 获取新浪分时行情失败: {type(e).__name__}: {e!r}"
+            )
+            return None
+
+    @classmethod
     async def _get_auction_price(
         cls, code: str, trading_days: List[str]
     ) -> Optional[float]:
+        current_price = await cls._get_sina_intraday_price(code)
+        if current_price is not None:
+            return current_price
         if not trading_days:
             return None
         hist = await cls.stock_zh_a_hist(

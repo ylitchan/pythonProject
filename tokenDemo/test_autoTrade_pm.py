@@ -234,12 +234,35 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         get_days.assert_awaited_once()
         self.assertEqual(get_price_mock.await_count, 2)
 
+    async def test_auction_price_prefers_sina_intraday_quote(self):
+        trading_days = ["20260711", "20260710"]
+        with (
+            patch.object(
+                AUTOA,
+                "_get_sina_intraday_price",
+                new=AsyncMock(return_value=10.8),
+            ) as sina_price,
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock()) as stock_hist,
+        ):
+            price = await AUTOA._get_auction_price("000001", trading_days)
+
+        self.assertEqual(price, 10.8)
+        sina_price.assert_awaited_once_with("000001")
+        stock_hist.assert_not_awaited()
+
     async def test_auction_prices_still_fetch_each_stock_independently(self):
         trading_days = ["20260711", "20260710"]
         hist = pd.DataFrame([{"close": 10.5}])
-        with patch.object(
-            AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)
-        ) as stock_hist:
+        with (
+            patch.object(
+                AUTOA,
+                "_get_sina_intraday_price",
+                new=AsyncMock(return_value=None),
+            ),
+            patch.object(
+                AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)
+            ) as stock_hist,
+        ):
             first = await AUTOA._get_auction_price("000001", trading_days)
             second = await AUTOA._get_auction_price("000002", trading_days)
 
