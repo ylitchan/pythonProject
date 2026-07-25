@@ -1,7 +1,6 @@
 # ==================== 标准库导入 ====================
 import asyncio
 import atexit
-import copy
 import datetime
 import gc
 import json
@@ -588,25 +587,6 @@ class AUTOBN:
     def _to_papi_order_type(order_type):
         return NewUmOrderTypeEnum(order_type)
 
-    def _new_order_via_papi(self, symbol, side, quantity, position_side):
-        return self._unwrap_api_response(
-            self.papi_client.rest_api.new_um_order(
-                symbol=symbol,
-                side=self._to_papi_side(side),
-                type=self._to_papi_order_type("MARKET"),
-                quantity=quantity,
-                position_side=self._to_papi_position_side(position_side),
-            )
-        )
-
-    def _change_leverage_via_papi(self, symbol, leverage):
-        return self._unwrap_api_response(
-            self.papi_client.rest_api.change_um_initial_leverage(
-                symbol=symbol,
-                leverage=leverage,
-            )
-        )
-
     async def _get_http_session(self):
         if self._http_session is None or self._http_session.closed:
             timeout = aiohttp.ClientTimeout(total=self.MESSAGE_TIMEOUT_SECONDS)
@@ -637,7 +617,6 @@ class AUTOBN:
         try:
             self.logger.info(f"发送消息: {msg}")
             target_qy_key = qy_key or self.qy_key
-            http_session = await self._get_http_session()
             pushplus_notification = classify_autobn_message(msg)
             if pushplus_notification:
                 try:
@@ -714,10 +693,6 @@ class AUTOBN:
                 timeout=self.API_TIMEOUT_SECONDS,
             )
             return self._unwrap_api_response(result)
-
-    async def _call_um(self, method, *args, **kwargs):
-        """兼容旧调用名，内部统一走 _call_api"""
-        return await self._call_api(method, *args, **kwargs)
 
     async def get_amount_close(self, symbol):
         """
@@ -1873,11 +1848,6 @@ class AUTOBN:
                 f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}"
             )
 
-        # 根据持仓方向判断止盈止损触发
-        # 多头: take_profit=高价, stop_loss=低价
-        # 空头: take_profit=低价, stop_loss=高价
-        is_long = close_info.position_side.value == PositionSide.LONG.value
-
         if await self._close_triggered_position(
             symbol, close_info, atr_value, current_price
         ):
@@ -2888,7 +2858,6 @@ class AUTOA:
     async def stock_zh_a_hist(
         cls,
         code,
-        fields="date,code,open,high,low,close,preclose,volume,amount",
         start_date=None,
         end_date=None,
         frequency="d",
@@ -3535,7 +3504,7 @@ class AUTOA:
 atexit.register(AUTOA._save_alert_all_on_exit)
 
 
-def handle_exit_signal(signum, frame):
+def handle_exit_signal(signum, _frame):
     """处理系统退出信号，确保触发atexit"""
     signal_name = "SIGINT (Ctrl+C)" if signum == signal.SIGINT else "SIGTERM"
     logger = logging.getLogger("AUTOA")
