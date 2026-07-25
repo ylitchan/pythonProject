@@ -1,0 +1,48 @@
+feature: 2026-07-25-shared-observation-reopen-cooldown
+created: 2026-07-25
+
+steps:
+  - action: "状态契约：为共用 Observation 增加可选最早开仓时间戳，默认 None"
+    exit_signal: "旧 JSON 兼容、null 默认值及数值持久化往返测试通过"
+    status: done
+  - action: "AUTOBN 迁移：完整平仓写入 Observation 的 24 小时冷却，开仓统一读取并移除 CLOSE_TS"
+    exit_signal: "提前一秒拒绝、恰好 24 小时允许且全仓无 CLOSE_TS 引用"
+    status: done
+  - action: "AUTOA 日历冷却：完整平仓写入第二个后续实际交易日时间戳，开仓统一读取"
+    exit_signal: "普通连续交易日、周末和法定休市边界测试通过"
+    status: done
+  - action: "回归验收：运行完整测试与 Ruff，回写 requirement 和验收记录"
+    exit_signal: "全量验证通过且 CodeStable 状态全部闭环"
+    status: done
+
+checks:
+  - item: "新建 Observation 的 earliest_open_timestamp 为 None，旧 JSON 缺字段可加载"
+    source: 名词契约
+    status: passed
+  - item: "冷却数值随 Observation JSON 持久化并在重启恢复"
+    source: 名词契约
+    status: passed
+  - item: "AUTOBN 只在完整清仓或确认仓位为零时写确认时间加 24 小时"
+    source: 流程级约束
+    status: passed
+  - item: "AUTOBN 当前时间小于最早时间时拒绝，等于时允许继续"
+    source: 验收场景
+    status: passed
+  - item: "AUTOBN 不再初始化、读写或兼容读取 CLOSE_TS"
+    source: 范围守护
+    status: passed
+  - item: "AUTOA 平仓后的第一个实际交易日完整禁止，第二个后续交易日允许"
+    source: 验收场景
+    status: passed
+  - item: "AUTOA 周末和法定休市日均不计入冷却交易日"
+    source: 验收场景
+    status: passed
+  - item: "AUTOA 日历失败不退化为自然日或工作日近似"
+    source: 错误语义
+    status: passed
+  - item: "不处理 Position 存在但 Observation 不存在的异常，不修改 Observation 删除逻辑"
+    source: 明确不做
+    status: passed
+  - item: "AUTOA 与 AUTOBN 的其他入场、出场、观察超时和风控逻辑保持不变"
+    source: 范围守护
+    status: passed

@@ -29,6 +29,34 @@ class ObservationTest(unittest.TestCase):
         )
 
         self.assertIsNone(observation.bz_reference_high)
+        self.assertIsNone(observation.earliest_open_timestamp)
+
+    def test_reopen_timestamp_persists_and_old_json_defaults_to_none(self):
+        old_observation = Observation.model_validate({
+            "price": 10,
+            "timestamp": 1,
+            "side": "BUY",
+            "strategy": ["BZ"],
+            "name": "测试股票",
+        })
+        self.assertIsNone(old_observation.earliest_open_timestamp)
+
+        old_observation.earliest_open_timestamp = 12345.5
+        restored = Observation.model_validate(old_observation.model_dump())
+        self.assertEqual(restored.earliest_open_timestamp, 12345.5)
+
+    def test_reopen_cooldown_uses_strict_timestamp_boundary(self):
+        observation = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="测试股票",
+            earliest_open_timestamp=100,
+        )
+
+        self.assertTrue(observation.is_reopen_cooldown_active(99.999))
+        self.assertFalse(observation.is_reopen_cooldown_active(100))
 
 
 class AutoABzReferenceHighTest(unittest.TestCase):
@@ -67,6 +95,67 @@ class AutoABzReferenceHighTest(unittest.TestCase):
         hist = self.make_hist().tail(1)
 
         self.assertFalse(AUTOA.check_gap_up_after_bz_reference(hist, 10))
+
+
+class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
+    async def test_following_trading_days_skip_weekend_and_market_holiday(self):
+        calendar = pd.DataFrame({
+            "trade_date": [
+                "2026-09-30",
+                "2026-10-09",
+                "2026-10-12",
+                "2026-10-13",
+            ]
+        })
+        with patch(
+            "tokenDemo.autoTrade_pm.ak.tool_trade_date_hist_sina",
+            return_value=calendar,
+        ):
+            following = await AUTOA.get_following_trading_days(
+                pd.Timestamp("2026-09-30").to_pydatetime()
+            )
+
+        self.assertEqual(following, ["2026-10-09", "2026-10-12"])
+
+    async def test_reopen_timestamp_is_second_following_trading_day(self):
+        with patch.object(
+            AUTOA,
+            "get_following_trading_days",
+            new=AsyncMock(return_value=["2026-07-23", "2026-07-24"]),
+        ):
+            timestamp = await AUTOA._get_reopen_timestamp_after_close(
+                pd.Timestamp("2026-07-22").to_pydatetime()
+            )
+
+        self.assertEqual(
+            timestamp,
+            pd.Timestamp("2026-07-24").to_pydatetime().timestamp(),
+        )
+
+    async def test_cooldown_returns_before_loading_market_data(self):
+        observation = Observation(
+            price=10,
+            timestamp=pd.Timestamp("2026-07-01").timestamp(),
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="测试股票",
+            earliest_open_timestamp=pd.Timestamp("2026-07-24").timestamp(),
+        )
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {},
+                "OBSERVATIONS": {"000001": observation.model_dump()},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock()) as stock_hist,
+        ):
+            await AUTOA.on_observations(
+                "000001",
+                ["2026-07-23", "2026-07-22"],
+                observation.model_dump(),
+                pd.Timestamp("2026-07-23 10:00").to_pydatetime(),
+            )
+
+        stock_hist.assert_not_awaited()
 
 
 class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
@@ -153,6 +242,51 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(stored.take_profit, 11)
+
+    async def test_close_writes_second_following_trading_day_cooldown(self):
+        position = self.make_position(strategies=[PositionSide.BZ])
+        observation = Observation(
+            price=10,
+            timestamp=pd.Timestamp("2026-07-01").timestamp(),
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="测试股票",
+        )
+        hist = pd.DataFrame([
+            {"high": 11, "low": 9, "close": 10, "volume": 100},
+            {"high": 13, "low": 11, "close": 12, "volume": 100},
+        ])
+        expected_timestamp = pd.Timestamp("2026-07-24").to_pydatetime().timestamp()
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {"000001": position.model_dump()},
+                "OBSERVATIONS": {"000001": observation.model_dump()},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(
+                AUTOA,
+                "_get_reopen_timestamp_after_close",
+                new=AsyncMock(return_value=expected_timestamp),
+            ),
+            patch.object(AUTOA, "send_msg", new=AsyncMock()),
+            patch.object(
+                CloseRecordManager,
+                "record_close_async",
+                new=AsyncMock(),
+            ),
+        ):
+            await AUTOA.on_positions(
+                "000001",
+                ["2026-07-22", "2026-07-21"],
+                position.model_dump(),
+                pd.Timestamp("2026-07-22 15:00").to_pydatetime(),
+            )
+            stored = Observation.model_validate(
+                AUTOA.alert_all["OBSERVATIONS"]["000001"]
+            )
+
+        self.assertNotIn("000001", AUTOA.alert_all["POSITIONS"])
+        self.assertEqual(stored.earliest_open_timestamp, expected_timestamp)
 
     async def test_pushes_zero_total_when_no_positions(self):
         with (
@@ -629,6 +763,74 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(obj.close_bn_position.await_args.args[1].close_reason, "OI止损")
         obj.open_bn_position.assert_not_awaited()
 
+    async def test_zero_exchange_position_writes_24_hour_cooldown(self):
+        obj = self.make_autobn()
+        position = self.make_position()
+        observation = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.get_amount_close = AsyncMock(return_value=(0, 0))
+        obj.send_msg = AsyncMock()
+        with patch("tokenDemo.autoTrade_pm.time.time", return_value=1000):
+            await obj.close_bn_position("BTCUSDT", position, 0, 10)
+
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            1000 + obj.REOPEN_COOLDOWN_SECONDS,
+        )
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+
+    async def test_failed_initial_open_does_not_create_local_position(self):
+        obj = self.make_autobn()
+        observation = Observation(
+            price=10,
+            timestamp=pd.Timestamp("2026-07-11 09:00:00").timestamp(),
+            side=OrderSide.SELL,
+            strategy=[PositionSide.BD],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.get_kline = AsyncMock(
+            return_value=[
+                [0, 10, 11, 9, 10, 100] for _ in range(obj.MIN_KLINE_FOR_ANALYSIS - 1)
+            ]
+            + [[0, 9, 10, 8, 9, 100]]
+        )
+        obj.check_side = AsyncMock(return_value=(True, None, None))
+        obj.calculate_atr = MagicMock(return_value=1)
+        obj.calc_stop_profit_loss = MagicMock(return_value=(8, 10))
+        obj.get_basis_rate = AsyncMock(return_value=0)
+        obj.signal_qy_key = "test-key"
+        obj.send_msg = AsyncMock()
+        obj.open_bn_position = AsyncMock(return_value=None)
+
+        await obj.rzq_token(
+            __import__("asyncio").Semaphore(1),
+            "BTCUSDT",
+            set(),
+            pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
+        )
+
+        obj.open_bn_position.assert_awaited_once()
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        self.assertEqual(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"], observation.model_dump()
+        )
+
     async def test_failed_long_dca_removes_appended_strategy_and_writes_back(self):
         obj = self.make_autobn()
         position = self.make_position(entry_price=12, take_profit=20, stop_loss=5)
@@ -878,18 +1080,21 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
     """BD做空信号 v3：入池三条件 + 扣扳机OI回撤"""
 
     @staticmethod
-    def make_autobn(oi_1d=None):
+    def make_autobn(oi_window=None, completed_oi=None):
         obj = AUTOBN.__new__(AUTOBN)
         obj.logger = MagicMock()
-        obj._get_oi_1d_data = AsyncMock(return_value=oi_1d)
+        obj._get_bd_oi_windows = AsyncMock(
+            return_value=(oi_window, completed_oi)
+        )
         return obj
 
     @staticmethod
-    def make_oi(recent_peak):
-        """前20日基线（std≈0.83）+ 近10日，近10日最大值由 recent_peak 指定"""
+    def make_oi_window(old_peak=130, recent_peak=140):
+        """前20根基线 + 中间7根旧成本OI + 最近3根高位OI。"""
         baseline = [100 + i % 3 for i in range(20)]
-        recent = [100] * 9 + [recent_peak]
-        return [{"sumOpenInterest": str(v)} for v in baseline + recent]
+        old = [100] * 6 + [old_peak]
+        recent = [110, 115, recent_peak]
+        return baseline + old + recent
 
     @staticmethod
     def make_klines(close_high_today=True, vol_peak_age=5):
@@ -901,49 +1106,55 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         return close, volume
 
     async def test_bd_pool_rejects_when_price_not_at_window_high(self):
-        obj = self.make_autobn(self.make_oi(130))
+        obj = self.make_autobn(self.make_oi_window(), [100] * 30)
         close, volume = self.make_klines(close_high_today=False)
 
         self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
-        obj._get_oi_1d_data.assert_not_awaited()
+        obj._get_bd_oi_windows.assert_not_awaited()
 
     async def test_bd_pool_rejects_fresh_volume_peak(self):
-        obj = self.make_autobn(self.make_oi(130))
+        obj = self.make_autobn(self.make_oi_window(), [100] * 30)
         close, volume = self.make_klines(vol_peak_age=2)
 
         self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
-        obj._get_oi_1d_data.assert_not_awaited()
 
-    async def test_bd_pool_rejects_mild_oi_accumulation(self):
-        obj = self.make_autobn(self.make_oi(102))
+    async def test_bd_pool_rejects_mild_old_oi_accumulation(self):
+        obj = self.make_autobn(
+            self.make_oi_window(old_peak=102, recent_peak=103), [100] * 30
+        )
         close, volume = self.make_klines()
 
         self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
 
-    async def test_bd_pool_accepts_stale_volume_peak_with_extreme_oi(self):
-        obj = self.make_autobn(self.make_oi(130))
+    async def test_bd_pool_rejects_recent_oi_not_above_old_peak(self):
+        obj = self.make_autobn(
+            self.make_oi_window(old_peak=130, recent_peak=130), [100] * 30
+        )
+        close, volume = self.make_klines()
+
+        self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
+
+    async def test_bd_pool_accepts_two_cohort_structure(self):
+        obj = self.make_autobn(self.make_oi_window(), [100] * 30)
         close, volume = self.make_klines()
 
         self.assertTrue(await obj._is_bd_observation("BTCUSDT", close, volume, None))
 
-    async def test_bd_pool_rejects_when_oi_1d_unavailable(self):
-        obj = self.make_autobn(None)
+    async def test_bd_pool_rejects_when_realtime_oi_window_unavailable(self):
+        obj = self.make_autobn(None, None)
         close, volume = self.make_klines()
 
         self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
 
     async def run_check_side_short(self, oi_5m_last, oi_1d_peak=100.0):
-        obj = self.make_autobn(
-            [{"sumOpenInterest": str(oi_1d_peak)}, {"sumOpenInterest": "50"}]
-        )
-        obj._get_oi_5m_data = AsyncMock(
-            return_value=[{"sumOpenInterest": str(oi_5m_last)}]
-        )
+        realtime_oi = [50.0] * 29 + [oi_5m_last]
+        completed_oi = [50.0] * 29 + [oi_1d_peak]
+        obj = self.make_autobn(realtime_oi, completed_oi)
         return await obj.check_side(
             asyncio.Semaphore(1),
             "BTCUSDT",
             PositionSide.SHORT.value,
-            dtn=pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
+            dtn=pd.Timestamp("2026-07-11 10:00:00", tz="UTC").to_pydatetime(),
         )
 
     async def test_short_trigger_fires_at_drawdown_threshold(self):
@@ -955,6 +1166,61 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         passed, _, _ = await self.run_check_side_short(91.0)
 
         self.assertFalse(passed)
+
+    async def test_bd_oi_windows_combine_29_daily_with_fresh_5m(self):
+        obj = AUTOBN.__new__(AUTOBN)
+        obj._get_oi_1d_data = AsyncMock(
+            return_value=[{"sumOpenInterest": str(i)} for i in range(1, 31)]
+        )
+        dtn = pd.Timestamp("2026-07-25 12:00:00", tz="UTC").to_pydatetime()
+        obj._get_oi_5m_data = AsyncMock(return_value=[{
+            "sumOpenInterest": "99",
+            "timestamp": int((dtn.timestamp() - 60) * 1000),
+        }])
+
+        realtime, completed = await obj._get_bd_oi_windows("BTCUSDT", dtn)
+
+        self.assertEqual(realtime, [float(i) for i in range(2, 31)] + [99.0])
+        self.assertEqual(completed, [float(i) for i in range(1, 31)])
+
+    async def test_bd_oi_windows_reject_stale_or_future_5m(self):
+        obj = AUTOBN.__new__(AUTOBN)
+        obj._get_oi_1d_data = AsyncMock(
+            return_value=[{"sumOpenInterest": "100"}] * 30
+        )
+        dtn = pd.Timestamp("2026-07-25 12:00:00", tz="UTC").to_pydatetime()
+
+        for offset in (-obj.OI_5M_CACHE_TTL - 1, 1):
+            obj._get_oi_5m_data = AsyncMock(return_value=[{
+                "sumOpenInterest": "99",
+                "timestamp": int((dtn.timestamp() + offset) * 1000),
+            }])
+            self.assertEqual(
+                await obj._get_bd_oi_windows("BTCUSDT", dtn),
+                (None, None),
+            )
+
+    async def test_daily_oi_uses_utc_availability_boundary(self):
+        obj = AUTOBN.__new__(AUTOBN)
+        obj._oi_1d_cache = {}
+        boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
+        obj._call_api = AsyncMock(return_value=[
+            {"sumOpenInterest": "100", "timestamp": int(boundary.timestamp() * 1000)},
+            {"sumOpenInterest": "101", "timestamp": int((boundary.timestamp() + 86400) * 1000)},
+        ])
+        obj.market_client = MagicMock()
+
+        result = await obj._get_oi_1d_data(
+            "BTCUSDT",
+            pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["sumOpenInterest"], "100")
+
+    def test_autobn_observation_timeout_is_seven_days(self):
+        self.assertEqual(AUTOBN.OBSERVATION_TIMEOUT_SECONDS, 7 * 24 * 60 * 60)
+        self.assertEqual(AUTOA.OBSERVATION_TIMEOUT_SECONDS, 30 * 24 * 60 * 60)
 
 
 class AutoAHttpSessionCharacterizationTest(unittest.IsolatedAsyncioTestCase):

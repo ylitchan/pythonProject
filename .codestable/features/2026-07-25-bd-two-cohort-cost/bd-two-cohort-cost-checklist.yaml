@@ -1,0 +1,75 @@
+feature: 2026-07-25-bd-two-cohort-cost
+created: 2026-07-25
+
+steps:
+  - action: "数据契约：构造29个已完成日级OI加当天新鲜5m OI的实时30根窗口，并提供30个已完成日线OI的开仓基准"
+    exit_signal: "时间戳、数据可得边界、窗口切分和5m新鲜度测试通过"
+    status: done
+  - action: "计算节点：实现BD首次入池、刷新和当日新天量失效判定"
+    exit_signal: "价格、量峰、切比雪夫和近期OI条件的正常及边界测试通过"
+    status: done
+  - action: "编排骨架：接入超时、开仓、新天量删除、刷新和首次入池的逐轮状态机"
+    exit_signal: "新建观察不在同轮开仓，删除后不在同轮重建，状态转换测试通过"
+    status: done
+  - action: "开仓节点：使用30个已完成日线OI峰值与最新5m OI判断10%回撤，并沿用与开多严格镜像的当前价低于昨收守卫"
+    exit_signal: "10%与9%边界以及价格低于、等于和高于昨收的测试通过"
+    status: done
+  - action: "超时节点：将AUTOBN观察有效期统一调整为7天并隔离AUTOA的30天设置"
+    exit_signal: "AUTOBN七天边界和AUTOA不受影响的测试通过"
+    status: done
+  - action: "回归验证：以逐轮状态场景和数据可得边界测试验证生产状态机，并运行完整测试"
+    exit_signal: "无未来数据边界且AUTOBN/AUTOA相关测试全部通过"
+    status: done
+
+checks:
+  - item: "入池OI窗口严格由29个已完成日级OI和当天新鲜5m OI组成"
+    source: 名词契约
+    status: passed
+  - item: "开仓回撤基准为最近30个已完成日线OI的最高值，不写入Observation或Position"
+    source: 名词契约
+    status: passed
+  - item: "每轮顺序为超时、已有观察开仓、新天量删除、刷新、无观察首次入池"
+    source: 编排骨架
+    status: passed
+  - item: "同轮开仓与新天量同时成立时开仓优先，新建观察不得同轮开仓"
+    source: 流程级约束
+    status: passed
+  - item: "当前日累计量创或追平前29日最高量时删除已有BD观察且同轮不重建"
+    source: 流程级约束
+    status: passed
+  - item: "AUTOBN观察从最后更新时间起7天超时，AUTOA保持30天"
+    source: 流程级约束
+    status: passed
+  - item: "BD开仓价格方向与开多严格镜像：当前最新价必须严格低于上一根日K close"
+    source: 流程级约束
+    status: passed
+  - item: "本feature不引入新路由、配置、定时任务、外部接口或数据库挂载点"
+    source: 挂载点
+    status: passed
+  - item: "价格条件保持当前日K最新价相对前29日最高close，不改为high-to-high"
+    source: 范围守护
+    status: passed
+  - item: "日K价格和成交量不由分钟K重建或覆盖"
+    source: 范围守护
+    status: passed
+  - item: "BD不新增多空比门槛，不改变ATR、基差率和10%回撤阈值"
+    source: 范围守护
+    status: passed
+  - item: "首次入池要求旧7根含有效30日量峰、旧OI切比雪夫严格低于5%、最近3根OI峰值严格超过旧7根"
+    source: 验收场景
+    status: passed
+  - item: "最近3根出现并列或更高30日量峰时不首次入池"
+    source: 验收场景
+    status: passed
+  - item: "已有观察不满足刷新且无新天量时保持不变，旧量峰滑出中间7根不导致删除"
+    source: 验收场景
+    status: passed
+  - item: "最新5m OI恰好回撤10%且当前价低于昨收时可开空，9%及价格等于或高于昨收不通过"
+    source: 验收场景
+    status: passed
+  - item: "日级OI按实际可得边界选择，不依赖本地时区08:00精确相等"
+    source: 验收场景
+    status: passed
+  - item: "BZ、AUTOA和旧Observation数据保持兼容"
+    source: 验收场景
+    status: passed

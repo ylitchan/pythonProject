@@ -96,7 +96,6 @@ class Position(BaseModel):
     close_reason: str = (
         ""  # 平仓依据（止盈/初始止损/追踪止损/移动止损等）
     )
-    last_stop_alert_date: int = 0  # 最近一次止损提醒日期（YYYYMMDD）
     long_short_ratio: str = ""  # 开仓信号当时的多空比
     basis_rate: str = ""  # 开仓信号当时的基差率
 
@@ -120,6 +119,13 @@ class Observation(BaseModel):
     strategy: List[PositionSide]
     name: str
     bz_reference_high: Optional[float] = None
+    earliest_open_timestamp: Optional[float] = None
+
+    def is_reopen_cooldown_active(self, current_timestamp: float) -> bool:
+        return (
+            self.earliest_open_timestamp is not None
+            and current_timestamp < self.earliest_open_timestamp
+        )
 
 
 def format_strategy_tags(strategies: List[PositionSide | str]) -> str:
@@ -292,7 +298,7 @@ class AUTOBN:
     MAX_CONCURRENT_REQUESTS = 8  # 最大并发请求数
 
     # ==================== 时间常量 ====================
-    OBSERVATION_TIMEOUT_SECONDS = 5 * 24 * 60 * 60  # 观察记录超时时间（5天，覆盖顶后清算展开期）
+    OBSERVATION_TIMEOUT_SECONDS = 7 * 24 * 60 * 60  # 观察记录超时时间（7天，覆盖顶后清算展开期）
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
 
@@ -465,7 +471,6 @@ class AUTOBN:
         # 加载持仓记录
         with open(obj.alert_all_file, "r", encoding="utf-8") as f:
             obj.alert_all = json.load(f)
-        obj.alert_all.setdefault("CLOSE_TS", {})
 
         # 初始化资金槽位(用于资金管理)(可覆盖)
         # 含义:用于控制单次下单的资金使用上限(与 open_ratio 一起作用)
@@ -847,6 +852,13 @@ class AUTOBN:
             self.logger.exception(error_msg)
             return None
 
+    def _set_reopen_cooldown(self, symbol, earliest_open_timestamp):
+        open_info = Observation.model_validate(
+            self.alert_all["OBSERVATIONS"][symbol]
+        )
+        open_info.earliest_open_timestamp = earliest_open_timestamp
+        self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
+
     async def close_bn_position(
         self,
         symbol,
@@ -875,7 +887,9 @@ class AUTOBN:
         amount = amount_price[0]
         if not amount:
             await self.send_msg(f"{symbol} 平仓跳过：确认持仓数量为0")
-            self.alert_all.setdefault("CLOSE_TS", {})[symbol] = time.time()
+            self._set_reopen_cooldown(
+                symbol, time.time() + self.REOPEN_COOLDOWN_SECONDS
+            )
             if symbol in self.alert_all["POSITIONS"]:
                 self.alert_all["POSITIONS"].pop(symbol)
             return
@@ -945,7 +959,9 @@ class AUTOBN:
                     return symbol
                 remaining_amount = remaining_amount_price[0]
                 if remaining_amount == 0:
-                    self.alert_all.setdefault("CLOSE_TS", {})[symbol] = time.time()
+                    self._set_reopen_cooldown(
+                symbol, time.time() + self.REOPEN_COOLDOWN_SECONDS
+            )
                     if symbol in self.alert_all["POSITIONS"]:
                         self.alert_all["POSITIONS"].pop(symbol)
                 elif atr_value > 0:
@@ -981,7 +997,9 @@ class AUTOBN:
                     await self.send_msg(
                         f"{symbol} 平仓跳过：重试后确认持仓数量为0"
                     )
-                    self.alert_all.setdefault("CLOSE_TS", {})[symbol] = time.time()
+                    self._set_reopen_cooldown(
+                symbol, time.time() + self.REOPEN_COOLDOWN_SECONDS
+            )
                     if symbol in self.alert_all["POSITIONS"]:
                         self.alert_all["POSITIONS"].pop(symbol)
                     return None
@@ -1038,27 +1056,59 @@ class AUTOBN:
         return oi_1h
 
     async def _get_oi_1d_data(self, symbol, dtn: datetime):
-        """获取1d OI数据（带缓存，按当天8点对齐）；数据未对齐当天时返回None"""
-        dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
-        target_ts = int(dtn_target.timestamp() * 1000)
+        """获取当前时刻已可得的1d OI数据，按UTC日边界缓存。"""
+        current_timestamp = dtn.timestamp()
+        utc_day = datetime.datetime.fromtimestamp(
+            current_timestamp, datetime.timezone.utc
+        ).replace(hour=0, minute=0, second=0, microsecond=0)
+        available_before_ts = int(utc_day.timestamp() * 1000)
 
         cache_entry = self._oi_1d_cache.get(symbol)
-        if cache_entry and cache_entry.get("target_date") == target_ts:
+        if cache_entry and cache_entry.get("target_date") == available_before_ts:
             return cache_entry["data"]
 
         oi_1d = await self._call_api(
             self.market_client.rest_api.open_interest_statistics,
             symbol=symbol,
             period="1d",
-            limit=self.OI_QUERY_LIMIT,
+            limit=self.OI_QUERY_LIMIT + 1,
         )
-        if not oi_1d or oi_1d[-1]["timestamp"] != target_ts:
+        available_oi = [
+            item
+            for item in (oi_1d or [])
+            if item.get("timestamp") is not None
+            and int(item["timestamp"]) <= available_before_ts
+        ]
+        if not available_oi:
             return None
         self._oi_1d_cache[symbol] = {
-            "data": oi_1d,
-            "target_date": target_ts,
+            "data": available_oi,
+            "target_date": available_before_ts,
         }
-        return oi_1d
+        return available_oi
+
+    async def _get_bd_oi_windows(self, symbol, dtn: datetime):
+        """返回BD入池实时窗口和开仓使用的已完成日线OI窗口。"""
+        oi_1d = await self._get_oi_1d_data(symbol, dtn)
+        if not oi_1d or len(oi_1d) < self.OI_QUERY_LIMIT:
+            return None, None
+
+        oi_5m = await self._get_oi_5m_data(symbol)
+        if not oi_5m:
+            return None, None
+        latest_oi_5m = oi_5m[-1]
+        latest_timestamp = latest_oi_5m.get("timestamp")
+        if latest_timestamp is None:
+            return None, None
+        age_seconds = dtn.timestamp() - int(latest_timestamp) / 1000
+        if age_seconds < 0 or age_seconds > self.OI_5M_CACHE_TTL:
+            return None, None
+
+        completed_oi = [float(item["sumOpenInterest"]) for item in oi_1d[-30:]]
+        realtime_oi = completed_oi[-29:] + [
+            float(latest_oi_5m["sumOpenInterest"])
+        ]
+        return realtime_oi, completed_oi
 
     async def check_side(
         self,
@@ -1074,20 +1124,13 @@ class AUTOBN:
         async with semaphore:
             try:
                 if positionSide == PositionSide.SHORT.value:
-                    oi_5m = await self._get_oi_5m_data(symbol)
-                    if not oi_5m:
+                    realtime_oi, completed_oi = await self._get_bd_oi_windows(
+                        symbol, dtn
+                    )
+                    if realtime_oi is None or completed_oi is None:
                         return False, None, None
-                    oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
-
-                    # 获取持仓量历史数据（带缓存，仅做空使用）
-                    oi_1d = await self._get_oi_1d_data(symbol, dtn)
-                    if not oi_1d:
-                        return False, None, None
-                    sumOpenInterest_1d = [
-                        float(i["sumOpenInterest"]) for i in oi_1d
-                    ]  # 持仓数量（合约数）
-                    # 扣扳机：5m OI 自窗口内峰值回撤达标，确认顶部堆积的多头杠杆正在被清算
-                    oi_peak = max(sumOpenInterest_1d)
+                    oi_5m_last = realtime_oi[-1]
+                    oi_peak = max(completed_oi)
                     passed = oi_5m_last <= oi_peak * (1 - self.BD_OI_DRAWDOWN_RATIO)
                     return (True, None, None) if passed else (False, None, None)
 
@@ -1879,33 +1922,43 @@ class AUTOBN:
         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
         return open_info
 
-    async def _is_bd_observation(self, symbol, kline_close, kline_volume, dtn):
-        """
-        BD做空入池判定
-
-        三个条件：
-        1. 当日收盘价创窗口新高 —— 顶部形态
-        2. 近10日1d OI最大值对其之前基线的切比雪夫上界 < 5% —— 顶部堆积了极端的多头杠杆（清算燃料）
-        3. 成交量峰值距今 >= 3 天 —— 避开新鲜的资金成本位（密集持仓区防守意愿强，砸不动）
-        """
-        if kline_close[-1] < max(kline_close):
+    async def _is_bd_observation(
+        self,
+        symbol,
+        kline_close,
+        kline_volume,
+        dtn,
+        oi_window=None,
+        refresh=False,
+    ):
+        """判断BD观察是否满足首次入池或刷新条件。"""
+        if len(kline_close) < 30 or len(kline_volume) < 30:
+            return False
+        if kline_close[-1] < max(kline_close[:-1]):
             return False
 
-        # 量峰距今天数：量峰太新说明成本位就在眼前，多头有防守意愿
-        vol_peak_idx = kline_volume.index(max(kline_volume))
-        if len(kline_volume) - 1 - vol_peak_idx < self.BD_VOLUME_PEAK_MIN_AGE:
+        if oi_window is None:
+            oi_window, _ = await self._get_bd_oi_windows(symbol, dtn)
+        if oi_window is None or len(oi_window) < 30:
             return False
 
-        oi_1d = await self._get_oi_1d_data(symbol, dtn)
-        if not oi_1d:
+        old_volume = kline_volume[-10:-3]
+        recent_volume = kline_volume[-3:]
+        if max(recent_volume) >= max(kline_volume):
             return False
-        sumOpenInterest_1d = [float(i["sumOpenInterest"]) for i in oi_1d]
-        oi_baseline = sumOpenInterest_1d[: -self.BD_OI_PEAK_LOOKBACK]
-        if len(oi_baseline) < self.MIN_CHEB_SAMPLE_SIZE:
+
+        oi_baseline = oi_window[-30:-10]
+        oi_old = oi_window[-10:-3]
+        oi_recent = oi_window[-3:]
+        if max(oi_recent) <= max(oi_old):
             return False
-        oi_recent_peak = max(sumOpenInterest_1d[-self.BD_OI_PEAK_LOOKBACK :])
+        if refresh:
+            return True
+
+        if max(old_volume) != max(kline_volume):
+            return False
         return (
-            self.calculate_chebyshev_probability(oi_baseline, oi_recent_peak)[
+            self.calculate_chebyshev_probability(oi_baseline, max(oi_old))[
                 "chebyshev_upper_bound"
             ]
             < self.SHORT_OI_CHEB_THRESHOLD
@@ -1939,6 +1992,7 @@ class AUTOBN:
             # 预计算常用值
             current_price = kline_close[-1]
             current_timestamp = dtn.timestamp()
+            bd_deleted_this_round = False
 
             # 检查现有持仓是否需要平仓
             if close_info:
@@ -2050,14 +2104,8 @@ class AUTOBN:
                             open_info.side = OrderSide.SELL
                             should_open = True
                     if should_open:
-                        last_close_ts = (
-                            self.alert_all.get("CLOSE_TS", {}).get(symbol, 0) or 0
-                        )
-                        if (
-                            current_timestamp - float(last_close_ts)
-                            < self.REOPEN_COOLDOWN_SECONDS
-                        ):
-                            self.logger.info(f"{symbol} 24小时内已平仓，跳过开仓信号")
+                        if open_info.is_reopen_cooldown_active(current_timestamp):
+                            self.logger.info(f"{symbol} 仍在平仓冷却期，跳过开仓信号")
                             return
                         is_long = open_info.side.value == OrderSide.BUY.value
                         if atr_value is None or hl2 is None:
@@ -2073,7 +2121,7 @@ class AUTOBN:
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
                         )
-                        await self.open_bn_position(
+                        order_result = await self.open_bn_position(
                             symbol,
                             OrderSide.BUY.value if is_long else OrderSide.SELL.value,
                             position_side.value,
@@ -2081,6 +2129,8 @@ class AUTOBN:
                             zs,  # 止损价用于计算风险仓位
                             open_info,
                         )
+                        if not order_result:
+                            return
                         # 多头: zy=高价(止盈), zs=低价(止损)
                         # 空头: zy=低价(止盈), zs=高价(止损)
                         close_info = Position(
@@ -2114,8 +2164,33 @@ class AUTOBN:
                         open_info.timestamp = current_timestamp
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
+                    if (
+                        not close_info
+                        and open_info
+                        and PositionSide.BD in open_info.strategy
+                    ):
+                        if kline_volume[-1] >= max(kline_volume[:-1]):
+                            self.alert_all["OBSERVATIONS"].pop(symbol, None)
+                            open_info = None
+                            bd_deleted_this_round = True
+                        else:
+                            oi_window, _ = await self._get_bd_oi_windows(symbol, dtn)
+                            if await self._is_bd_observation(
+                                symbol,
+                                kline_close,
+                                kline_volume,
+                                dtn,
+                                oi_window=oi_window,
+                                refresh=True,
+                            ):
+                                open_info.price = current_price
+                                open_info.timestamp = current_timestamp
+                                self.alert_all["OBSERVATIONS"][symbol] = (
+                                    open_info.model_dump()
+                                )
+
             # 无论是否有仓位，都执行“加入观察”判定逻辑；同一UTC日仅记录一次，避免重复告警
-            can_set_observation = True
+            can_set_observation = not bd_deleted_this_round
             if open_info:
                 observation_date = datetime.datetime.fromtimestamp(
                     open_info.timestamp, datetime.timezone.utc
@@ -2123,7 +2198,10 @@ class AUTOBN:
                 current_date = datetime.datetime.fromtimestamp(
                     current_timestamp, datetime.timezone.utc
                 ).date()
-                can_set_observation = observation_date != current_date
+                can_set_observation = (
+                    PositionSide.BD not in open_info.strategy
+                    and observation_date != current_date
+                )
 
             if can_set_observation:
                 new_open_info = None
@@ -2854,6 +2932,32 @@ class AUTOA:
             AUTOA.logger.error(f"获取交易日历失败: {str(e)}")
             return []
 
+    @staticmethod
+    async def get_following_trading_days(today, days=2):
+        """获取指定日期之后的实际A股交易日，按时间升序排列。"""
+        try:
+            trade_dates = await asyncio.wait_for(
+                asyncio.to_thread(ak.tool_trade_date_hist_sina),
+                timeout=AUTOA.AKSHARE_TIMEOUT_SECONDS,
+            )
+            trade_dates = pd.to_datetime(trade_dates["trade_date"])
+            close_date = pd.Timestamp(today).normalize()
+            following_dates = trade_dates[trade_dates > close_date]
+            return [
+                item.strftime("%Y-%m-%d")
+                for item in following_dates.sort_values(ascending=True).iloc[:days]
+            ]
+        except Exception as e:
+            AUTOA.logger.error(f"获取后续交易日失败: {str(e)}")
+            return []
+
+    @classmethod
+    async def _get_reopen_timestamp_after_close(cls, today):
+        following_days = await cls.get_following_trading_days(today, days=2)
+        if len(following_days) < 2:
+            return None
+        return datetime.datetime.strptime(following_days[1], "%Y-%m-%d").timestamp()
+
     @classmethod
     async def stock_zh_a_hist(
         cls,
@@ -3136,6 +3240,15 @@ class AUTOA:
             close_info.close_reason = "初始止损"
 
         position_shares = cls._get_position_share_count(close_info)
+        earliest_open_timestamp = await cls._get_reopen_timestamp_after_close(today)
+        if earliest_open_timestamp is None:
+            cls.logger.error(f"{code} 无法确定平仓后的第二个交易日，暂不平仓")
+            return
+        open_info = Observation.model_validate(
+            cls.alert_all["OBSERVATIONS"][code]
+        )
+        open_info.earliest_open_timestamp = earliest_open_timestamp
+        cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
         cls.alert_all["POSITIONS"].pop(code)
         entry_price = close_info.entry_price if close_info.entry_price > 0 else price_close
         profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
@@ -3192,6 +3305,8 @@ class AUTOA:
             today: 当前日期时间
         """
         open_info = Observation.model_validate(open_info_dict)
+        if open_info.is_reopen_cooldown_active(today.timestamp()):
+            return
         if today.timestamp() - open_info.timestamp > cls.OBSERVATION_TIMEOUT_SECONDS:
             cls.alert_all["OBSERVATIONS"].pop(code)
             return
