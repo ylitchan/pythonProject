@@ -306,9 +306,7 @@ class AUTOBN:
     LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
     EXCHANGE_INFO_CACHE_TTL = 6 * 60 * 60  # 交易所元数据缓存过期时间（6小时）
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
-    LONG_SHORT_RATIO_LONG_LIMIT = 3 / 7  # LONG额外放行阈值（多空比）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
-    LONG_SHORT_RATIO_EXTREME_LOOKBACK = 10  # LONG极值判定回看窗口（不含当前值）
     OI_DELTA_LONG_RATIO_WEIGHT = 0.4  # LONG融合公式中(oi_5m-oi_1h)项权重
 
     # ==================== ATR风控常量 ====================
@@ -1152,16 +1150,6 @@ class AUTOBN:
                 if positionSide == PositionSide.LONG.value:
                     if lsrd >= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
                         return False, None, None
-                    recent_lsr_values = lsr_values[
-                        -self.LONG_SHORT_RATIO_EXTREME_LOOKBACK : -1
-                    ]
-                    long_extreme = (
-                        len(recent_lsr_values) > 0 and lsrd <= min(recent_lsr_values)
-                    )
-                    long_ratio_cond = lsrd < self.LONG_SHORT_RATIO_LONG_LIMIT
-                    # 做多：极值条件 或 多空比阈值条件
-                    if not (long_extreme or long_ratio_cond):
-                        return False, None, None
 
                     target_ts_1h = int(
                         dtn.replace(minute=0, second=0, microsecond=0).timestamp()
@@ -2003,8 +1991,6 @@ class AUTOBN:
                         )
                         if not (zy_msg == 0 and zs_msg == 0):
                             basis_rate = await self.get_basis_rate(symbol)
-                            if basis_rate >= 0:
-                                return
                             if basis_rate < -self.BASIS_RATE_THRESHOLD:
                                 open_info.strategy.append(PositionSide.Basis)
                             lsr_show = (
