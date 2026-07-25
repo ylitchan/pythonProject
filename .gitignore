@@ -2,3 +2,14 @@ tokenDemo/alert_all.json
 tokenDemo/alert_all_A.json
 tokenDemo/bn.json
 .env
+
+# Python运行产物
+__pycache__/
+*.py[cod]
+
+# 本地运行数据与备份
+*.bak
+tokenDemo/.backtest_cache/
+
+# Claude本机权限设置
+.claude/settings.local.json
