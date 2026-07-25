@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "skills": {
+    "browser-bridge": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "browser-bridge/SKILL.md",
+      "computedHash": "4e53b4b437937dd2ce222828b85ad4487ae650362ff3b739f71a61a747c0fb82"
+    },
+    "cs": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs/SKILL.md",
+      "computedHash": "a09c89ebbd4b0734c93cdcf8f5a195ec2b2bf284c4937d4b4bd212873a7542d2"
+    },
+    "cs-audit": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-audit/SKILL.md",
+      "computedHash": "0ab194c459614d3fc8c93bdaac1914bae4e60d3427a888b8333ec0cccfea28c3"
+    },
+    "cs-brainstorm": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-brainstorm/SKILL.md",
+      "computedHash": "0b4c1c9b80e8a83c34c3b67a97948207bec97f1a05c266cef640e5a7cfa87796"
+    },
+    "cs-doc-api": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-doc-api/SKILL.md",
+      "computedHash": "74abdce4f6af0037ddbc23eaaf2082d21ce8ae01bc4b4c0c610272b3f1c188ff"
+    },
+    "cs-doc-tutorial": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-doc-tutorial/SKILL.md",
+      "computedHash": "5ae0050b4b895f5aa3ce1cc431528afae750ea3e2f6e8313165158ce06afa626"
+    },
+    "cs-domain": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-domain/SKILL.md",
+      "computedHash": "3ce336bac53a2e42cc970a488c0a522cf895c05ce860a8297f957a89ecba0516"
+    },
+    "cs-feat": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-feat/SKILL.md",
+      "computedHash": "c3bf1d55fe88fd94961f68b119a554106b7692cc8ce7c0ead60ae30beff13dbc"
+    },
+    "cs-feat-accept": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-feat-accept/SKILL.md",
+      "computedHash": "a08406f37aebdabf5d1da05166923489b79de83d26a86edbb6c0610a4e14566d"
+    },
+    "cs-feat-design": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-feat-design/SKILL.md",
+      "computedHash": "10460fec38215bf747e88051bb3d5c617fb4e82b4d8f943de61fa1a2829e0943"
+    },
+    "cs-feat-ff": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-feat-ff/SKILL.md",
+      "computedHash": "7e23e773b83a6afd491f2e0a56805b55f1bcba9414478d3032c56b96203ba0de"
+    },
+    "cs-feat-impl": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-feat-impl/SKILL.md",
+      "computedHash": "4af9510fb46a2667ea8bee4cd0cbd387143c09c9bc5a7686f137ec2d0d6f1a47"
+    },
+    "cs-issue": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-issue/SKILL.md",
+      "computedHash": "d56382af78450d02707001cf32e1e8c05194226d8c3d6d2be231529f41383523"
+    },
+    "cs-issue-analyze": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-issue-analyze/SKILL.md",
+      "computedHash": "ef3e37617d8d62903821a294b289c20d07f9338ee9e13b290fa2dc7dd2cd30f1"
+    },
+    "cs-issue-fix": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-issue-fix/SKILL.md",
+      "computedHash": "cbf54a6dc4334a1ed621e1f497fef7d5da6d0508b782c2ee16c3d5eb19a13fc8"
+    },
+    "cs-issue-report": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-issue-report/SKILL.md",
+      "computedHash": "4cb8401ef445883ee34d17e599678909af3fdb076a87316ffb8b0590dcb43987"
+    },
+    "cs-keep": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-keep/SKILL.md",
+      "computedHash": "ac996559da6543f60fa55376953e2e9e8de6a6890656368fdd540e477f188014"
+    },
+    "cs-note": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-note/SKILL.md",
+      "computedHash": "0ba763a4a70f7d585089c33772a67b2406f1f962d3b0c1407acc1fe8a1b859a3"
+    },
+    "cs-onboard": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-onboard/SKILL.md",
+      "computedHash": "f2871d43b262451d220449c8b5310e7b4ee51963996b2a13935fa4d05418933b"
+    },
+    "cs-refactor": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-refactor/SKILL.md",
+      "computedHash": "229fa63d83063e0f7c07f68cabc34dc50b5c0339308cf30f4ce1d24c5c2b15e2"
+    },
+    "cs-refactor-ff": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-refactor-ff/SKILL.md",
+      "computedHash": "88d414a07e498b0911682616b9e75e2217860fadfc22d0107d54a6d9ce2c6c71"
+    },
+    "cs-req": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-req/SKILL.md",
+      "computedHash": "5f7dd04f10f7c35de84af8852c55eafa97430a8e592d96e16ec4bbdb1f6721db"
+    },
+    "cs-roadmap": {
+      "source": "liuzhengdongfortest/CodeStable",
+      "sourceType": "github",
+      "skillPath": "cs-roadmap/SKILL.md",
+      "computedHash": "28913a9e9bb7661bd51f2f3501f31487293b548e6e92903f2c06e4a78825c5b9"
+    }
+  }
+}
