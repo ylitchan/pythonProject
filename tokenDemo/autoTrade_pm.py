@@ -2033,9 +2033,8 @@ class AUTOBN:
                         )
                         if not (zy_msg == 0 and zs_msg == 0):
                             basis_rate = await self.get_basis_rate(symbol)
-                            if basis_rate <= 0:
-                                return
-                            open_info.strategy.append(PositionSide.Basis)
+                            if basis_rate > self.BASIS_RATE_THRESHOLD:
+                                open_info.strategy.append(PositionSide.Basis)
                             lsr_show = (
                                 f"{short_lsr:.4f}" if short_lsr is not None else "N/A"
                             )
