@@ -22,3 +22,8 @@ dependencies = [
     "perk-pushplus-sdk>=1.0.1",
     "python-dotenv>=1.2.2",
 ]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.11",
+]
