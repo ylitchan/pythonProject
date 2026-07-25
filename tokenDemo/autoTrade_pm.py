@@ -293,7 +293,7 @@ class AUTOBN:
     MAX_CONCURRENT_REQUESTS = 8  # 最大并发请求数
 
     # ==================== 时间常量 ====================
-    OBSERVATION_TIMEOUT_SECONDS = 24 * 60 * 60  # 观察记录超时时间（1天）
+    OBSERVATION_TIMEOUT_SECONDS = 5 * 24 * 60 * 60  # 观察记录超时时间（5天，覆盖顶后清算展开期）
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
 
@@ -332,7 +332,12 @@ class AUTOBN:
 
     # ==================== 切比雪夫概率阈值常量 ====================
     CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%），用于检测非常罕见的事件
-    SHORT_OI_CHEB_THRESHOLD = 0.05  # SHORT的1d OI极端阈值（5%）
+    SHORT_OI_CHEB_THRESHOLD = 0.05  # SHORT入池的1d OI堆积极端阈值（5%）
+
+    # ==================== BD做空入池/扣扳机常量 ====================
+    BD_OI_PEAK_LOOKBACK = 10  # 入池取近N日1d OI最大值参与切比雪夫
+    BD_VOLUME_PEAK_MIN_AGE = 3  # 量峰距今最少天数（避开资金成本位，<该值不入池）
+    BD_OI_DRAWDOWN_RATIO = 0.1  # 扣扳机：5m OI 需自30日峰值回撤的比例（10%）
 
     # ==================== 基差率常量 ====================
     BASIS_RATE_THRESHOLD = 0.02  # 基差率开仓阈值（2%）
@@ -1057,6 +1062,29 @@ class AUTOBN:
             }
         return oi_1h
 
+    async def _get_oi_1d_data(self, symbol, dtn: datetime):
+        """获取1d OI数据（带缓存，按当天8点对齐）；数据未对齐当天时返回None"""
+        dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
+        target_ts = int(dtn_target.timestamp() * 1000)
+
+        cache_entry = self._oi_1d_cache.get(symbol)
+        if cache_entry and cache_entry.get("target_date") == target_ts:
+            return cache_entry["data"]
+
+        oi_1d = await self._call_api(
+            self.market_client.rest_api.open_interest_statistics,
+            symbol=symbol,
+            period="1d",
+            limit=self.OI_QUERY_LIMIT,
+        )
+        if not oi_1d or oi_1d[-1]["timestamp"] != target_ts:
+            return None
+        self._oi_1d_cache[symbol] = {
+            "data": oi_1d,
+            "target_date": target_ts,
+        }
+        return oi_1d
+
     async def check_side(
         self,
         semaphore,
@@ -1077,47 +1105,15 @@ class AUTOBN:
                     oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
 
                     # 获取持仓量历史数据（带缓存，仅做空使用）
-                    dtn_target = dtn.replace(hour=8, minute=0, second=0, microsecond=0)
-                    target_ts = int(dtn_target.timestamp() * 1000)
-
-                    # 检查缓存是否存在且有效（target_date 匹配当天8点）
-                    cache_entry = self._oi_1d_cache.get(symbol)
-                    if cache_entry and cache_entry.get("target_date") == target_ts:
-                        # 缓存有效，直接使用
-                        oi_1d = cache_entry["data"]
-                    else:
-                        # 缓存无效或不存在，获取新数据
-                        oi_1d = await self._call_api(
-                            self.market_client.rest_api.open_interest_statistics,
-                            symbol=symbol,
-                            period="1d",
-                            limit=self.OI_QUERY_LIMIT,
-                        )
-                        # 检查数据是否满足条件
-                        if oi_1d[-1]["timestamp"] != target_ts:
-                            return False, None, None
-                        # 数据满足条件，缓存起来
-                        self._oi_1d_cache[symbol] = {
-                            "data": oi_1d,
-                            "target_date": target_ts,
-                        }
+                    oi_1d = await self._get_oi_1d_data(symbol, dtn)
+                    if not oi_1d:
+                        return False, None, None
                     sumOpenInterest_1d = [
                         float(i["sumOpenInterest"]) for i in oi_1d
                     ]  # 持仓数量（合约数）
-                    oi_hist_for_cheb = sumOpenInterest_1d[
-                        -(self.OI_QUERY_LIMIT - self.OI_CHEB_EXCLUDE_RECENT_COUNT) :
-                    ]
-                    if len(oi_hist_for_cheb) < self.MIN_CHEB_SAMPLE_SIZE:
-                        return False, None, None
-
-                    passed = (
-                        oi_5m_last <= min(sumOpenInterest_1d)
-                        and self.calculate_chebyshev_probability(
-                            oi_hist_for_cheb,
-                            oi_5m_last,
-                        )["chebyshev_upper_bound"]
-                        < self.SHORT_OI_CHEB_THRESHOLD
-                    )
+                    # 扣扳机：5m OI 自窗口内峰值回撤达标，确认顶部堆积的多头杠杆正在被清算
+                    oi_peak = max(sumOpenInterest_1d)
+                    passed = oi_5m_last <= oi_peak * (1 - self.BD_OI_DRAWDOWN_RATIO)
                     return (True, None, None) if passed else (False, None, None)
 
                 # 获取多空人数比数据（使用缓存）
@@ -1913,6 +1909,38 @@ class AUTOBN:
         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
         return open_info
 
+    async def _is_bd_observation(self, symbol, kline_close, kline_volume, dtn):
+        """
+        BD做空入池判定
+
+        三个条件：
+        1. 当日收盘价创窗口新高 —— 顶部形态
+        2. 近10日1d OI最大值对其之前基线的切比雪夫上界 < 5% —— 顶部堆积了极端的多头杠杆（清算燃料）
+        3. 成交量峰值距今 >= 3 天 —— 避开新鲜的资金成本位（密集持仓区防守意愿强，砸不动）
+        """
+        if kline_close[-1] < max(kline_close):
+            return False
+
+        # 量峰距今天数：量峰太新说明成本位就在眼前，多头有防守意愿
+        vol_peak_idx = kline_volume.index(max(kline_volume))
+        if len(kline_volume) - 1 - vol_peak_idx < self.BD_VOLUME_PEAK_MIN_AGE:
+            return False
+
+        oi_1d = await self._get_oi_1d_data(symbol, dtn)
+        if not oi_1d:
+            return False
+        sumOpenInterest_1d = [float(i["sumOpenInterest"]) for i in oi_1d]
+        oi_baseline = sumOpenInterest_1d[: -self.BD_OI_PEAK_LOOKBACK]
+        if len(oi_baseline) < self.MIN_CHEB_SAMPLE_SIZE:
+            return False
+        oi_recent_peak = max(sumOpenInterest_1d[-self.BD_OI_PEAK_LOOKBACK :])
+        return (
+            self.calculate_chebyshev_probability(oi_baseline, oi_recent_peak)[
+                "chebyshev_upper_bound"
+            ]
+            < self.SHORT_OI_CHEB_THRESHOLD
+        )
+
     async def rzq_token(self, semaphore, symbol, success, dtn):
         """
         核心交易逻辑：分析K线数据并执行交易决策
@@ -2143,9 +2171,9 @@ class AUTOBN:
                     )
 
                 # 做空信号判断
-                elif max(kline_close[-3:]) >= max(kline_close) and max(
-                    kline_volume[-3:]
-                ) >= max(kline_volume):
+                elif await self._is_bd_observation(
+                    symbol, kline_close, kline_volume, dtn
+                ):
                     new_open_info = Observation(
                         price=current_price,
                         timestamp=current_timestamp,

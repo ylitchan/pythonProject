@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -871,6 +872,89 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         obj.papi_client.rest_api.query_um_position_information.assert_not_called()
         self.assertIn("BTCUSDT", result)
+
+
+class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
+    """BD做空信号 v3：入池三条件 + 扣扳机OI回撤"""
+
+    @staticmethod
+    def make_autobn(oi_1d=None):
+        obj = AUTOBN.__new__(AUTOBN)
+        obj.logger = MagicMock()
+        obj._get_oi_1d_data = AsyncMock(return_value=oi_1d)
+        return obj
+
+    @staticmethod
+    def make_oi(recent_peak):
+        """前20日基线（std≈0.83）+ 近10日，近10日最大值由 recent_peak 指定"""
+        baseline = [100 + i % 3 for i in range(20)]
+        recent = [100] * 9 + [recent_peak]
+        return [{"sumOpenInterest": str(v)} for v in baseline + recent]
+
+    @staticmethod
+    def make_klines(close_high_today=True, vol_peak_age=5):
+        close = [10.0] * 29 + [12.0 if close_high_today else 9.0]
+        if not close_high_today:
+            close[-2] = 12.0
+        volume = [100.0] * 30
+        volume[29 - vol_peak_age] = 999.0
+        return close, volume
+
+    async def test_bd_pool_rejects_when_price_not_at_window_high(self):
+        obj = self.make_autobn(self.make_oi(130))
+        close, volume = self.make_klines(close_high_today=False)
+
+        self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
+        obj._get_oi_1d_data.assert_not_awaited()
+
+    async def test_bd_pool_rejects_fresh_volume_peak(self):
+        obj = self.make_autobn(self.make_oi(130))
+        close, volume = self.make_klines(vol_peak_age=2)
+
+        self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
+        obj._get_oi_1d_data.assert_not_awaited()
+
+    async def test_bd_pool_rejects_mild_oi_accumulation(self):
+        obj = self.make_autobn(self.make_oi(102))
+        close, volume = self.make_klines()
+
+        self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
+
+    async def test_bd_pool_accepts_stale_volume_peak_with_extreme_oi(self):
+        obj = self.make_autobn(self.make_oi(130))
+        close, volume = self.make_klines()
+
+        self.assertTrue(await obj._is_bd_observation("BTCUSDT", close, volume, None))
+
+    async def test_bd_pool_rejects_when_oi_1d_unavailable(self):
+        obj = self.make_autobn(None)
+        close, volume = self.make_klines()
+
+        self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
+
+    async def run_check_side_short(self, oi_5m_last, oi_1d_peak=100.0):
+        obj = self.make_autobn(
+            [{"sumOpenInterest": str(oi_1d_peak)}, {"sumOpenInterest": "50"}]
+        )
+        obj._get_oi_5m_data = AsyncMock(
+            return_value=[{"sumOpenInterest": str(oi_5m_last)}]
+        )
+        return await obj.check_side(
+            asyncio.Semaphore(1),
+            "BTCUSDT",
+            PositionSide.SHORT.value,
+            dtn=pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
+        )
+
+    async def test_short_trigger_fires_at_drawdown_threshold(self):
+        passed, _, _ = await self.run_check_side_short(90.0)
+
+        self.assertTrue(passed)
+
+    async def test_short_trigger_blocked_when_oi_holds_near_peak(self):
+        passed, _, _ = await self.run_check_side_short(91.0)
+
+        self.assertFalse(passed)
 
 
 class AutoAHttpSessionCharacterizationTest(unittest.IsolatedAsyncioTestCase):
