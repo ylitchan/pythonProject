@@ -2209,6 +2209,14 @@ class AUTOBN:
                     name=symbol,
                 )
             if new_open_info:
+                current_open_info_dict = self.alert_all["OBSERVATIONS"].get(symbol)
+                if current_open_info_dict:
+                    current_open_info = Observation.model_validate(
+                        current_open_info_dict
+                    )
+                    new_open_info.earliest_open_timestamp = (
+                        current_open_info.earliest_open_timestamp
+                    )
                 self.alert_all["OBSERVATIONS"][symbol] = new_open_info.model_dump()
         except Exception:
             success.discard(symbol)

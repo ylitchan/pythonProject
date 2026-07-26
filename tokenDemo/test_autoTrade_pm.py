@@ -1852,6 +1852,9 @@ class StrategyStateWindowConsistencyTest(unittest.IsolatedAsyncioTestCase):
     async def test_new_bd_observation_overwrites_old_bz(self):
         obj = AutoBNCharacterizationTest.make_autobn()
         old = self.make_observation(PositionSide.BZ)
+        old.earliest_open_timestamp = pd.Timestamp(
+            "2026-07-11 11:00:00"
+        ).timestamp()
         obj.alert_all = {
             "POSITIONS": {},
             "OBSERVATIONS": {"BTCUSDT": old.model_dump()},
@@ -1869,6 +1872,77 @@ class StrategyStateWindowConsistencyTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(stored.strategy, [PositionSide.BD])
         self.assertEqual(stored.timestamp, current.timestamp())
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            old.earliest_open_timestamp,
+        )
+
+    async def test_same_round_observation_refresh_preserves_close_cooldown(self):
+        obj = AutoBNCharacterizationTest.make_autobn()
+        position = AutoBNCharacterizationTest.make_position()
+        observation = self.make_observation(PositionSide.BZ)
+        close_time = pd.Timestamp("2026-07-11 10:00:00").timestamp()
+        cooldown_until = close_time + obj.REOPEN_COOLDOWN_SECONDS
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        kline = AutoBNCharacterizationTest.make_kline(10, 11)
+        kline[-1][5] = 200
+        obj.get_kline = AsyncMock(return_value=kline)
+        obj._is_bd_observation = AsyncMock(return_value=False)
+
+        async def close_position(*_args):
+            stored = Observation.model_validate(
+                obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+            )
+            stored.earliest_open_timestamp = cooldown_until
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"] = stored.model_dump()
+            obj.alert_all["POSITIONS"].pop("BTCUSDT")
+            return observation
+
+        obj._manage_position = AsyncMock(side_effect=close_position)
+        current = pd.Timestamp("2026-07-11 10:00:00").to_pydatetime()
+
+        await obj.rzq_token(asyncio.Semaphore(1), "BTCUSDT", set(), current)
+
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertEqual(stored.strategy, [PositionSide.BZ])
+        self.assertEqual(stored.timestamp, current.timestamp())
+        self.assertEqual(stored.earliest_open_timestamp, cooldown_until)
+
+    async def test_next_round_does_not_open_during_preserved_cooldown(self):
+        obj = AutoBNCharacterizationTest.make_autobn()
+        current = pd.Timestamp("2026-07-11 10:30:00").to_pydatetime()
+        observation = self.make_observation(PositionSide.BZ)
+        observation.earliest_open_timestamp = pd.Timestamp(
+            "2026-07-11 11:00:00"
+        ).timestamp()
+        obj.alert_all = {
+            "POSITIONS": {},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        kline = AutoBNCharacterizationTest.make_kline(10, 11)
+        kline[-1][5] = 200
+        obj.get_kline = AsyncMock(return_value=kline)
+        obj.check_side = AsyncMock(return_value=(True, 1.1, 100))
+        obj.calculate_atr = MagicMock(return_value=1)
+        obj.get_basis_rate = AsyncMock(return_value=0)
+        obj.send_msg = AsyncMock()
+        obj.open_bn_position = AsyncMock(return_value=True)
+
+        await obj.rzq_token(asyncio.Semaphore(1), "BTCUSDT", set(), current)
+
+        obj.open_bn_position.assert_not_awaited()
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            observation.earliest_open_timestamp,
+        )
 
     async def test_autobn_fixed_fetches_reject_29_and_accept_30(self):
         obj = AutoBNCharacterizationTest.make_autobn()
