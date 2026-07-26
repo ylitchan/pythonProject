@@ -298,7 +298,8 @@ class AUTOBN:
     MAX_CONCURRENT_REQUESTS = 8  # 最大并发请求数
 
     # ==================== 时间常量 ====================
-    OBSERVATION_TIMEOUT_SECONDS = 7 * 24 * 60 * 60  # 观察记录超时时间（7天，覆盖顶后清算展开期）
+    BZ_OBSERVATION_TIMEOUT_SECONDS = 24 * 60 * 60  # BZ观察记录超时时间（24小时）
+    BD_OBSERVATION_TIMEOUT_SECONDS = 7 * 24 * 60 * 60  # BD观察记录超时时间（7天）
     RETRY_DELAY_SECONDS = 2  # 重试延迟（秒）
     CLOSE_RETRY_DELAY = 3  # 平仓重试延迟（秒）
 
@@ -852,11 +853,23 @@ class AUTOBN:
             self.logger.exception(error_msg)
             return None
 
-    def _set_reopen_cooldown(self, symbol, earliest_open_timestamp):
-        open_info = Observation.model_validate(
-            self.alert_all["OBSERVATIONS"][symbol]
+    def _handle_closed_position_observation(self, symbol, close_info, close_timestamp):
+        if PositionSide.BD in close_info.strategy:
+            self.alert_all["OBSERVATIONS"].pop(symbol, None)
+            return
+        open_info_dict = self.alert_all["OBSERVATIONS"].get(symbol)
+        if not open_info_dict:
+            return
+        open_info = Observation.model_validate(open_info_dict)
+        if (
+            close_timestamp - open_info.timestamp
+            > self.BZ_OBSERVATION_TIMEOUT_SECONDS
+        ):
+            self.alert_all["OBSERVATIONS"].pop(symbol, None)
+            return
+        open_info.earliest_open_timestamp = (
+            close_timestamp + self.REOPEN_COOLDOWN_SECONDS
         )
-        open_info.earliest_open_timestamp = earliest_open_timestamp
         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
     async def close_bn_position(
@@ -887,8 +900,8 @@ class AUTOBN:
         amount = amount_price[0]
         if not amount:
             await self.send_msg(f"{symbol} 平仓跳过：确认持仓数量为0")
-            self._set_reopen_cooldown(
-                symbol, time.time() + self.REOPEN_COOLDOWN_SECONDS
+            self._handle_closed_position_observation(
+                symbol, close_info, time.time()
             )
             if symbol in self.alert_all["POSITIONS"]:
                 self.alert_all["POSITIONS"].pop(symbol)
@@ -959,9 +972,9 @@ class AUTOBN:
                     return symbol
                 remaining_amount = remaining_amount_price[0]
                 if remaining_amount == 0:
-                    self._set_reopen_cooldown(
-                symbol, time.time() + self.REOPEN_COOLDOWN_SECONDS
-            )
+                    self._handle_closed_position_observation(
+                        symbol, close_info, time.time()
+                    )
                     if symbol in self.alert_all["POSITIONS"]:
                         self.alert_all["POSITIONS"].pop(symbol)
                 elif atr_value > 0:
@@ -997,9 +1010,9 @@ class AUTOBN:
                     await self.send_msg(
                         f"{symbol} 平仓跳过：重试后确认持仓数量为0"
                     )
-                    self._set_reopen_cooldown(
-                symbol, time.time() + self.REOPEN_COOLDOWN_SECONDS
-            )
+                    self._handle_closed_position_observation(
+                        symbol, close_info, time.time()
+                    )
                     if symbol in self.alert_all["POSITIONS"]:
                         self.alert_all["POSITIONS"].pop(symbol)
                     return None
@@ -1583,15 +1596,10 @@ class AUTOBN:
                     and float(oi_5m[-1]["sumOpenInterest"])
                     <= close_info.stop_guard_threshold
                 )
-            if not oi_stop_triggered and latest_lsr is not None:
+            # 多空比止损只对多头生效：空头(BD)不受多空比影响
+            if not oi_stop_triggered and is_long and latest_lsr is not None:
                 long_short_stop_triggered = (
-                    is_long
-                    and latest_lsr
-                    >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-                ) or (
-                    not is_long
-                    and latest_lsr
-                    <= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
+                    latest_lsr >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
                 )
 
         if long_short_stop_triggered or oi_stop_triggered:
@@ -1875,17 +1883,6 @@ class AUTOBN:
             )
             close_info.take_profit = tp
             close_info.stop_loss = sl
-            order_side = OrderSide.BUY if is_long else OrderSide.SELL
-            # 转换为 Observation 对象并保存
-            open_info = Observation(
-                price=current_price,
-                timestamp=current_timestamp,
-                side=order_side,
-                strategy=[close_info.strategy[0]],
-                name=symbol,
-            )
-            # 更新到字典
-            self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
             self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             self.logger.info(
                 f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}"
@@ -2005,10 +2002,12 @@ class AUTOBN:
                     current_timestamp,
                 )
             elif open_info:
-                if (
-                    current_timestamp - open_info.timestamp
-                    > self.OBSERVATION_TIMEOUT_SECONDS
-                ):
+                observation_timeout = (
+                    self.BZ_OBSERVATION_TIMEOUT_SECONDS
+                    if PositionSide.BZ in open_info.strategy
+                    else self.BD_OBSERVATION_TIMEOUT_SECONDS
+                )
+                if current_timestamp - open_info.timestamp > observation_timeout:
                     self.alert_all["OBSERVATIONS"].pop(symbol)
                     open_info = None
                 else:
@@ -2160,8 +2159,6 @@ class AUTOBN:
                         )
                         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                         open_info.strategy = [open_info.strategy[0]]
-                        # 更新timestamp为当前时间，确保同一天(UTC)内不会再次触发Supertrend开仓
-                        open_info.timestamp = current_timestamp
                         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
                     if (
@@ -3292,7 +3289,7 @@ class AUTOA:
 
         策略：低吸策略 - 在涨停次日回调后放量突破时买入
         核心逻辑：
-            1. 超时清理：观察超过10天的股票自动移出
+            1. 超时清理：观察超过30天的股票自动移出
             2. 信号确认：满足以下条件时触发买入
                - 时间：观察至少24小时
                - 价格：突破10日均价、昨收、今开的最高值

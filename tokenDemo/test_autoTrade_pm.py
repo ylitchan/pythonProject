@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -156,6 +157,56 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
             )
 
         stock_hist.assert_not_awaited()
+    async def test_bz_n_open_preserves_shared_observation_timestamp(self):
+        timestamp = pd.Timestamp("2026-07-01").timestamp()
+        observation = Observation(
+            price=10,
+            timestamp=timestamp,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="测试股票",
+            bz_reference_high=10,
+        )
+        hist = pd.DataFrame([
+            {
+                "open": 10,
+                "high": 11,
+                "low": 9,
+                "close": 10.5,
+                "volume": 100,
+            }
+            for _ in range(29)
+        ] + [{
+            "open": 12,
+            "high": 13,
+            "low": 11,
+            "close": 12.5,
+            "volume": 90,
+        }])
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {},
+                "OBSERVATIONS": {"000001": observation.model_dump()},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(AUTOA, "check_gap_up_after_bz_reference", return_value=True),
+            patch.object(AUTOA, "calculate_atr", return_value=1),
+            patch.object(AUTOA, "send_msg", new=AsyncMock()),
+        ):
+            await AUTOA.on_observations(
+                "000001",
+                ["2026-07-02", "2026-07-01"],
+                observation.model_dump(),
+                pd.Timestamp("2026-07-02 10:00").to_pydatetime(),
+            )
+            stored = Observation.model_validate(
+                AUTOA.alert_all["OBSERVATIONS"]["000001"]
+            )
+            has_position = "000001" in AUTOA.alert_all["POSITIONS"]
+
+        self.assertEqual(stored.strategy, [PositionSide.BZ, PositionSide.N])
+        self.assertEqual(stored.timestamp, timestamp)
+        self.assertTrue(has_position)
 
 
 class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
@@ -286,6 +337,7 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertNotIn("000001", AUTOA.alert_all["POSITIONS"])
+        self.assertEqual(stored.timestamp, observation.timestamp)
         self.assertEqual(stored.earliest_open_timestamp, expected_timestamp)
 
     async def test_pushes_zero_total_when_no_positions(self):
@@ -763,12 +815,101 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(obj.close_bn_position.await_args.args[1].close_reason, "OI止损")
         obj.open_bn_position.assert_not_awaited()
 
+    async def test_short_position_ignores_low_long_short_ratio(self):
+        obj = self.make_autobn()
+        position = self.make_position(
+            position_side=PositionSide.SHORT,
+            entry_price=10,
+            take_profit=5,
+            stop_loss=15,
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.get_kline = AsyncMock(return_value=self.make_kline(10, 10))
+        obj.calculate_atr = MagicMock(return_value=1)
+        obj.close_bn_position = AsyncMock()
+        obj.get_long_short_ratio = AsyncMock(
+            return_value=[{"longShortRatio": "1.0"}]
+        )
+        obj._get_oi_5m_data = AsyncMock(return_value=[])
+        obj.open_bn_position = AsyncMock(return_value=False)
+
+        await obj.rzq_token(
+            __import__("asyncio").Semaphore(1),
+            "BTCUSDT",
+            set(),
+            pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
+        )
+
+        obj.close_bn_position.assert_not_awaited()
+        obj._get_oi_5m_data.assert_not_awaited()
+
+    async def test_short_position_ignores_high_long_short_ratio(self):
+        obj = self.make_autobn()
+        position = self.make_position(
+            position_side=PositionSide.SHORT,
+            entry_price=10,
+            take_profit=5,
+            stop_loss=15,
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.get_kline = AsyncMock(return_value=self.make_kline(10, 10))
+        obj.calculate_atr = MagicMock(return_value=1)
+        obj.close_bn_position = AsyncMock()
+        obj.get_long_short_ratio = AsyncMock(
+            return_value=[{"longShortRatio": "9.0"}]
+        )
+        obj._get_oi_5m_data = AsyncMock(return_value=[])
+        obj.open_bn_position = AsyncMock(return_value=False)
+
+        await obj.rzq_token(
+            __import__("asyncio").Semaphore(1),
+            "BTCUSDT",
+            set(),
+            pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
+        )
+
+        obj.close_bn_position.assert_not_awaited()
+
+    async def test_long_position_still_stops_on_high_long_short_ratio(self):
+        obj = self.make_autobn()
+        position = self.make_position(stop_guard_threshold=0)
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.get_kline = AsyncMock(return_value=self.make_kline(10, 10))
+        obj.calculate_atr = MagicMock(return_value=1)
+        obj.close_bn_position = AsyncMock()
+        obj.get_long_short_ratio = AsyncMock(
+            return_value=[{"longShortRatio": "9.0"}]
+        )
+        obj._get_oi_5m_data = AsyncMock(return_value=[])
+        obj.open_bn_position = AsyncMock(return_value=False)
+
+        await obj.rzq_token(
+            __import__("asyncio").Semaphore(1),
+            "BTCUSDT",
+            set(),
+            pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
+        )
+
+        obj.close_bn_position.assert_awaited_once()
+        self.assertEqual(
+            obj.close_bn_position.await_args.args[1].close_reason, "多空比止损"
+        )
+
     async def test_zero_exchange_position_writes_24_hour_cooldown(self):
         obj = self.make_autobn()
         position = self.make_position()
         observation = Observation(
             price=10,
-            timestamp=1,
+            timestamp=900,
             side=OrderSide.BUY,
             strategy=[PositionSide.BZ],
             name="BTCUSDT",
@@ -785,11 +926,321 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         stored = Observation.model_validate(
             obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
         )
+        self.assertEqual(stored.timestamp, observation.timestamp)
         self.assertEqual(
             stored.earliest_open_timestamp,
             1000 + obj.REOPEN_COOLDOWN_SECONDS,
         )
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+
+    async def test_bz_close_after_order_keeps_observation_and_sets_cooldown(self):
+        obj = self.make_autobn()
+        position = self.make_position()
+        observation = Observation(
+            price=10,
+            timestamp=900,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.symbols_info = {"BTCUSDT": {"quantityPrecision": Decimal("0.001")}}
+        obj.get_amount_close = AsyncMock(side_effect=[(10, 10), (0, 0)])
+        obj.papi_client.rest_api.new_um_order = MagicMock()
+        obj._call_api = AsyncMock(return_value={"origQty": "10"})
+        obj.send_msg = AsyncMock()
+        with (
+            patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()),
+            patch("tokenDemo.autoTrade_pm.time.time", return_value=1000),
+        ):
+            await obj.close_bn_position("BTCUSDT", position, 0, 10)
+
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            1000 + obj.REOPEN_COOLDOWN_SECONDS,
+        )
+
+    async def test_bz_zero_position_without_observation_still_clears_position(self):
+        obj = self.make_autobn()
+        position = self.make_position()
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.get_amount_close = AsyncMock(return_value=(0, 0))
+        obj.send_msg = AsyncMock()
+
+        await obj.close_bn_position("BTCUSDT", position, 0, 10)
+
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+
+    async def test_expired_bz_observation_is_removed_on_full_close(self):
+        obj = self.make_autobn()
+        position = self.make_position()
+        observation = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.get_amount_close = AsyncMock(return_value=(0, 0))
+        obj.send_msg = AsyncMock()
+        close_time = 1 + obj.BZ_OBSERVATION_TIMEOUT_SECONDS + 1
+
+        with patch("tokenDemo.autoTrade_pm.time.time", return_value=close_time):
+            await obj.close_bn_position("BTCUSDT", position, 0, 10)
+
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+
+    async def test_bd_zero_exchange_position_removes_observation(self):
+        obj = self.make_autobn()
+        position = self.make_position(position_side=PositionSide.SHORT)
+        position.strategy = [PositionSide.BD]
+        observation = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.SELL,
+            strategy=[PositionSide.BD],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.get_amount_close = AsyncMock(return_value=(0, 0))
+        obj.send_msg = AsyncMock()
+
+        await obj.close_bn_position("BTCUSDT", position, 0, 10)
+
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+
+    async def test_bd_close_removes_observation_after_order_confirms_zero(self):
+        obj = self.make_autobn()
+        position = self.make_position(position_side=PositionSide.SHORT)
+        position.strategy = [PositionSide.BD]
+        observation = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.SELL,
+            strategy=[PositionSide.BD],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.symbols_info = {"BTCUSDT": {"quantityPrecision": Decimal("0.001")}}
+        obj.get_amount_close = AsyncMock(side_effect=[(10, 10), (0, 0)])
+        obj.papi_client.rest_api.new_um_order = MagicMock()
+        obj._call_api = AsyncMock(return_value={"origQty": "10"})
+        obj.send_msg = AsyncMock()
+        with patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()):
+            await obj.close_bn_position("BTCUSDT", position, 0, 10)
+
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+
+    async def test_bd_close_removes_observation_after_error_confirms_zero(self):
+        obj = self.make_autobn()
+        position = self.make_position(position_side=PositionSide.SHORT)
+        position.strategy = [PositionSide.BD]
+        observation = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.SELL,
+            strategy=[PositionSide.BD],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.symbols_info = {"BTCUSDT": {"quantityPrecision": Decimal("0.001")}}
+        obj.get_amount_close = AsyncMock(side_effect=[(10, 10), (0, 0)])
+        obj.papi_client.rest_api.new_um_order = MagicMock()
+        obj._call_api = AsyncMock(side_effect=RuntimeError("order status unknown"))
+        obj.send_msg = AsyncMock()
+        with (
+            patch("tokenDemo.autoTrade_pm.asyncio.sleep", new=AsyncMock()),
+            patch.object(obj.logger, "exception"),
+        ):
+            await obj.close_bn_position("BTCUSDT", position, 0, 10)
+
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+
+    async def test_partial_bd_close_keeps_observation_unchanged(self):
+        obj = self.make_autobn()
+        position = self.make_position(position_side=PositionSide.SHORT)
+        position.strategy = [PositionSide.BD]
+        observation = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.SELL,
+            strategy=[PositionSide.BD],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.symbols_info = {"BTCUSDT": {"quantityPrecision": Decimal("0.001")}}
+        obj.get_amount_close = AsyncMock(side_effect=[(10, 10), (3, 10)])
+        obj.papi_client.rest_api.new_um_order = MagicMock()
+        obj._call_api = AsyncMock(return_value={"origQty": "7"})
+        obj.send_msg = AsyncMock()
+        obj.calc_stop_profit_loss = MagicMock(return_value=(8, 12))
+        with patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()):
+            await obj.close_bn_position("BTCUSDT", position, 1, 10, 0.7)
+
+        self.assertIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        self.assertEqual(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"], observation.model_dump()
+        )
+
+    async def test_strategy_specific_observation_expiration(self):
+        current = pd.Timestamp("2026-07-11 10:00:00").to_pydatetime()
+        old_timestamp = current.timestamp() - 2 * 24 * 60 * 60
+
+        for strategies, should_remain in (
+            ([PositionSide.BZ], False),
+            ([PositionSide.BD], True),
+            ([PositionSide.BZ, PositionSide.BD], False),
+        ):
+            with self.subTest(strategies=strategies):
+                obj = self.make_autobn()
+                observation = Observation(
+                    price=10,
+                    timestamp=old_timestamp,
+                    side=(
+                        OrderSide.BUY
+                        if PositionSide.BZ in strategies
+                        else OrderSide.SELL
+                    ),
+                    strategy=strategies,
+                    name="BTCUSDT",
+                )
+                obj.alert_all = {
+                    "POSITIONS": {},
+                    "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+                }
+                obj.get_kline = AsyncMock(
+                    return_value=[
+                        [0, 10, 11, 9, 10, 100],
+                        [0, 10, 11, 9, 10, 100],
+                        [0, 10, 11, 9, 10, 100],
+                        [0, 10, 11, 9, 10, 50],
+                    ]
+                )
+                obj._is_bd_observation = AsyncMock(return_value=False)
+
+                await obj.rzq_token(
+                    asyncio.Semaphore(1), "BTCUSDT", set(), current
+                )
+
+                self.assertEqual(
+                    "BTCUSDT" in obj.alert_all["OBSERVATIONS"], should_remain
+                )
+
+    async def test_successful_initial_open_preserves_observation_timestamp(self):
+        for side, strategy, current_close in (
+            (OrderSide.BUY, PositionSide.BZ, 11),
+            (OrderSide.SELL, PositionSide.BD, 9),
+        ):
+            with self.subTest(strategy=strategy):
+                obj = self.make_autobn()
+                observation = Observation(
+                    price=10,
+                    timestamp=pd.Timestamp("2026-07-11 09:00:00").timestamp(),
+                    side=side,
+                    strategy=[strategy],
+                    name="BTCUSDT",
+                )
+                obj.alert_all = {
+                    "POSITIONS": {},
+                    "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+                }
+                obj.get_kline = AsyncMock(
+                    return_value=self.make_kline(10, current_close)
+                )
+                obj.check_side = AsyncMock(return_value=(True, None, None))
+                obj.calculate_atr = MagicMock(return_value=1)
+                obj.calc_stop_profit_loss = MagicMock(
+                    return_value=(12, 8) if side == OrderSide.BUY else (8, 12)
+                )
+                obj.get_basis_rate = AsyncMock(return_value=0)
+                obj.signal_qy_key = "test-key"
+                obj.send_msg = AsyncMock()
+                obj.open_bn_position = AsyncMock(return_value=True)
+
+                await obj.rzq_token(
+                    asyncio.Semaphore(1),
+                    "BTCUSDT",
+                    set(),
+                    pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
+                )
+
+                stored = Observation.model_validate(
+                    obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+                )
+                self.assertEqual(stored.timestamp, observation.timestamp)
+                self.assertIn("BTCUSDT", obj.alert_all["POSITIONS"])
+
+    async def test_atr_initialization_preserves_existing_observation(self):
+        obj = self.make_autobn()
+        position = self.make_position(take_profit=0, stop_loss=0)
+        observation = Observation(
+            price=9,
+            timestamp=123,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+            bz_reference_high=11,
+            earliest_open_timestamp=456,
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.calculate_atr = MagicMock(return_value=1)
+        obj.calc_stop_profit_loss = MagicMock(return_value=(12, 8))
+        obj.get_long_short_ratio = AsyncMock(return_value=[])
+        obj._get_oi_5m_data = AsyncMock(return_value=[])
+        obj.open_bn_position = AsyncMock(return_value=False)
+
+        await obj._manage_position(
+            "BTCUSDT",
+            position,
+            observation,
+            self.make_kline(10, 10),
+            10,
+            999,
+        )
+
+        self.assertEqual(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"], observation.model_dump()
+        )
+        stored_position = Position.model_validate(
+            obj.alert_all["POSITIONS"]["BTCUSDT"]
+        )
+        self.assertGreater(stored_position.take_profit, 0)
+        self.assertGreater(stored_position.stop_loss, 0)
 
     async def test_failed_initial_open_does_not_create_local_position(self):
         obj = self.make_autobn()
@@ -1218,8 +1669,13 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["sumOpenInterest"], "100")
 
-    def test_autobn_observation_timeout_is_seven_days(self):
-        self.assertEqual(AUTOBN.OBSERVATION_TIMEOUT_SECONDS, 7 * 24 * 60 * 60)
+    def test_observation_timeouts_are_strategy_specific(self):
+        self.assertEqual(
+            AUTOBN.BZ_OBSERVATION_TIMEOUT_SECONDS, 24 * 60 * 60
+        )
+        self.assertEqual(
+            AUTOBN.BD_OBSERVATION_TIMEOUT_SECONDS, 7 * 24 * 60 * 60
+        )
         self.assertEqual(AUTOA.OBSERVATION_TIMEOUT_SECONDS, 30 * 24 * 60 * 60)
 
 
