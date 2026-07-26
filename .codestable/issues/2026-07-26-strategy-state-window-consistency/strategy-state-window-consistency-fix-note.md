@@ -12,7 +12,7 @@ tags: [autobn, autoa, observation, oi, kline, window, partial-close]
 ## 修复内容
 
 - AUTOBN 每轮直接按真实条件选择新 Observation：BZ 优先、BD 次之；新候选成立即覆盖旧记录，不再受旧BD、同UTC日或 `bd_deleted_this_round` 阻挡。
-- AUTOBN BZ/BD 在交易所确认完整归零后均删除 Observation；部分平仓、查询失败或仍有余仓时保持不变。
+- AUTOBN完整平仓行为已由后续修复 `2026-07-26-bz-close-preserve-observation` 纠正：BZ保留Observation并只更新最早重开时间，BD删除Observation。
 - 日OI固定请求30条，过滤后不足30条停止；BD实时窗口使用全部30条完成日OI加最新1条5m OI，baseline使用old之前的全部数据。
 - 日K、5m/1h/1d OI、1h多空比和最新5m多空比在获取边界拒绝不完整窗口，短缓存也不再复用。
 - SHORT部分止盈后直接采用方向化的 `(take_profit, stop_loss)`，保持TP在当前价下方、SL在当前价上方。

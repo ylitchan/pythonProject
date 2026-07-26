@@ -852,7 +852,19 @@ class AUTOBN:
             return None
 
     def _handle_closed_position_observation(self, symbol, close_info, close_timestamp):
-        self.alert_all["OBSERVATIONS"].pop(symbol, None)
+        if PositionSide.BD in close_info.strategy:
+            self.alert_all["OBSERVATIONS"].pop(symbol, None)
+            return
+
+        open_info_dict = self.alert_all["OBSERVATIONS"].get(symbol)
+        if not open_info_dict:
+            return
+
+        open_info = Observation.model_validate(open_info_dict)
+        open_info.earliest_open_timestamp = (
+            close_timestamp + self.REOPEN_COOLDOWN_SECONDS
+        )
+        self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
     async def close_bn_position(
         self,

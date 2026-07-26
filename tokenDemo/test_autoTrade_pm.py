@@ -905,7 +905,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj.close_bn_position.assert_not_awaited()
         obj._get_oi_5m_data.assert_not_awaited()
 
-    async def test_zero_exchange_position_deletes_observation(self):
+    async def test_zero_exchange_position_preserves_bz_timestamp_and_sets_cooldown(self):
         obj = self.make_autobn()
         position = self.make_position()
         observation = Observation(
@@ -924,10 +924,17 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         with patch("tokenDemo.autoTrade_pm.time.time", return_value=1000):
             await obj.close_bn_position("BTCUSDT", position, 0, 10)
 
-        self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            1000 + obj.REOPEN_COOLDOWN_SECONDS,
+        )
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
 
-    async def test_bz_close_after_order_deletes_observation(self):
+    async def test_bz_close_after_order_preserves_timestamp_and_sets_cooldown(self):
         obj = self.make_autobn()
         position = self.make_position()
         observation = Observation(
@@ -953,7 +960,14 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             await obj.close_bn_position("BTCUSDT", position, 0, 10)
 
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
-        self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            1000 + obj.REOPEN_COOLDOWN_SECONDS,
+        )
 
     async def test_bz_zero_position_without_observation_still_clears_position(self):
         obj = self.make_autobn()
@@ -970,7 +984,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
         self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
 
-    async def test_expired_bz_observation_is_removed_on_full_close(self):
+    async def test_expired_bz_observation_is_preserved_until_natural_cleanup(self):
         obj = self.make_autobn()
         position = self.make_position()
         observation = Observation(
@@ -992,7 +1006,14 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             await obj.close_bn_position("BTCUSDT", position, 0, 10)
 
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
-        self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            close_time + obj.REOPEN_COOLDOWN_SECONDS,
+        )
 
     async def test_bd_zero_exchange_position_removes_observation(self):
         obj = self.make_autobn()
@@ -1042,6 +1063,42 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
         self.assertNotIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+
+    async def test_bz_close_after_error_preserves_timestamp_and_sets_cooldown(self):
+        obj = self.make_autobn()
+        position = self.make_position()
+        observation = Observation(
+            price=10,
+            timestamp=900,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+        )
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.symbols_info = {"BTCUSDT": {"quantityPrecision": Decimal("0.001")}}
+        obj.get_amount_close = AsyncMock(side_effect=[(10, 10), (0, 0)])
+        obj.papi_client.rest_api.new_um_order = MagicMock()
+        obj._call_api = AsyncMock(side_effect=RuntimeError("order status unknown"))
+        obj.send_msg = AsyncMock()
+        with (
+            patch("tokenDemo.autoTrade_pm.asyncio.sleep", new=AsyncMock()),
+            patch.object(obj.logger, "exception"),
+            patch("tokenDemo.autoTrade_pm.time.time", return_value=1000),
+        ):
+            await obj.close_bn_position("BTCUSDT", position, 0, 10)
+
+        self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            1000 + obj.REOPEN_COOLDOWN_SECONDS,
+        )
 
     async def test_bd_close_removes_observation_after_error_confirms_zero(self):
         obj = self.make_autobn()
