@@ -369,8 +369,6 @@ class AUTOBN:
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
-    OPEN_LONG_SHORT_RATIO_THRESHOLD = 50 / 50
-    LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD = 6 / 4
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
 
@@ -1175,9 +1173,6 @@ class AUTOBN:
                     return False, None, None
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
-                    if lsrd >= self.OPEN_LONG_SHORT_RATIO_THRESHOLD:
-                        return False, None, None
-
                     target_ts_1h = int(
                         dtn.replace(minute=0, second=0, microsecond=0).timestamp()
                         * 1000
@@ -1572,7 +1567,6 @@ class AUTOBN:
         tp_triggered = (
             is_long and current_price >= close_info.take_profit
         ) or (not is_long and current_price <= close_info.take_profit)
-        long_short_stop_triggered = False
         oi_stop_triggered = False
         if not sl_triggered and not tp_triggered:
             long_short_ratio_data = await self.get_long_short_ratio(symbol)
@@ -1596,16 +1590,9 @@ class AUTOBN:
                     and float(oi_5m[-1]["sumOpenInterest"])
                     <= close_info.stop_guard_threshold
                 )
-            # 多空比止损只对多头生效：空头(BD)不受多空比影响
-            if not oi_stop_triggered and is_long and latest_lsr is not None:
-                long_short_stop_triggered = (
-                    latest_lsr >= self.LONG_SHORT_RATIO_STOP_LOSS_THRESHOLD
-                )
 
-        if long_short_stop_triggered or oi_stop_triggered:
-            close_info.close_reason = (
-                "多空比止损" if long_short_stop_triggered else "OI止损"
-            )
+        if oi_stop_triggered:
+            close_info.close_reason = "OI止损"
             await self.close_bn_position(
                 symbol, close_info, atr_value, current_price, 1
             )
@@ -1626,7 +1613,7 @@ class AUTOBN:
                 self.PARTIAL_CLOSE_RATIO,
             )
 
-        return long_short_stop_triggered or oi_stop_triggered or sl_triggered or tp_triggered
+        return oi_stop_triggered or sl_triggered or tp_triggered
 
     async def _manage_long_position(
         self, symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger

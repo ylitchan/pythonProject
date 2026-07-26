@@ -786,7 +786,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj._get_oi_5m_data.assert_not_awaited()
         obj.open_bn_position.assert_not_awaited()
 
-    async def test_oi_stop_keeps_priority_over_long_short_ratio_stop(self):
+    async def test_oi_stop_triggers_with_high_long_short_ratio(self):
         obj = self.make_autobn()
         position = self.make_position(stop_guard_threshold=100)
         obj.alert_all = {
@@ -876,7 +876,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         obj.close_bn_position.assert_not_awaited()
 
-    async def test_long_position_still_stops_on_high_long_short_ratio(self):
+    async def test_long_position_ignores_high_ratio_without_oi_guard(self):
         obj = self.make_autobn()
         position = self.make_position(stop_guard_threshold=0)
         obj.alert_all = {
@@ -899,10 +899,8 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
         )
 
-        obj.close_bn_position.assert_awaited_once()
-        self.assertEqual(
-            obj.close_bn_position.await_args.args[1].close_reason, "多空比止损"
-        )
+        obj.close_bn_position.assert_not_awaited()
+        obj._get_oi_5m_data.assert_not_awaited()
 
     async def test_zero_exchange_position_writes_24_hour_cooldown(self):
         obj = self.make_autobn()
@@ -1525,6 +1523,66 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         obj.papi_client.rest_api.query_um_position_information.assert_not_called()
         self.assertIn("BTCUSDT", result)
+
+
+class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def make_autobn(long_ratio_1h, long_ratio_5m):
+        obj = AUTOBN.__new__(AUTOBN)
+        obj.logger = MagicMock()
+        dtn = pd.Timestamp("2026-07-25 12:30:00", tz="UTC").to_pydatetime()
+        target_ts = int(
+            pd.Timestamp("2026-07-25 12:00:00", tz="UTC").timestamp() * 1000
+        )
+        obj.get_long_short_ratio = AsyncMock(return_value=[
+            {
+                "longShortRatio": "1.5",
+                "longAccount": str(long_ratio_1h),
+                "timestamp": target_ts,
+            },
+            {
+                "longShortRatio": "1.5",
+                "longAccount": str(long_ratio_5m),
+                "timestamp": int(dtn.timestamp() * 1000),
+            },
+        ])
+        obj._get_oi_5m_data = AsyncMock(
+            return_value=[{"sumOpenInterest": "120"}]
+        )
+        obj._get_oi_1h_data = AsyncMock(return_value=[
+            {"sumOpenInterest": "100"} for _ in range(20)
+        ])
+        obj.calculate_chebyshev_probability = MagicMock(
+            return_value={"chebyshev_upper_bound": 0.001}
+        )
+        return obj, dtn
+
+    async def test_long_signal_allows_high_raw_ratio_when_blend_passes(self):
+        obj, dtn = self.make_autobn(long_ratio_1h=0.7, long_ratio_5m=0.6)
+
+        passed, lsrd, _ = await obj.check_side(
+            asyncio.Semaphore(1),
+            "BTCUSDT",
+            PositionSide.LONG.value,
+            dtn=dtn,
+        )
+
+        self.assertTrue(passed)
+        self.assertEqual(lsrd, 1.5)
+
+    async def test_long_signal_still_rejects_when_blend_fails(self):
+        obj, dtn = self.make_autobn(long_ratio_1h=0.5, long_ratio_5m=0.6)
+
+        passed, lsrd, stop_guard = await obj.check_side(
+            asyncio.Semaphore(1),
+            "BTCUSDT",
+            PositionSide.LONG.value,
+            dtn=dtn,
+        )
+
+        self.assertFalse(passed)
+        self.assertIsNone(lsrd)
+        self.assertIsNone(stop_guard)
 
 
 class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
