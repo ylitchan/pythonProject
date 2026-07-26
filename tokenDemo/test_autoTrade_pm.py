@@ -928,9 +928,10 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
         )
         self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(obj.REOPEN_COOLDOWN_SECONDS, 60 * 60)
         self.assertEqual(
             stored.earliest_open_timestamp,
-            1000 + obj.REOPEN_COOLDOWN_SECONDS,
+            1000 + 60 * 60,
         )
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
 
@@ -964,9 +965,10 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
         )
         self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(obj.REOPEN_COOLDOWN_SECONDS, 60 * 60)
         self.assertEqual(
             stored.earliest_open_timestamp,
-            1000 + obj.REOPEN_COOLDOWN_SECONDS,
+            1000 + 60 * 60,
         )
 
     async def test_bz_zero_position_without_observation_still_clears_position(self):
@@ -1010,9 +1012,10 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
         )
         self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(obj.REOPEN_COOLDOWN_SECONDS, 60 * 60)
         self.assertEqual(
             stored.earliest_open_timestamp,
-            close_time + obj.REOPEN_COOLDOWN_SECONDS,
+            close_time + 60 * 60,
         )
 
     async def test_bd_zero_exchange_position_removes_observation(self):
@@ -1095,9 +1098,10 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
         )
         self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(obj.REOPEN_COOLDOWN_SECONDS, 60 * 60)
         self.assertEqual(
             stored.earliest_open_timestamp,
-            1000 + obj.REOPEN_COOLDOWN_SECONDS,
+            1000 + 60 * 60,
         )
 
     async def test_bd_close_removes_observation_after_error_confirms_zero(self):

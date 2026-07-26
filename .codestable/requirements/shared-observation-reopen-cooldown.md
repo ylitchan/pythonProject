@@ -30,7 +30,7 @@ tags: [observation, lifecycle, cooldown, autobn, autoa, persistence]
 - `earliest_open_timestamp` 只表示平仓后最早允许重开的时间，不延长观察有效期。
 - AUTOA Observation 从最近一次进入涨停池起保留30天；持仓期间再次涨停仍可刷新；N复用同一条BZ Observation，不建立独立观察池。
 - AUTOA完整平仓保留Observation，并按实际A股交易日历完整空过第一个后续交易日，从第二个后续交易日开始允许重开。
-- AUTOBN BZ Observation 从最近一次满足BZ观察条件起保留24小时；确认完整平仓后保留对应Observation并更新最早重开时间，但不刷新观察时间，记录继续按原始观察时间自然过期。
+- AUTOBN BZ Observation 从最近一次满足BZ观察条件起保留24小时；确认完整平仓后保留对应Observation，最早重开时间为确认清仓后1小时，但不刷新观察时间、不延长有效期，记录继续按原始观察时间自然过期。
 - AUTOBN BD Observation 从最近一次满足BD首次或续期条件起保留7天；确认完整平仓后删除对应Observation，不再写重开冷却。
 - 完整平仓以确认交易所仓位为零为准，包括下单前已为零、下单后归零和异常恢复时确认归零；部分平仓被最小名义价值规则提升为全平后，仍按最终确认结果处理。
 - 部分平仓、平仓后查询失败或仍有剩余仓位时，不删除Observation、不设置冷却，也不刷新观察时间。
@@ -38,6 +38,7 @@ tags: [observation, lifecycle, cooldown, autobn, autoa, persistence]
 
 ## 变更日志
 
+- 2026-07-26：将AUTOBN BZ确认完整平仓后的重开冷却从24小时调整为1小时；Observation仍按原始观察时间起24小时自然过期。
 - 2026-07-26：纠正AUTOBN BZ完整平仓边界：保留Observation并更新最早重开时间，但不刷新观察时间，继续按原始24小时有效期自然过期。
 - 2026-07-26：AUTOBN BZ与BD确认完整平仓后均删除Observation，不再保留AUTOBN完整平仓重开冷却；AUTOA交易日冷却保持不变。
 - 2026-07-26：明确观察时间的唯一语义，按AUTOA、AUTOBN BZ和AUTOBN BD拆分有效期及完整平仓后的保留/删除行为。

@@ -368,7 +368,7 @@ class AUTOBN:
     # ==================== 交易配置常量 ====================
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
-    REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
+    REOPEN_COOLDOWN_SECONDS = 60 * 60
     OI_CHEB_EXCLUDE_RECENT_COUNT = 10
     MIN_CHEB_SAMPLE_SIZE = 2
 
