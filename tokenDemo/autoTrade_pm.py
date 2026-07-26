@@ -852,23 +852,7 @@ class AUTOBN:
             return None
 
     def _handle_closed_position_observation(self, symbol, close_info, close_timestamp):
-        if PositionSide.BD in close_info.strategy:
-            self.alert_all["OBSERVATIONS"].pop(symbol, None)
-            return
-        open_info_dict = self.alert_all["OBSERVATIONS"].get(symbol)
-        if not open_info_dict:
-            return
-        open_info = Observation.model_validate(open_info_dict)
-        if (
-            close_timestamp - open_info.timestamp
-            > self.BZ_OBSERVATION_TIMEOUT_SECONDS
-        ):
-            self.alert_all["OBSERVATIONS"].pop(symbol, None)
-            return
-        open_info.earliest_open_timestamp = (
-            close_timestamp + self.REOPEN_COOLDOWN_SECONDS
-        )
-        self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
+        self.alert_all["OBSERVATIONS"].pop(symbol, None)
 
     async def close_bn_position(
         self,
@@ -983,12 +967,8 @@ class AUTOBN:
                         atr=atr_value,
                     )
                     if new_tp > 0 and new_sl > 0:
-                        if is_long:
-                            close_info.take_profit = new_tp
-                            close_info.stop_loss = new_sl
-                        else:
-                            close_info.take_profit = new_sl
-                            close_info.stop_loss = new_tp
+                        close_info.take_profit = new_tp
+                        close_info.stop_loss = new_sl
 
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
                 return symbol
@@ -1030,6 +1010,7 @@ class AUTOBN:
         if (
             oi_5m_cache
             and (current_time_5m - oi_5m_cache["timestamp"]) < self.OI_5M_CACHE_TTL
+            and len(oi_5m_cache["data"]) >= self.OI_QUERY_LIMIT
         ):
             return oi_5m_cache["data"]
 
@@ -1039,6 +1020,8 @@ class AUTOBN:
             period="5m",
             limit=self.OI_QUERY_LIMIT,
         )
+        if not oi_5m or len(oi_5m) < self.OI_QUERY_LIMIT:
+            return None
         self._oi_5m_cache[symbol] = {
             "data": oi_5m,
             "timestamp": current_time_5m,
@@ -1050,7 +1033,11 @@ class AUTOBN:
         dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
         target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
         oi_1h_cache = self._oi_1h_cache.get(symbol)
-        if oi_1h_cache and oi_1h_cache.get("target_date") == target_ts_1h:
+        if (
+            oi_1h_cache
+            and oi_1h_cache.get("target_date") == target_ts_1h
+            and len(oi_1h_cache["data"]) >= self.OI_QUERY_LIMIT
+        ):
             return oi_1h_cache["data"]
 
         oi_1h = await self._call_api(
@@ -1059,7 +1046,9 @@ class AUTOBN:
             period="1h",
             limit=self.OI_QUERY_LIMIT,
         )
-        if oi_1h and oi_1h[-1]["timestamp"] == target_ts_1h:
+        if not oi_1h or len(oi_1h) < self.OI_QUERY_LIMIT:
+            return None
+        if oi_1h[-1]["timestamp"] == target_ts_1h:
             self._oi_1h_cache[symbol] = {
                 "data": oi_1h,
                 "target_date": target_ts_1h,
@@ -1075,14 +1064,18 @@ class AUTOBN:
         available_before_ts = int(utc_day.timestamp() * 1000)
 
         cache_entry = self._oi_1d_cache.get(symbol)
-        if cache_entry and cache_entry.get("target_date") == available_before_ts:
+        if (
+            cache_entry
+            and cache_entry.get("target_date") == available_before_ts
+            and len(cache_entry["data"]) >= self.OI_QUERY_LIMIT
+        ):
             return cache_entry["data"]
 
         oi_1d = await self._call_api(
             self.market_client.rest_api.open_interest_statistics,
             symbol=symbol,
             period="1d",
-            limit=self.OI_QUERY_LIMIT + 1,
+            limit=self.OI_QUERY_LIMIT,
         )
         available_oi = [
             item
@@ -1090,7 +1083,7 @@ class AUTOBN:
             if item.get("timestamp") is not None
             and int(item["timestamp"]) <= available_before_ts
         ]
-        if not available_oi:
+        if len(available_oi) < self.OI_QUERY_LIMIT:
             return None
         self._oi_1d_cache[symbol] = {
             "data": available_oi,
@@ -1115,8 +1108,8 @@ class AUTOBN:
         if age_seconds < 0 or age_seconds > self.OI_5M_CACHE_TTL:
             return None, None
 
-        completed_oi = [float(item["sumOpenInterest"]) for item in oi_1d[-30:]]
-        realtime_oi = completed_oi[-29:] + [
+        completed_oi = [float(item["sumOpenInterest"]) for item in oi_1d]
+        realtime_oi = completed_oi + [
             float(latest_oi_5m["sumOpenInterest"])
         ]
         return realtime_oi, completed_oi
@@ -1163,8 +1156,6 @@ class AUTOBN:
                     if long_account is not None:
                         return float(long_account)
                     lsr = float(item["longShortRatio"])
-                    if lsr <= -1:
-                        return None
                     return lsr / (1 + lsr)
 
                 oi_5m = await self._get_oi_5m_data(symbol)
@@ -1278,6 +1269,8 @@ class AUTOBN:
                     interval=interval,
                     limit=self.KLINE_LIMIT,
                 )
+                if not kline or len(kline) < self.KLINE_LIMIT:
+                    return []
                 # 将所有数据转换为浮点数格式
                 return [list(map(float, sublist)) for sublist in kline]
             except Exception as e:
@@ -1318,6 +1311,8 @@ class AUTOBN:
                     period="1h",
                     limit=self.LONG_SHORT_RATIO_LIMIT,
                 )
+                if not data or len(data) < self.LONG_SHORT_RATIO_LIMIT:
+                    return []
                 # 更新缓存
                 self._long_short_ratio_cache[symbol] = {
                     "data": data,
@@ -1332,6 +1327,8 @@ class AUTOBN:
                     data = cache_entry["data"]
                 else:
                     data = []
+        if not data or len(data) < self.LONG_SHORT_RATIO_LIMIT:
+            return []
         try:
             data2 = await self._call_api(
                 self.market_client.rest_api.long_short_ratio,
@@ -1352,6 +1349,8 @@ class AUTOBN:
                 timestamp /= 1000
             if 0 <= freshness_time - timestamp <= 5 * 60:
                 fresh_data2.append(item)
+        if len(fresh_data2) != 1:
+            return []
         return data + fresh_data2
 
     async def get_basis_rate(self, symbol: str) -> float:
@@ -1931,7 +1930,7 @@ class AUTOBN:
         if max(recent_volume) >= max(kline_volume):
             return False
 
-        oi_baseline = oi_window[-30:-10]
+        oi_baseline = oi_window[:-10]
         oi_old = oi_window[-10:-3]
         oi_recent = oi_window[-3:]
         if max(oi_recent) <= max(oi_old):
@@ -1967,7 +1966,7 @@ class AUTOBN:
             # 获取日K线数据（30天）
             kline = await self.get_kline(semaphore, symbol, "1Dutc")
             # 数据量检查
-            if len(kline) < self.MIN_KLINE_FOR_ANALYSIS:
+            if len(kline) < self.KLINE_LIMIT:
                 return
             success.add(symbol)
             kline_close = [k[4] for k in kline]
@@ -1976,7 +1975,6 @@ class AUTOBN:
             # 预计算常用值
             current_price = kline_close[-1]
             current_timestamp = dtn.timestamp()
-            bd_deleted_this_round = False
 
             # 检查现有持仓是否需要平仓
             if close_info:
@@ -2156,7 +2154,6 @@ class AUTOBN:
                         if kline_volume[-1] >= max(kline_volume[:-1]):
                             self.alert_all["OBSERVATIONS"].pop(symbol, None)
                             open_info = None
-                            bd_deleted_this_round = True
                         else:
                             oi_window, _ = await self._get_bd_oi_windows(symbol, dtn)
                             if await self._is_bd_observation(
@@ -2173,48 +2170,34 @@ class AUTOBN:
                                     open_info.model_dump()
                                 )
 
-            # 无论是否有仓位，都执行“加入观察”判定逻辑；同一UTC日仅记录一次，避免重复告警
-            can_set_observation = not bd_deleted_this_round
-            if open_info:
-                observation_date = datetime.datetime.fromtimestamp(
-                    open_info.timestamp, datetime.timezone.utc
-                ).date()
-                current_date = datetime.datetime.fromtimestamp(
-                    current_timestamp, datetime.timezone.utc
-                ).date()
-                can_set_observation = (
-                    PositionSide.BD not in open_info.strategy
-                    and observation_date != current_date
+            # 无论是否有仓位，都执行“加入观察”判定逻辑；本轮新观察覆盖旧记录
+            new_open_info = None
+
+            # 做多信号判断
+            if kline_close[-2] < current_price and kline_volume[-1] >= max(
+                kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
+            ):
+                new_open_info = Observation(
+                    price=current_price,
+                    timestamp=current_timestamp,
+                    side=OrderSide.BUY,
+                    strategy=[PositionSide.BZ],
+                    name=symbol,
                 )
 
-            if can_set_observation:
-                new_open_info = None
-
-                # 做多信号判断
-                if kline_close[-2] < current_price and kline_volume[-1] >= max(
-                    kline_volume[-self.VOLUME_LOOKBACK_PERIOD :]
-                ):
-                    new_open_info = Observation(
-                        price=current_price,
-                        timestamp=current_timestamp,
-                        side=OrderSide.BUY,
-                        strategy=[PositionSide.BZ],
-                        name=symbol,
-                    )
-
-                # 做空信号判断
-                elif await self._is_bd_observation(
-                    symbol, kline_close, kline_volume, dtn
-                ):
-                    new_open_info = Observation(
-                        price=current_price,
-                        timestamp=current_timestamp,
-                        side=OrderSide.SELL,
-                        strategy=[PositionSide.BD],
-                        name=symbol,
-                    )
-                if new_open_info:
-                    self.alert_all["OBSERVATIONS"][symbol] = new_open_info.model_dump()
+            # 做空信号判断；同轮做多信号优先
+            elif await self._is_bd_observation(
+                symbol, kline_close, kline_volume, dtn
+            ):
+                new_open_info = Observation(
+                    price=current_price,
+                    timestamp=current_timestamp,
+                    side=OrderSide.SELL,
+                    strategy=[PositionSide.BD],
+                    name=symbol,
+                )
+            if new_open_info:
+                self.alert_all["OBSERVATIONS"][symbol] = new_open_info.model_dump()
         except Exception:
             success.discard(symbol)
             self.logger.exception(f"处理标的 {symbol} 时发生异常")
@@ -2565,7 +2548,7 @@ class AUTOA:
         cls, hist: pd.DataFrame, bz_reference_high: Optional[float]
     ) -> bool:
         """检查昨日回踩 BZ 基准后，今天是否跳空高开。"""
-        if len(hist) < 2 or bz_reference_high is None or bz_reference_high <= 0:
+        if bz_reference_high is None or bz_reference_high <= 0:
             return False
 
         yesterday_low = float(hist.iloc[-2]["low"])
@@ -3096,12 +3079,12 @@ class AUTOA:
         )
 
         # 数据校验
-        if hist.empty:
+        if len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY:
             return
 
         # 获取最新价格与上一根已完成日K成交量
         price_close = float(hist.iloc[-1]["close"])
-        prev_volume = float(hist.iloc[-2]["volume"]) if len(hist) > 1 else 0.0
+        prev_volume = float(hist.iloc[-2]["volume"])
 
         # 检查是否触及止盈或止损（且已持仓至少1天）
         take_profit_triggered = price_close >= close_info.take_profit
@@ -3312,7 +3295,7 @@ class AUTOA:
             frequency="d",
             adjustflag="3",  # 前复权
         )
-        if hist.empty:
+        if len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY:
             return
         # 获取开盘价、收盘价、最高价序列用于高开判断
         hist_open = hist["open"].values
@@ -3324,84 +3307,80 @@ class AUTOA:
 
         # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
         hist_volume = hist["volume"].values
-        if len(hist_volume) >= cls.VOLUME_CHEB_REQUIRED_HISTORY:
-            should_open = False
-            volume_sample = hist_volume[
-                cls.VOLUME_CHEB_SAMPLE_START_OFFSET : cls.VOLUME_CHEB_SAMPLE_END_OFFSET
-            ]
-            current_volume = hist_volume[-1]
-            volume_guard_threshold = float(sum(volume_sample) / len(volume_sample))
-            # 先计算 supertrend 和 ATR（两种策略都需要）
-            current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
-            if (
-                hist_open[-1] > hist_high[-2]
-                and current_volume >= max(hist_volume[cls.VOLUME_CHEB_SAMPLE_END_OFFSET :])
-                and cls.calculate_chebyshev_probability(
-                    volume_sample,
-                    current_volume,
-                )["chebyshev_upper_bound"]
-                < cls.CHEBYSHEV_EXTREME_THRESHOLD
-            ):
-                open_info.bz_reference_high = float(hist_high[-2])
-                if PositionSide.BZ not in open_info.strategy:
-                    open_info.strategy.append(PositionSide.BZ)
-                cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
-                should_open = True
-            elif (
-                PositionSide.BZ in open_info.strategy
-                and cls.check_gap_up_after_bz_reference(
-                    hist, open_info.bz_reference_high
+        should_open = False
+        volume_sample = hist_volume[
+            cls.VOLUME_CHEB_SAMPLE_START_OFFSET : cls.VOLUME_CHEB_SAMPLE_END_OFFSET
+        ]
+        current_volume = hist_volume[-1]
+        volume_guard_threshold = float(sum(volume_sample) / len(volume_sample))
+        # 先计算 supertrend 和 ATR（两种策略都需要）
+        current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
+        if (
+            hist_open[-1] > hist_high[-2]
+            and current_volume >= max(hist_volume[cls.VOLUME_CHEB_SAMPLE_END_OFFSET :])
+            and cls.calculate_chebyshev_probability(
+                volume_sample,
+                current_volume,
+            )["chebyshev_upper_bound"]
+            < cls.CHEBYSHEV_EXTREME_THRESHOLD
+        ):
+            open_info.bz_reference_high = float(hist_high[-2])
+            if PositionSide.BZ not in open_info.strategy:
+                open_info.strategy.append(PositionSide.BZ)
+            cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+            should_open = True
+        elif (
+            PositionSide.BZ in open_info.strategy
+            and cls.check_gap_up_after_bz_reference(
+                hist, open_info.bz_reference_high
+            )
+        ):
+            if PositionSide.N not in open_info.strategy:
+                open_info.strategy.append(PositionSide.N)
+            should_open = True
+
+        if should_open and current_atr > 0:
+            price_close = float(hist.iloc[-1]["close"])
+            # 初始化止盈止损与AUTOBN一致：基于hl2和ATR倍数计算
+            hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
+            take_profit = hl2 + current_atr * cls.SUPERTREND_FACTOR
+            stop_loss = hl2 - current_atr * cls.SUPERTREND_FACTOR
+            atr_percent = (
+                abs(take_profit - price_close) / price_close
+                if price_close > 0
+                else 0
+            )
+            # 4. 记录到持仓列表
+            cls.alert_all["POSITIONS"][code] = Position(
+                take_profit=take_profit,
+                stop_loss=stop_loss,
+                close_side=OrderSide.SELL,
+                position_side=PositionSide.LONG,
+                entry_price=price_close,
+                name=open_info.name,
+                date=int(today.strftime("%Y%m%d")),
+                strategy=open_info.strategy,
+                stop_guard_threshold=volume_guard_threshold,
+            ).model_dump()
+
+            # 5. 发送买入通知
+            strategy_tag = format_strategy_tags(open_info.strategy)
+            msg = (
+                f"==={open_info.name}**{strategy_tag}**===\n"
+                f"价格:{price_close:.2f}\n"
+                f"止盈:{take_profit:.2f}\n"
+                f"止损:{stop_loss:.2f}\n"
+                f"收益率:{atr_percent:.2%}\n"
+            )
+            pushplus_notification = None
+            if PositionSide.N in open_info.strategy:
+                pushplus_notification = format_trade_notification(
+                    "AUTOA", "开仓", open_info.name, msg
                 )
-            ):
-                if PositionSide.N not in open_info.strategy:
-                    open_info.strategy.append(PositionSide.N)
-                should_open = True
+            await cls.send_msg(msg, pushplus_notification)
 
-            if should_open and current_atr > 0:
-                price_close = float(hist.iloc[-1]["close"])
-                # 初始化止盈止损与AUTOBN一致：基于hl2和ATR倍数计算
-                hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
-                take_profit = hl2 + current_atr * cls.SUPERTREND_FACTOR
-                stop_loss = hl2 - current_atr * cls.SUPERTREND_FACTOR
-                atr_percent = (
-                    abs(take_profit - price_close) / price_close
-                    if price_close > 0
-                    else 0
-                )
-                # 4. 记录到持仓列表
-                cls.alert_all["POSITIONS"][code] = Position(
-                    take_profit=take_profit,
-                    stop_loss=stop_loss,
-                    close_side=OrderSide.SELL,
-                    position_side=PositionSide.LONG,
-                    entry_price=price_close,
-                    name=open_info.name,
-                    date=int(today.strftime("%Y%m%d")),
-                    strategy=open_info.strategy,
-                    stop_guard_threshold=volume_guard_threshold,
-                ).model_dump()
-
-                # 5. 发送买入通知
-                strategy_tag = format_strategy_tags(open_info.strategy)
-                msg = (
-                    f"==={open_info.name}**{strategy_tag}**===\n"
-                    f"价格:{price_close:.2f}\n"
-                    f"止盈:{take_profit:.2f}\n"
-                    f"止损:{stop_loss:.2f}\n"
-                    f"收益率:{atr_percent:.2%}\n"
-                )
-                pushplus_notification = None
-                if PositionSide.N in open_info.strategy:
-                    pushplus_notification = format_trade_notification(
-                        "AUTOA", "开仓", open_info.name, msg
-                    )
-                await cls.send_msg(msg, pushplus_notification)
-
-                # 6. 从观察列表移除
-                cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
-        else:
-            return
-
+            # 6. 从观察列表移除
+            cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
     @classmethod
     async def filter_stocks(cls):
         """
