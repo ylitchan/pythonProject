@@ -2795,7 +2795,6 @@ class AUTOA:
             return None
         hist = await cls.stock_zh_a_hist(
             code,
-            "date,code,open,high,low,close,preclose,volume,amount",
             start_date=trading_days[-1],
             end_date=trading_days[0],
             frequency="d",
@@ -3091,7 +3090,6 @@ class AUTOA:
         # 获取股票历史数据（前复权）
         hist = await cls.stock_zh_a_hist(
             code,
-            "date,code,open,high,low,close,preclose,volume,amount",
             start_date=zt_dates[-1],
             end_date=zt_dates[0],
             frequency="d",  # 日K
@@ -3309,7 +3307,6 @@ class AUTOA:
         # 获取股票历史数据（前复权，确保价格连续性）
         hist = await cls.stock_zh_a_hist(
             code,
-            "date,code,open,high,low,close,preclose,volume,amount",
             start_date=zt_dates[-1],
             end_date=zt_dates[0],
             frequency="d",
@@ -3455,7 +3452,6 @@ class AUTOA:
                     try:
                         hist = await cls.stock_zh_a_hist(
                             code[0],
-                            "date,code,open,high,low,close,preclose,volume,amount",
                             start_date=cls.zt_dates[-1],
                             end_date=cls.zt_dates[0],
                             frequency="d",
