@@ -1437,13 +1437,13 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj = self.make_autobn()
         obj._long_short_ratio_cache["BTCUSDT"] = {
             "data": [{"longShortRatio": "1.1"} for _ in range(30)],
-            "timestamp": 100,
+            "target_date": 1_699_999_200_000,
         }
         obj._call_api = AsyncMock(
-            return_value=[{"longShortRatio": "1.2", "timestamp": 101}]
+            return_value=[{"longShortRatio": "1.2", "timestamp": 1_700_002_000_000}]
         )
 
-        with patch("tokenDemo.autoTrade_pm.time.time", return_value=101):
+        with patch("tokenDemo.autoTrade_pm.time.time", return_value=1_700_002_000):
             result = await obj.get_long_short_ratio("BTCUSDT")
 
         obj._call_api.assert_awaited_once_with(
@@ -1453,6 +1453,50 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             limit=1,
         )
         self.assertEqual(len(result), 31)
+
+    async def test_previous_hour_cache_triggers_hour_ratio_refetch(self):
+        obj = self.make_autobn()
+        obj._long_short_ratio_cache["BTCUSDT"] = {
+            "data": [{"longShortRatio": "1.1"} for _ in range(30)],
+            "target_date": 1_699_995_600_000,
+        }
+        obj._call_api = AsyncMock(
+            side_effect=[
+                [
+                    {"longShortRatio": "1.3", "timestamp": 1_699_999_200_000}
+                    for _ in range(30)
+                ],
+                [{"longShortRatio": "1.2", "timestamp": 1_700_002_000_000}],
+            ]
+        )
+
+        with patch("tokenDemo.autoTrade_pm.time.time", return_value=1_700_002_000):
+            result = await obj.get_long_short_ratio("BTCUSDT")
+
+        self.assertEqual(obj._call_api.await_count, 2)
+        self.assertEqual(result[0]["longShortRatio"], "1.3")
+        self.assertEqual(
+            obj._long_short_ratio_cache["BTCUSDT"]["target_date"],
+            1_699_999_200_000,
+        )
+
+    async def test_unaligned_hour_ratio_is_not_cached(self):
+        obj = self.make_autobn()
+        obj._call_api = AsyncMock(
+            side_effect=[
+                [
+                    {"longShortRatio": "1.3", "timestamp": 1_699_995_600_000}
+                    for _ in range(30)
+                ],
+                [{"longShortRatio": "1.2", "timestamp": 1_700_002_000_000}],
+            ]
+        )
+
+        with patch("tokenDemo.autoTrade_pm.time.time", return_value=1_700_002_000):
+            result = await obj.get_long_short_ratio("BTCUSDT")
+
+        self.assertEqual(len(result), 31)
+        self.assertNotIn("BTCUSDT", obj._long_short_ratio_cache)
 
     async def test_five_minute_ratio_rejects_data_older_than_five_minutes(self):
         obj = self.make_autobn()
@@ -1579,31 +1623,29 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
 
 class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
-    @staticmethod
-    def make_autobn(long_ratio_1h, long_ratio_5m):
+    """BZ做多blend：平均OI取切比雪夫区间，多仓比例取该区间最后一根。"""
+
+    # 前20根为切比雪夫区间（均值100，末根105与均值不等），后10根被排除
+    OI_1H_VALUES = ["95"] * 10 + ["105"] * 10 + ["120"] * 10
+
+    @classmethod
+    def make_autobn(cls, avg_end_long_ratio, long_ratio_5m):
         obj = AUTOBN.__new__(AUTOBN)
         obj.logger = MagicMock()
         dtn = pd.Timestamp("2026-07-25 12:30:00", tz="UTC").to_pydatetime()
-        target_ts = int(
-            pd.Timestamp("2026-07-25 12:00:00", tz="UTC").timestamp() * 1000
-        )
+        # 多空比返回30根1h + 末尾1根5m，1h部分与oi_1h逐位对齐；非目标位填诱饵值
+        avg_end_index = len(cls.OI_1H_VALUES) - AUTOBN.OI_CHEB_EXCLUDE_RECENT_COUNT - 1
+        long_accounts = ["0.9"] * len(cls.OI_1H_VALUES)
+        long_accounts[avg_end_index] = str(avg_end_long_ratio)
+        long_accounts.append(str(long_ratio_5m))
         obj.get_long_short_ratio = AsyncMock(return_value=[
-            {
-                "longShortRatio": "1.5",
-                "longAccount": str(long_ratio_1h),
-                "timestamp": target_ts,
-            },
-            {
-                "longShortRatio": "1.5",
-                "longAccount": str(long_ratio_5m),
-                "timestamp": int(dtn.timestamp() * 1000),
-            },
+            {"longShortRatio": "1.5", "longAccount": v} for v in long_accounts
         ])
         obj._get_oi_5m_data = AsyncMock(
             return_value=[{"sumOpenInterest": "120"}]
         )
         obj._get_oi_1h_data = AsyncMock(return_value=[
-            {"sumOpenInterest": "100"} for _ in range(20)
+            {"sumOpenInterest": v} for v in cls.OI_1H_VALUES
         ])
         obj.calculate_chebyshev_probability = MagicMock(
             return_value={"chebyshev_upper_bound": 0.001}
@@ -1611,9 +1653,10 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
         return obj, dtn
 
     async def test_long_signal_allows_high_raw_ratio_when_blend_passes(self):
-        obj, dtn = self.make_autobn(long_ratio_1h=0.7, long_ratio_5m=0.6)
+        # blend = (100*0.7 + (120-100)*0.4) / 120 = 0.65 >= 0.6
+        obj, dtn = self.make_autobn(avg_end_long_ratio=0.7, long_ratio_5m=0.6)
 
-        passed, lsrd, _ = await obj.check_side(
+        passed, lsrd, stop_guard = await obj.check_side(
             asyncio.Semaphore(1),
             "BTCUSDT",
             PositionSide.LONG.value,
@@ -1622,9 +1665,26 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(passed)
         self.assertEqual(lsrd, 1.5)
+        self.assertAlmostEqual(stop_guard, 100.0)
 
     async def test_long_signal_still_rejects_when_blend_fails(self):
-        obj, dtn = self.make_autobn(long_ratio_1h=0.5, long_ratio_5m=0.6)
+        # blend = (100*0.5 + (120-100)*0.4) / 120 ≈ 0.483 < 0.6
+        obj, dtn = self.make_autobn(avg_end_long_ratio=0.5, long_ratio_5m=0.6)
+
+        passed, lsrd, stop_guard = await obj.check_side(
+            asyncio.Semaphore(1),
+            "BTCUSDT",
+            PositionSide.LONG.value,
+            dtn=dtn,
+        )
+
+        self.assertFalse(passed)
+        self.assertIsNone(lsrd)
+        self.assertIsNone(stop_guard)
+
+    async def test_long_signal_blend_uses_cheb_window_avg_oi_and_ratio(self):
+        """区分口径：新口径blend=0.65被拒；取末根OI或区间外比例（0.9）会误放行。"""
+        obj, dtn = self.make_autobn(avg_end_long_ratio=0.7, long_ratio_5m=0.66)
 
         passed, lsrd, stop_guard = await obj.check_side(
             asyncio.Semaphore(1),

@@ -309,7 +309,6 @@ class AUTOBN:
 
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
-    LONG_SHORT_RATIO_CACHE_TTL = 900  # 多空比缓存过期时间（秒）
     EXCHANGE_INFO_CACHE_TTL = 6 * 60 * 60  # 交易所元数据缓存过期时间（6小时）
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
@@ -1176,10 +1175,6 @@ class AUTOBN:
                     return False, None, None
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
-                    target_ts_1h = int(
-                        dtn.replace(minute=0, second=0, microsecond=0).timestamp()
-                        * 1000
-                    )
                     oi_1h = await self._get_oi_1h_data(symbol, dtn)
 
                     if not oi_1h:
@@ -1197,43 +1192,21 @@ class AUTOBN:
                     if current_total_oi <= 0:
                         return False, None, None
 
-                    latest_oi_1h = float(oi_1h[-1]["sumOpenInterest"])
-                    latest_ratio_item_5m = long_short_ratio_data[-1]
-                    long_ratio_5m = _extract_long_ratio(latest_ratio_item_5m)
-                    if long_ratio_5m is None:
+                    # blend 基准：切比雪夫区间的平均OI + 该区间最后一根的多仓比例
+                    # 多空比列表尾部是5m那根，剔除后前30根1h与oi_1h逐位对齐
+                    avg_oi_1h = sum(oi_hist_for_cheb) / len(oi_hist_for_cheb)
+                    lsr_hist_for_avg = long_short_ratio_data[:-1][
+                        : -self.OI_CHEB_EXCLUDE_RECENT_COUNT
+                    ]
+                    if not lsr_hist_for_avg:
                         return False, None, None
 
-                    ratio_item_1h = None
-                    for item in reversed(long_short_ratio_data):
-                        item_ts = item.get("timestamp")
-                        if item_ts is None:
-                            continue
-                        if int(item_ts) == target_ts_1h:
-                            ratio_item_1h = item
-                            break
-
-                    if ratio_item_1h is None:
-                        for item in reversed(long_short_ratio_data):
-                            item_ts = item.get("timestamp")
-                            if item_ts is None:
-                                continue
-                            try:
-                                if int(item_ts) <= target_ts_1h:
-                                    ratio_item_1h = item
-                                    break
-                            except Exception:
-                                continue
-
-                    if ratio_item_1h is None:
-                        return False, None, None
-
-                    long_ratio_1h = _extract_long_ratio(ratio_item_1h)
-                    if long_ratio_1h is None:
-                        return False, None, None
+                    avg_end_long_ratio = _extract_long_ratio(lsr_hist_for_avg[-1])
+                    long_ratio_5m = _extract_long_ratio(long_short_ratio_data[-1])
 
                     blend = (
-                        latest_oi_1h * long_ratio_1h
-                        + (oi_5m_last - latest_oi_1h) * self.OI_DELTA_LONG_RATIO_WEIGHT
+                        avg_oi_1h * avg_end_long_ratio
+                        + (oi_5m_last - avg_oi_1h) * self.OI_DELTA_LONG_RATIO_WEIGHT
                     ) / current_total_oi
 
                     if blend < long_ratio_5m:
@@ -1247,7 +1220,7 @@ class AUTOBN:
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    stop_guard_threshold = sum(oi_hist_for_cheb) / len(oi_hist_for_cheb)
+                    stop_guard_threshold = avg_oi_1h
                     return (
                         (True, lsrd, stop_guard_threshold)
                         if passed
@@ -1304,14 +1277,14 @@ class AUTOBN:
             多空人数比数据列表，缓存失效或强制刷新时重新获取
         """
         current_time = time.time()
+        target_ts_1h = int(current_time // 3600) * 3600 * 1000
         cache_entry = self._long_short_ratio_cache.get(symbol)
 
-        # 检查缓存是否有效
+        # 检查缓存是否有效：按整点键控，与1h OI缓存同口径
         if (
             not force_refresh
             and cache_entry
-            and (current_time - cache_entry["timestamp"])
-            < self.LONG_SHORT_RATIO_CACHE_TTL
+            and cache_entry.get("target_date") == target_ts_1h
         ):
             data = cache_entry["data"]
         else:
@@ -1325,11 +1298,12 @@ class AUTOBN:
                 )
                 if not data or len(data) < self.LONG_SHORT_RATIO_LIMIT:
                     return []
-                # 更新缓存
-                self._long_short_ratio_cache[symbol] = {
-                    "data": data,
-                    "timestamp": current_time,
-                }
+                # 末根对齐当前整点才入缓存，避免后续与1h OI逐位错位
+                if int(data[-1].get("timestamp", 0) or 0) == target_ts_1h:
+                    self._long_short_ratio_cache[symbol] = {
+                        "data": data,
+                        "target_date": target_ts_1h,
+                    }
             except Exception as e:
                 self.logger.error(
                     f"{symbol}获取多空比数据失败: {type(e).__name__}: {e!r}"
