@@ -40,15 +40,23 @@ tags: [autobn, bz, bd, cache, open-interest, long-short-ratio]
 
 两处多空比的 `except` 分支从 `return []` 改成 `return 缓存 or []`：拉取失败就是没有新数据可比，按协议第 3 条照用缓存。**这一条反转了本 issue 早期版本"拉取失败不拿隔日旧缓存顶"的口径**，是用户明确要求的结果。
 
+两个 OI 方法补上 `try/except`，四条取数路径的异常处理这才对称（原为顺手发现，用户要求本次一并补）：
+
+- `autoTrade_pm.py:1051-1063`（`_get_oi_5m_data`）— `_call_api` 包进 `try`，异常时记 `f"{symbol}获取5m持仓量数据失败: {type(e).__name__}: {e!r}"` 并 `return self._oi_5m_cache.get(symbol)`。
+- `autoTrade_pm.py:1084-1096`（`_get_oi_1d_data`）— 同构，日志文案 `获取1d持仓量数据失败`。
+
+两处都返回 `缓存` 而不是 `缓存 or []`：OI 侧消费者按 `if not oi_5m` / `if not oi_1d` 判空，从没缓存时返回 `None` 是原有契约，不跟多空比侧的 `or []` 对齐。补这层的实际收益是 `_close_triggered_position:1538` 那次调用不再因单次 API 异常冒到 `rzq_token` 的兜底 `except`——原先会连带跳过同轮的移动止盈/止损重算和 `alert_all["POSITIONS"]` 回写（硬止损/止盈在 `if not sl_triggered and not tp_triggered:` 之前判完，从来吞不掉）。
+
 ## 怎么验证的
 
-`uv run ruff check tokenDemo/autoTrade_pm.py tokenDemo/test_autoTrade_pm.py` 通过；`uv run python -m unittest discover -s tokenDemo -p "test_autoTrade_pm.py"` 110 项 OK。
+`uv run ruff check tokenDemo/autoTrade_pm.py tokenDemo/test_autoTrade_pm.py` 通过；`uv run python -m unittest discover -s tokenDemo -p "test_autoTrade_pm.py"` 114 项 OK。
 
 用例覆盖四个方法 × 协议三步，每步都有对应断言：
 
 - 第 1 步不打 API：`test_lsr_5m_skips_api_when_cache_is_current_bar` / `test_oi_5m_matches_lsr_5m_cache_protocol`（同时钉 `limit=1`）/ `test_lsr_1d_uses_cache_when_last_bar_is_utc_day_start` / `test_daily_oi_uses_cache_when_last_bar_is_utc_day_start`。
 - 第 2 步只换更新的：`test_*_keeps_cache_when_fetched_bar_is_not_newer`（5m 两个）/ `test_*_keeps_cache_when_fetched_series_is_not_newer`（1d 两个）/ `test_lsr_1d_refetches_after_utc_day_rollover`。
 - 第 3 步一律返回缓存：`test_*_returns_cache_when_response_is_empty`、`test_lsr_1d_falls_back_to_cache_on_api_error`、以及无缓存时的 `test_lsr_5m_returns_empty_when_never_cached` / `test_oi_5m_returns_none_when_never_cached` / `test_lsr_1d_returns_empty_on_api_error_without_cache`。
+- OI 侧新补的异常路径：`test_oi_5m_falls_back_to_cache_on_api_error` / `test_daily_oi_falls_back_to_cache_on_api_error`（异常时照用缓存 + 记一条 error 日志）、`test_oi_5m_returns_none_on_api_error_without_cache` / `test_daily_oi_returns_none_on_api_error_without_cache`（无缓存时返回 `None` 而不是 `[]`）。
 - 滞后序列先用后换：`test_lsr_1d_caches_lagging_series_then_swaps_in_newer` / `test_daily_oi_caches_lagging_series_then_swaps_in_newer`（`await_count == 2`）。
 - 短序列不入缓存：`test_lsr_1d_drops_bars_after_utc_day_start` / `test_daily_oi_drops_bars_after_utc_day_start`。
 - helper 边界：`test_is_current_5m_bar_matches_period_boundary_exactly`（严格等于当期边界，`+1` 判否、秒级换算、缺时间戳判否）/ `test_is_newer_bar_compares_timestamps`。
@@ -57,9 +65,10 @@ tags: [autobn, bz, bd, cache, open-interest, long-short-ratio]
 
 **14 次反向变异各自回滚验证测试非假绿**：抹掉四个方法的当期判据（各挂 1）、抹掉四个方法的 `_is_newer_bar` 闸（各挂 1）、抹掉两处 1d 的 `len >= LIMIT` 闸（各挂 1）、四个方法末尾返回拉取值而不是缓存（各挂 2）、多空比异常路径不回退缓存（挂 1）。首轮跑出两处假绿（1d OI 缺"当期就不拉"和"短序列不入缓存"的用例），补齐后全部命中。
 
+OI 侧 `try/except` 补完后**另跑 6 次变异全部命中**：两个方法异常路径改成 `return None`（各挂 1）、整段 `try/except` 拆掉让异常上冒（各挂 2）、异常时不记日志（各挂 2）。
+
 回归面：`_close_triggered_position` 的 OI 止损护栏路径、BZ LONG blend 五个用例全部原样通过。
 
 ## 顺手发现
 
-- `_get_oi_5m_data` / `_get_oi_1d_data` 没有 `try/except`，两个多空比方法有——OI 侧 `_call_api` 抛异常时会往上冒，拿不到"回退缓存"这层保护。本次只统一缓存协议，异常处理不在范围内，可后续另开 issue。
 - 四条缓存现在都是"只增不减、末根单调推进"，没有淘汰：`_call_api` 长期失败时策略会一直拿最后一次成功的数据算，且下游不再有任何新鲜度否决。这是用户选定口径的直接后果，不是缺陷——但如果以后要加"太旧就别算了"的护栏，位置应该在消费者侧而不是取数侧。

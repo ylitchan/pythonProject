@@ -1048,12 +1048,19 @@ class AUTOBN:
         if cached and self._is_current_5m_bar(cached[-1]):
             return cached
 
-        oi_5m = await self._call_api(
-            self.market_client.rest_api.open_interest_statistics,
-            symbol=symbol,
-            period="5m",
-            limit=1,
-        )
+        try:
+            oi_5m = await self._call_api(
+                self.market_client.rest_api.open_interest_statistics,
+                symbol=symbol,
+                period="5m",
+                limit=1,
+            )
+        except Exception as e:
+            self.logger.error(
+                f"{symbol}获取5m持仓量数据失败: {type(e).__name__}: {e!r}"
+            )
+            return self._oi_5m_cache.get(symbol)
+
         if oi_5m and self._is_newer_bar(oi_5m[-1], cached):
             self._oi_5m_cache[symbol] = oi_5m
         return self._oi_5m_cache.get(symbol)
@@ -1074,12 +1081,19 @@ class AUTOBN:
         if cached and self._bar_timestamp_ms(cached[-1]) == available_before_ts:
             return cached
 
-        oi_1d = await self._call_api(
-            self.market_client.rest_api.open_interest_statistics,
-            symbol=symbol,
-            period="1d",
-            limit=self.OI_QUERY_LIMIT,
-        )
+        try:
+            oi_1d = await self._call_api(
+                self.market_client.rest_api.open_interest_statistics,
+                symbol=symbol,
+                period="1d",
+                limit=self.OI_QUERY_LIMIT,
+            )
+        except Exception as e:
+            self.logger.error(
+                f"{symbol}获取1d持仓量数据失败: {type(e).__name__}: {e!r}"
+            )
+            return self._oi_1d_cache.get(symbol)
+
         available_oi = [
             item
             for item in (oi_1d or [])

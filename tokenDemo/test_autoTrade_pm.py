@@ -1761,6 +1761,35 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertIsNone(await obj._get_oi_5m_data("BTCUSDT"))
 
+    async def test_oi_5m_falls_back_to_cache_on_api_error(self):
+        """拉取失败与多空比侧同构：记日志后照用缓存，不把异常抛给上层。"""
+        obj = self.make_autobn()
+        obj._oi_5m_cache["BTCUSDT"] = [
+            {"sumOpenInterest": "88", "timestamp": self.PREV_BAR_5M_MS}
+        ]
+        obj._call_api = AsyncMock(side_effect=RuntimeError("boom"))
+
+        with patch(
+            "tokenDemo.autoTrade_pm.time.time",
+            return_value=self.NOW_IN_5M_PERIOD,
+        ):
+            result = await obj._get_oi_5m_data("BTCUSDT")
+
+        self.assertEqual(result[-1]["sumOpenInterest"], "88")
+        obj.logger.error.assert_called_once()
+
+    async def test_oi_5m_returns_none_on_api_error_without_cache(self):
+        obj = self.make_autobn()
+        obj._call_api = AsyncMock(side_effect=RuntimeError("boom"))
+
+        with patch(
+            "tokenDemo.autoTrade_pm.time.time",
+            return_value=self.NOW_IN_5M_PERIOD,
+        ):
+            self.assertIsNone(await obj._get_oi_5m_data("BTCUSDT"))
+
+        obj.logger.error.assert_called_once()
+
     async def test_is_current_5m_bar_matches_period_boundary_exactly(self):
         """这个判据只决定"要不要打API"，不再用来否决数据。"""
         obj = self.make_autobn()
@@ -2189,6 +2218,49 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIsNone(result)
         self.assertEqual(obj._oi_1d_cache, {})
+
+    async def test_daily_oi_falls_back_to_cache_on_api_error(self):
+        """拉取失败与多空比侧同构：记日志后照用缓存，不把异常抛给 rzq_token 外层。"""
+        obj = AUTOBN.__new__(AUTOBN)
+        boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
+        obj._oi_1d_cache = {
+            "BTCUSDT": [
+                {
+                    "sumOpenInterest": "88",
+                    "timestamp": int(
+                        (boundary.timestamp() - 86400 - (29 - i) * 86400) * 1000
+                    ),
+                }
+                for i in range(30)
+            ]
+        }
+        obj._call_api = AsyncMock(side_effect=RuntimeError("boom"))
+        obj.market_client = MagicMock()
+        obj.logger = MagicMock()
+
+        result = await obj._get_oi_1d_data(
+            "BTCUSDT",
+            pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+        )
+
+        self.assertEqual(len(result), 30)
+        self.assertEqual(result[-1]["sumOpenInterest"], "88")
+        obj.logger.error.assert_called_once()
+
+    async def test_daily_oi_returns_none_on_api_error_without_cache(self):
+        obj = AUTOBN.__new__(AUTOBN)
+        obj._oi_1d_cache = {}
+        obj._call_api = AsyncMock(side_effect=RuntimeError("boom"))
+        obj.market_client = MagicMock()
+        obj.logger = MagicMock()
+
+        result = await obj._get_oi_1d_data(
+            "BTCUSDT",
+            pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+        )
+
+        self.assertIsNone(result)
+        obj.logger.error.assert_called_once()
 
     async def test_daily_oi_caches_lagging_series_then_swaps_in_newer(self):
         """币安还没发布当天那根：先照用这份，末根对不上当天零点就继续拉，更新的才换。"""
