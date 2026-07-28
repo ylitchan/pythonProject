@@ -1,11 +1,16 @@
 ---
 doc_type: issue-fix
 issue: 2026-07-28-daily-cache-locks-stale-series
-status: fixed
+status: superseded
 severity: P1
 summary: 1d OI/多空比缓存无条件写入，跨UTC零点遇发布延迟会把过期序列锁定一整天
 tags: [autobn, bz, cache, open-interest, long-short-ratio]
 ---
+
+> **已被取代（2026-07-28）**：本文根因（缓存键按 UTC 日、跨零点会锁死一整天）仍然成立且仍是有效记录，但下面「修了什么」采用的**失败关闭**方案已被用户改判，由
+> `.codestable/issues/2026-07-28-5m-cache-ttl-stale-window/5m-cache-ttl-stale-window-fix-note.md`
+> 的「末根时间戳单调推进」协议整体替换：末根滞后不再判掉数据，而是照用并在拉到更新的末根时替换缓存；两处多空比的 `except` 也恢复回退缓存。
+> 本文第 22-24 行描述的三处改动在当前代码里已不存在。
 
 ## 根因
 
