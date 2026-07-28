@@ -310,7 +310,7 @@ class AUTOBN:
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
     EXCHANGE_INFO_CACHE_TTL = 6 * 60 * 60  # 交易所元数据缓存过期时间（6小时）
-    OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
+    FIVE_MIN_DATA_MAX_AGE = 300  # 5m数据新鲜度上限（秒），末根超龄即判不可用
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
     OI_DELTA_LONG_RATIO_WEIGHT = 0.4  # LONG融合公式中(oi_5m-oi_1d)项权重
 
@@ -483,8 +483,9 @@ class AUTOBN:
         # 初始化1d持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
         # target_date 是当天UTC零点的时间戳(毫秒)，用于判断缓存是否过期
         obj._oi_1d_cache = {}
-        # 初始化5分钟持仓量缓存: {symbol: {"data": [...], "timestamp": float}}
+        # 初始化5m缓存: {symbol: [末根]}，有效性完全由末根时间戳判定，不存取数时刻
         obj._oi_5m_cache = {}
+        obj._lsr_5m_cache = {}
         # 初始化基差率缓存: {symbol: {"data": float, "timestamp": float}}
         obj._basis_rate_cache = {}
         # 分批扫描窗口状态：每个窗口固定一份symbols快照，避免窗口内漂移
@@ -1011,29 +1012,34 @@ class AUTOBN:
                 )
         return None
 
+    @classmethod
+    def _is_fresh_5m_bar(cls, item) -> bool:
+        """末根距今在5分钟内才算新鲜：时间戳是收盘时刻，刚发布那根年龄接近0"""
+        raw = item.get("timestamp")
+        if raw is None:
+            return False
+        timestamp = float(raw)
+        if timestamp > 10**12:
+            timestamp /= 1000
+        age_seconds = time.time() - timestamp
+        return 0 <= age_seconds <= cls.FIVE_MIN_DATA_MAX_AGE
+
     async def _get_oi_5m_data(self, symbol):
-        """获取5m OI数据（优先缓存）"""
-        current_time_5m = time.time()
-        oi_5m_cache = self._oi_5m_cache.get(symbol)
-        if (
-            oi_5m_cache
-            and (current_time_5m - oi_5m_cache["timestamp"]) < self.OI_5M_CACHE_TTL
-            and len(oi_5m_cache["data"]) >= self.OI_QUERY_LIMIT
-        ):
-            return oi_5m_cache["data"]
+        """获取最新1根5m OI，按末根时间戳判新鲜度，新鲜才入缓存。"""
+        cached = self._oi_5m_cache.get(symbol)
+        if cached and self._is_fresh_5m_bar(cached[-1]):
+            return cached
 
         oi_5m = await self._call_api(
             self.market_client.rest_api.open_interest_statistics,
             symbol=symbol,
             period="5m",
-            limit=self.OI_QUERY_LIMIT,
+            limit=1,
         )
-        if not oi_5m or len(oi_5m) < self.OI_QUERY_LIMIT:
+        # 末根超龄说明币安还没发布当期那根：不入缓存，下次重新拉
+        if not oi_5m or not self._is_fresh_5m_bar(oi_5m[-1]):
             return None
-        self._oi_5m_cache[symbol] = {
-            "data": oi_5m,
-            "timestamp": current_time_5m,
-        }
+        self._oi_5m_cache[symbol] = oi_5m
         return oi_5m
 
     @staticmethod
@@ -1089,12 +1095,6 @@ class AUTOBN:
         if not oi_5m:
             return None, None
         latest_oi_5m = oi_5m[-1]
-        latest_timestamp = latest_oi_5m.get("timestamp")
-        if latest_timestamp is None:
-            return None, None
-        age_seconds = dtn.timestamp() - int(latest_timestamp) / 1000
-        if age_seconds < 0 or age_seconds > self.OI_5M_CACHE_TTL:
-            return None, None
 
         completed_oi = [float(item["sumOpenInterest"]) for item in oi_1d]
         realtime_oi = completed_oi + [
@@ -1285,7 +1285,11 @@ class AUTOBN:
         return available_lsr
 
     async def _get_lsr_5m_data(self, symbol: str):
-        """获取最新1根5m多空人数比，不缓存，只接受5分钟内的数据。"""
+        """获取最新1根5m多空人数比，按末根时间戳判新鲜度，新鲜才入缓存。"""
+        cached = self._lsr_5m_cache.get(symbol)
+        if cached and self._is_fresh_5m_bar(cached[-1]):
+            return cached
+
         try:
             data = await self._call_api(
                 self.market_client.rest_api.long_short_ratio,
@@ -1299,15 +1303,11 @@ class AUTOBN:
             )
             return []
 
-        fresh_data = []
-        freshness_time = time.time()
-        for item in data or []:
-            timestamp = float(item.get("timestamp", 0) or 0)
-            if timestamp > 10**12:
-                timestamp /= 1000
-            if 0 <= freshness_time - timestamp <= 5 * 60:
-                fresh_data.append(item)
-        return fresh_data if len(fresh_data) == 1 else []
+        # 末根超龄说明币安还没发布当期那根：不入缓存，下次重新拉
+        if not data or not self._is_fresh_5m_bar(data[-1]):
+            return []
+        self._lsr_5m_cache[symbol] = data
+        return data
 
     async def get_basis_rate(self, symbol: str) -> float:
         """
