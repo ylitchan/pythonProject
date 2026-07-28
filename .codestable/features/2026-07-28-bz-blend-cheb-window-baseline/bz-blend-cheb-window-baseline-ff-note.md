@@ -8,6 +8,8 @@ tags: [autobn, bz, blend, long-short-ratio, cache]
 
 ## 做了什么
 
+> 其中的 1h 周期与整点键控部分已被 `2026-07-28-bz-lsr-oi-daily-period` 取代（改用 1d + UTC 日边界）；blend 取切比雪夫区间均值这条口径仍然有效。
+
 AUTOBN BZ 做多的 blend 基准从「当前整点那一根」改成「切比雪夫区间（前 20 根 1h）」：OI 取该区间均值，多仓比例取该区间**最后一根**的值。blend 是 BZ 唯一的多空比开仓闸（见 `2026-07-26-remove-bz-raw-ratio-gates`），改成区间口径后不再被单根整点的抖动带偏。
 
 配套把多空比缓存从 900 秒 TTL 改成按整点键控，与 1h OI 缓存同口径——两条序列要逐位对齐才能取「区间最后一根」，TTL 键控会在跨整点时让多空比落后 OI 一根。

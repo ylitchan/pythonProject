@@ -312,7 +312,7 @@ class AUTOBN:
     EXCHANGE_INFO_CACHE_TTL = 6 * 60 * 60  # 交易所元数据缓存过期时间（6小时）
     OI_5M_CACHE_TTL = 300  # 5分钟持仓量缓存过期时间（秒）
     LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
-    OI_DELTA_LONG_RATIO_WEIGHT = 0.4  # LONG融合公式中(oi_5m-oi_1h)项权重
+    OI_DELTA_LONG_RATIO_WEIGHT = 0.4  # LONG融合公式中(oi_5m-oi_1d)项权重
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
@@ -478,14 +478,11 @@ class AUTOBN:
         obj._exchange_info_cache_timestamp = 0.0
         obj._http_session = None
         obj.is_early_morning = False
-        # 初始化多空比缓存: {symbol: {"data": [...], "timestamp": float}}
-        obj._long_short_ratio_cache = {}
+        # 初始化1d多空比缓存: {symbol: {"data": [...], "target_date": int}}
+        obj._lsr_1d_cache = {}
         # 初始化1d持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
-        # target_date 是当天8点的时间戳(毫秒)，用于判断缓存是否过期（用于 check_side）
+        # target_date 是当天UTC零点的时间戳(毫秒)，用于判断缓存是否过期
         obj._oi_1d_cache = {}
-        # 初始化1h持仓量历史缓存: {symbol: {"data": [...], "target_date": int}}
-        # target_date 是当前整点的时间戳(毫秒)，用于判断缓存是否过期（用于 check_oi）
-        obj._oi_1h_cache = {}
         # 初始化5分钟持仓量缓存: {symbol: {"data": [...], "timestamp": float}}
         obj._oi_5m_cache = {}
         # 初始化基差率缓存: {symbol: {"data": float, "timestamp": float}}
@@ -1039,40 +1036,17 @@ class AUTOBN:
         }
         return oi_5m
 
-    async def _get_oi_1h_data(self, symbol, dtn: datetime):
-        """获取1h OI数据（优先缓存，按当前整点对齐）"""
-        dtn_target_1h = dtn.replace(minute=0, second=0, microsecond=0)
-        target_ts_1h = int(dtn_target_1h.timestamp() * 1000)
-        oi_1h_cache = self._oi_1h_cache.get(symbol)
-        if (
-            oi_1h_cache
-            and oi_1h_cache.get("target_date") == target_ts_1h
-            and len(oi_1h_cache["data"]) >= self.OI_QUERY_LIMIT
-        ):
-            return oi_1h_cache["data"]
-
-        oi_1h = await self._call_api(
-            self.market_client.rest_api.open_interest_statistics,
-            symbol=symbol,
-            period="1h",
-            limit=self.OI_QUERY_LIMIT,
-        )
-        if not oi_1h or len(oi_1h) < self.OI_QUERY_LIMIT:
-            return None
-        if oi_1h[-1]["timestamp"] == target_ts_1h:
-            self._oi_1h_cache[symbol] = {
-                "data": oi_1h,
-                "target_date": target_ts_1h,
-            }
-        return oi_1h
+    @staticmethod
+    def _utc_day_start_ms(dtn: datetime) -> int:
+        """当天UTC零点的毫秒时间戳：1d数据的可得边界，同时用作缓存键"""
+        utc_day = datetime.datetime.fromtimestamp(
+            dtn.timestamp(), datetime.timezone.utc
+        ).replace(hour=0, minute=0, second=0, microsecond=0)
+        return int(utc_day.timestamp() * 1000)
 
     async def _get_oi_1d_data(self, symbol, dtn: datetime):
         """获取当前时刻已可得的1d OI数据，按UTC日边界缓存。"""
-        current_timestamp = dtn.timestamp()
-        utc_day = datetime.datetime.fromtimestamp(
-            current_timestamp, datetime.timezone.utc
-        ).replace(hour=0, minute=0, second=0, microsecond=0)
-        available_before_ts = int(utc_day.timestamp() * 1000)
+        available_before_ts = self._utc_day_start_ms(dtn)
 
         cache_entry = self._oi_1d_cache.get(symbol)
         if (
@@ -1149,17 +1123,13 @@ class AUTOBN:
                     passed = oi_5m_last <= oi_peak * (1 - self.BD_OI_DRAWDOWN_RATIO)
                     return (True, None, None) if passed else (False, None, None)
 
-                # 获取多空人数比数据（使用缓存）
-                long_short_ratio_data = await self.get_long_short_ratio(symbol)
-                # 提取最新的多空人数比
-                if not long_short_ratio_data:
+                # 多空人数比：1d序列按UTC日缓存，5m那根每次实拉
+                lsr_1d = await self._get_lsr_1d_data(symbol, dtn)
+                lsr_5m = await self._get_lsr_5m_data(symbol)
+                if not lsr_1d or not lsr_5m:
                     return False, None, None
 
-                # 提取所有历史多空比值
-                lsr_values = [
-                    float(item["longShortRatio"]) for item in long_short_ratio_data
-                ]
-                lsrd = lsr_values[-1]  # 当前值
+                lsrd = float(lsr_5m[0]["longShortRatio"])  # 当前值
 
                 # 多仓比例提取：优先 longAccount，缺失时由 longShortRatio 推导
                 def _extract_long_ratio(item):
@@ -1175,14 +1145,12 @@ class AUTOBN:
                     return False, None, None
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
-                    oi_1h = await self._get_oi_1h_data(symbol, dtn)
+                    oi_1d = await self._get_oi_1d_data(symbol, dtn)
 
-                    if not oi_1h:
+                    if not oi_1d:
                         return False, None, None
-                    sumOpenInterest_1h = [float(i["sumOpenInterest"]) for i in oi_1h]
-                    if len(sumOpenInterest_1h) < 1:
-                        return False, None, None
-                    oi_hist_for_cheb = sumOpenInterest_1h[
+                    sumOpenInterest_1d = [float(i["sumOpenInterest"]) for i in oi_1d]
+                    oi_hist_for_cheb = sumOpenInterest_1d[
                         : -self.OI_CHEB_EXCLUDE_RECENT_COUNT
                     ]
                     if len(oi_hist_for_cheb) < self.MIN_CHEB_SAMPLE_SIZE:
@@ -1193,34 +1161,36 @@ class AUTOBN:
                         return False, None, None
 
                     # blend 基准：切比雪夫区间的平均OI + 该区间最后一根的多仓比例
-                    # 多空比列表尾部是5m那根，剔除后前30根1h与oi_1h逐位对齐
-                    avg_oi_1h = sum(oi_hist_for_cheb) / len(oi_hist_for_cheb)
-                    lsr_hist_for_avg = long_short_ratio_data[:-1][
-                        : -self.OI_CHEB_EXCLUDE_RECENT_COUNT
-                    ]
-                    if not lsr_hist_for_avg:
+                    # 两条1d序列各自按UTC日缓存，按时间戳定位才不受刷新时点差异影响
+                    avg_oi_1d = sum(oi_hist_for_cheb) / len(oi_hist_for_cheb)
+                    window_end_ts = int(
+                        oi_1d[-self.OI_CHEB_EXCLUDE_RECENT_COUNT - 1]["timestamp"]
+                    )
+                    lsr_1d_by_ts = {int(i["timestamp"]): i for i in lsr_1d}
+                    window_end_lsr = lsr_1d_by_ts.get(window_end_ts)
+                    if window_end_lsr is None:
                         return False, None, None
 
-                    avg_end_long_ratio = _extract_long_ratio(lsr_hist_for_avg[-1])
-                    long_ratio_5m = _extract_long_ratio(long_short_ratio_data[-1])
+                    avg_end_long_ratio = _extract_long_ratio(window_end_lsr)
+                    long_ratio_5m = _extract_long_ratio(lsr_5m[0])
 
                     blend = (
-                        avg_oi_1h * avg_end_long_ratio
-                        + (oi_5m_last - avg_oi_1h) * self.OI_DELTA_LONG_RATIO_WEIGHT
+                        avg_oi_1d * avg_end_long_ratio
+                        + (oi_5m_last - avg_oi_1d) * self.OI_DELTA_LONG_RATIO_WEIGHT
                     ) / current_total_oi
 
                     if blend < long_ratio_5m:
                         return False, None, None
 
                     passed = (
-                        oi_5m_last >= max(sumOpenInterest_1h)
+                        oi_5m_last >= max(sumOpenInterest_1d)
                         and self.calculate_chebyshev_probability(
                             oi_hist_for_cheb,
                             oi_5m_last,
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    stop_guard_threshold = avg_oi_1h
+                    stop_guard_threshold = avg_oi_1d
                     return (
                         (True, lsrd, stop_guard_threshold)
                         if passed
@@ -1265,58 +1235,50 @@ class AUTOBN:
                 # 获取失败时返回空列表
                 return []
 
-    async def get_long_short_ratio(self, symbol: str, force_refresh: bool = False):
-        """
-        获取多空人数比数据（带缓存）
+    async def _get_lsr_1d_data(self, symbol: str, dtn: datetime):
+        """获取当前时刻已可得的1d多空人数比，按UTC日边界缓存（与1d OI同口径）。"""
+        available_before_ts = self._utc_day_start_ms(dtn)
 
-        功能：从币安获取指定交易对的多空人数比数据，结果会被缓存
-        参数：
-            symbol: 交易对符号，如'BTCUSDT'
-            force_refresh: 是否强制刷新缓存，默认False
-        返回：
-            多空人数比数据列表，缓存失效或强制刷新时重新获取
-        """
-        current_time = time.time()
-        target_ts_1h = int(current_time // 3600) * 3600 * 1000
-        cache_entry = self._long_short_ratio_cache.get(symbol)
-
-        # 检查缓存是否有效：按整点键控，与1h OI缓存同口径
+        cache_entry = self._lsr_1d_cache.get(symbol)
         if (
-            not force_refresh
-            and cache_entry
-            and cache_entry.get("target_date") == target_ts_1h
+            cache_entry
+            and cache_entry.get("target_date") == available_before_ts
+            and len(cache_entry["data"]) >= self.LONG_SHORT_RATIO_LIMIT
         ):
-            data = cache_entry["data"]
-        else:
-            # 缓存无效或强制刷新，重新获取数据
-            try:
-                data = await self._call_api(
-                    self.market_client.rest_api.long_short_ratio,
-                    symbol=symbol,
-                    period="1h",
-                    limit=self.LONG_SHORT_RATIO_LIMIT,
-                )
-                if not data or len(data) < self.LONG_SHORT_RATIO_LIMIT:
-                    return []
-                # 末根对齐当前整点才入缓存，避免后续与1h OI逐位错位
-                if int(data[-1].get("timestamp", 0) or 0) == target_ts_1h:
-                    self._long_short_ratio_cache[symbol] = {
-                        "data": data,
-                        "target_date": target_ts_1h,
-                    }
-            except Exception as e:
-                self.logger.error(
-                    f"{symbol}获取多空比数据失败: {type(e).__name__}: {e!r}"
-                )
-                # 如果获取失败但有旧缓存，返回旧数据
-                if cache_entry:
-                    data = cache_entry["data"]
-                else:
-                    data = []
-        if not data or len(data) < self.LONG_SHORT_RATIO_LIMIT:
-            return []
+            return cache_entry["data"]
+
         try:
-            data2 = await self._call_api(
+            data = await self._call_api(
+                self.market_client.rest_api.long_short_ratio,
+                symbol=symbol,
+                period="1d",
+                limit=self.LONG_SHORT_RATIO_LIMIT,
+            )
+        except Exception as e:
+            self.logger.error(
+                f"{symbol}获取1d多空比数据失败: {type(e).__name__}: {e!r}"
+            )
+            # 获取失败时退回旧缓存：取值按时间戳定位，滞后一天也不会错位
+            return cache_entry["data"] if cache_entry else []
+
+        available_lsr = [
+            item
+            for item in (data or [])
+            if item.get("timestamp") is not None
+            and int(item["timestamp"]) <= available_before_ts
+        ]
+        if len(available_lsr) < self.LONG_SHORT_RATIO_LIMIT:
+            return []
+        self._lsr_1d_cache[symbol] = {
+            "data": available_lsr,
+            "target_date": available_before_ts,
+        }
+        return available_lsr
+
+    async def _get_lsr_5m_data(self, symbol: str):
+        """获取最新1根5m多空人数比，不缓存，只接受5分钟内的数据。"""
+        try:
+            data = await self._call_api(
                 self.market_client.rest_api.long_short_ratio,
                 symbol=symbol,
                 period="5m",
@@ -1324,20 +1286,19 @@ class AUTOBN:
             )
         except Exception as e:
             self.logger.error(
-                    f"{symbol}获取多空比数据失败: {type(e).__name__}: {e!r}"
-                )
-            data2 = []
-        fresh_data2 = []
+                f"{symbol}获取5m多空比数据失败: {type(e).__name__}: {e!r}"
+            )
+            return []
+
+        fresh_data = []
         freshness_time = time.time()
-        for item in data2:
+        for item in data or []:
             timestamp = float(item.get("timestamp", 0) or 0)
             if timestamp > 10**12:
                 timestamp /= 1000
             if 0 <= freshness_time - timestamp <= 5 * 60:
-                fresh_data2.append(item)
-        if len(fresh_data2) != 1:
-            return []
-        return data + fresh_data2
+                fresh_data.append(item)
+        return fresh_data if len(fresh_data) == 1 else []
 
     async def get_basis_rate(self, symbol: str) -> float:
         """
@@ -1554,13 +1515,11 @@ class AUTOBN:
         ) or (not is_long and current_price <= close_info.take_profit)
         oi_stop_triggered = False
         if not sl_triggered and not tp_triggered:
-            long_short_ratio_data = await self.get_long_short_ratio(symbol)
+            lsr_5m = await self._get_lsr_5m_data(symbol)
             latest_lsr = None
-            if long_short_ratio_data:
+            if lsr_5m:
                 try:
-                    latest_lsr = float(
-                        long_short_ratio_data[-1]["longShortRatio"]
-                    )
+                    latest_lsr = float(lsr_5m[0]["longShortRatio"])
                 except (KeyError, TypeError, ValueError):
                     latest_lsr = None
             if (
