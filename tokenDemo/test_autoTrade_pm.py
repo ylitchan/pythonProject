@@ -1523,7 +1523,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
 
-        self.assertEqual(result, [])
+        self.assertIsNone(result)
         self.assertNotIn("BTCUSDT", obj._lsr_1d_cache)
 
     async def test_lsr_1d_falls_back_to_cache_on_api_error(self):
@@ -1541,13 +1541,13 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[0]["longShortRatio"], "1.1")
         obj.logger.error.assert_called_once()
 
-    async def test_lsr_1d_returns_empty_on_api_error_without_cache(self):
+    async def test_lsr_1d_returns_none_on_api_error_without_cache(self):
         obj = self.make_autobn()
         obj._call_api = AsyncMock(side_effect=RuntimeError("boom"))
 
         result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
 
-        self.assertEqual(result, [])
+        self.assertIsNone(result)
         obj.logger.error.assert_called_once()
 
     async def test_lsr_1d_caches_lagging_series_then_swaps_in_newer(self):
@@ -1663,7 +1663,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result[-1]["longShortRatio"], "1.2")
 
-    async def test_lsr_5m_returns_empty_when_never_cached(self):
+    async def test_lsr_5m_returns_none_when_never_cached(self):
         obj = self.make_autobn()
         obj._call_api = AsyncMock(return_value=[])
 
@@ -1671,7 +1671,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             "tokenDemo.autoTrade_pm.time.time",
             return_value=self.NOW_IN_5M_PERIOD,
         ):
-            self.assertEqual(await obj._get_lsr_5m_data("BTCUSDT"), [])
+            self.assertIsNone(await obj._get_lsr_5m_data("BTCUSDT"))
 
     async def test_lsr_5m_caches_first_bar_without_freshness_check(self):
         """不再做新鲜度校验：没缓存时拉到哪根就用哪根，不管对不对得上当期。"""

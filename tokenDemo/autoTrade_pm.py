@@ -1282,7 +1282,7 @@ class AUTOBN:
             self.logger.error(
                 f"{symbol}获取1d多空比数据失败: {type(e).__name__}: {e!r}"
             )
-            return self._lsr_1d_cache.get(symbol) or []
+            return self._lsr_1d_cache.get(symbol)
 
         available_lsr = [
             item
@@ -1296,7 +1296,7 @@ class AUTOBN:
             available_lsr[-1], cached
         ):
             self._lsr_1d_cache[symbol] = available_lsr
-        return self._lsr_1d_cache.get(symbol) or []
+        return self._lsr_1d_cache.get(symbol)
 
     async def _get_lsr_5m_data(self, symbol: str):
         """缓存已是当期那根就不拉；否则拉回来比时间戳，更新才换缓存，最后都用缓存。"""
@@ -1315,11 +1315,11 @@ class AUTOBN:
             self.logger.error(
                 f"{symbol}获取5m多空比数据失败: {type(e).__name__}: {e!r}"
             )
-            return self._lsr_5m_cache.get(symbol) or []
+            return self._lsr_5m_cache.get(symbol)
 
         if data and self._is_newer_bar(data[-1], cached):
             self._lsr_5m_cache[symbol] = data
-        return self._lsr_5m_cache.get(symbol) or []
+        return self._lsr_5m_cache.get(symbol)
 
     async def get_basis_rate(self, symbol: str) -> float:
         """
