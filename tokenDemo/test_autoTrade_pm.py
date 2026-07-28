@@ -1495,7 +1495,8 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, [])
         self.assertNotIn("BTCUSDT", obj._lsr_1d_cache)
 
-    async def test_lsr_1d_falls_back_to_stale_cache_on_api_error(self):
+    async def test_lsr_1d_returns_empty_on_api_error_without_stale_fallback(self):
+        """拉取失败不拿隔日旧缓存顶：口径要求末根对齐当天，旧数据一律判不成立。"""
         obj = self.make_autobn()
         obj._lsr_1d_cache["BTCUSDT"] = {
             "data": [{"longShortRatio": "1.1"} for _ in range(30)],
@@ -1505,8 +1506,35 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
 
-        self.assertEqual(len(result), 30)
+        self.assertEqual(result, [])
         obj.logger.error.assert_called_once()
+
+    async def test_lsr_1d_rejects_and_skips_cache_when_newest_bar_lags(self):
+        """币安还没发布当天那根：不入缓存、直接判条件不成立，下次重新走API。"""
+        obj = self.make_autobn()
+        obj._call_api = AsyncMock(
+            return_value=[
+                {
+                    "longShortRatio": "1.3",
+                    "timestamp": self.UTC_DAY_TS - 86_400_000,
+                }
+                for _ in range(30)
+            ]
+        )
+
+        result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+
+        self.assertEqual(result, [])
+        self.assertNotIn("BTCUSDT", obj._lsr_1d_cache)
+
+        obj._call_api.return_value = [
+            {"longShortRatio": "1.4", "timestamp": self.UTC_DAY_TS}
+            for _ in range(30)
+        ]
+        retried = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+
+        self.assertEqual(len(retried), 30)
+        self.assertEqual(obj._call_api.await_count, 2)
 
     async def test_lsr_5m_rejects_data_older_than_five_minutes(self):
         obj = self.make_autobn()
@@ -1899,6 +1927,37 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             obj._call_api.await_args.kwargs["limit"], obj.OI_QUERY_LIMIT
         )
+
+    async def test_daily_oi_rejects_and_skips_cache_when_newest_bar_lags(self):
+        """币安还没发布当天那根：不入缓存、直接判条件不成立，下次重新走API。"""
+        obj = AUTOBN.__new__(AUTOBN)
+        obj._oi_1d_cache = {}
+        lagged = pd.Timestamp("2026-07-24 00:00:00", tz="UTC")
+        obj._call_api = AsyncMock(return_value=[
+            {
+                "sumOpenInterest": str(i),
+                "timestamp": int((lagged.timestamp() - (29 - i) * 86400) * 1000),
+            }
+            for i in range(30)
+        ])
+        obj.market_client = MagicMock()
+        dtn = pd.Timestamp("2026-07-25 00:03:00", tz="UTC").to_pydatetime()
+
+        self.assertIsNone(await obj._get_oi_1d_data("BTCUSDT", dtn))
+        self.assertEqual(obj._oi_1d_cache, {})
+
+        boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
+        obj._call_api.return_value = [
+            {
+                "sumOpenInterest": str(i),
+                "timestamp": int((boundary.timestamp() - (29 - i) * 86400) * 1000),
+            }
+            for i in range(30)
+        ]
+        retried = await obj._get_oi_1d_data("BTCUSDT", dtn)
+
+        self.assertEqual(len(retried), 30)
+        self.assertEqual(obj._call_api.await_count, 2)
 
     def test_observation_timeouts_are_strategy_specific(self):
         self.assertEqual(

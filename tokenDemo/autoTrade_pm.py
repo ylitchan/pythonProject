@@ -1070,6 +1070,9 @@ class AUTOBN:
         ]
         if len(available_oi) < self.OI_QUERY_LIMIT:
             return None
+        # 末根未对齐当天UTC零点说明币安还没发布当日那根：不入缓存，下次重新拉
+        if int(available_oi[-1]["timestamp"]) != available_before_ts:
+            return None
         self._oi_1d_cache[symbol] = {
             "data": available_oi,
             "target_date": available_before_ts,
@@ -1262,8 +1265,7 @@ class AUTOBN:
             self.logger.error(
                 f"{symbol}获取1d多空比数据失败: {type(e).__name__}: {e!r}"
             )
-            # 获取失败时退回旧缓存：取值按时间戳定位，滞后一天也不会错位
-            return cache_entry["data"] if cache_entry else []
+            return []
 
         available_lsr = [
             item
@@ -1272,6 +1274,9 @@ class AUTOBN:
             and int(item["timestamp"]) <= available_before_ts
         ]
         if len(available_lsr) < self.LONG_SHORT_RATIO_LIMIT:
+            return []
+        # 末根未对齐当天UTC零点说明币安还没发布当日那根：不入缓存，下次重新拉
+        if int(available_lsr[-1]["timestamp"]) != available_before_ts:
             return []
         self._lsr_1d_cache[symbol] = {
             "data": available_lsr,
