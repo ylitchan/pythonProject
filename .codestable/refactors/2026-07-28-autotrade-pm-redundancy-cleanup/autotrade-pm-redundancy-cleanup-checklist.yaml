@@ -1,0 +1,40 @@
+refactor: 2026-07-28-autotrade-pm-redundancy-cleanup
+status: approved
+steps:
+  - id: 1
+    action: 清理 AUTOBN 死配置、死常量与不可达分支
+    status: done
+  - id: 2
+    action: 接线 BD 成交量与 OI 独立窗口常量
+    status: done
+  - id: 3
+    action: 收紧 AUTOBN 与 AUTOA 通知方法的关键字参数
+    status: done
+  - id: 4
+    action: 清理恒真恒假条件与重复计算
+    status: done
+  - id: 5
+    action: 收拢平仓清理与多空开仓信号公共逻辑
+    status: done
+  - id: 6
+    action: 清理 AUTOA DataFrame、切比雪夫与平仓原因冗余
+    status: done
+  - id: 7
+    action: 补刻画测试并执行全量验证
+    status: done
+checks:
+  - id: scope
+    description: 代码改动仅限 autoTrade_pm.py 与 test_autoTrade_pm.py
+    status: passed
+  - id: behavior
+    description: 交易阈值、窗口默认值、通知内容与成交量口径保持不变
+    status: passed
+  - id: call-sites
+    description: 两套 send_msg 与 get_symbols_info 调用点均与新签名兼容
+    status: passed
+  - id: unit-tests
+    description: tokenDemo.test_autoTrade_pm 全部通过
+    status: passed
+  - id: static-analysis
+    description: Ruff 检查目标文件通过
+    status: passed

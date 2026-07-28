@@ -637,6 +637,43 @@ class AutoAProcessingCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         on_observations.assert_not_awaited()
 
 
+class ChebyshevCharacterizationTest(unittest.TestCase):
+    def test_autobn_chebyshev_preserves_numeric_results(self):
+        cases = [
+            ([1.0], 2.0, 0.0),
+            ([2.0, 2.0, 2.0], 3.0, 0.0),
+            ([1.0, 2.0, 3.0], 2.0, 1.0),
+            ([1.0, 2.0, 3.0], 5.0, 1 / 9),
+        ]
+        obj = AUTOBN.__new__(AUTOBN)
+
+        for data, value, expected in cases:
+            with self.subTest(data=data, value=value):
+                result = obj.calculate_chebyshev_probability(data, value)
+                self.assertAlmostEqual(result["chebyshev_upper_bound"], expected)
+                self.assertNotIn("message", result)
+
+    def test_autoa_chebyshev_preserves_numeric_results(self):
+        cases = [
+            ([1.0], 2.0, 0.0),
+            ([2.0, 2.0, 2.0], 3.0, 0.0),
+            ([1.0, 2.0, 3.0], 2.0, 1.0),
+            ([1.0, 2.0, 3.0], 5.0, 1 / 9),
+        ]
+
+        for data, value, expected in cases:
+            with self.subTest(data=data, value=value):
+                result = AUTOA.calculate_chebyshev_probability(data, value)
+                self.assertAlmostEqual(result["chebyshev_upper_bound"], expected)
+                self.assertNotIn("message", result)
+
+    def test_bd_window_constants_are_well_ordered(self):
+        self.assertLess(AUTOBN.BD_VOLUME_RECENT_COUNT, AUTOBN.BD_VOLUME_LOOKBACK_COUNT)
+        self.assertLess(AUTOBN.BD_OI_RECENT_COUNT, AUTOBN.BD_OI_LOOKBACK_COUNT)
+        self.assertLessEqual(AUTOBN.BD_VOLUME_LOOKBACK_COUNT, AUTOBN.KLINE_LIMIT)
+        self.assertLessEqual(AUTOBN.BD_OI_LOOKBACK_COUNT, AUTOBN.OI_QUERY_LIMIT)
+
+
 class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
     UTC_DAY_TS = 1_700_006_400_000  # 2023-11-15 00:00 UTC
     DTN_IN_DAY = pd.Timestamp("2023-11-15 12:00:00", tz="UTC").to_pydatetime()

@@ -305,13 +305,11 @@ class AUTOBN:
 
     # ==================== K线相关常量 ====================
     KLINE_LIMIT = 30  # K线数据条数（与AUTOA实际消费量对齐）
-    MIN_KLINE_FOR_ANALYSIS = 4  # 分析所需最小K线数量
 
     # ==================== 多空比相关常量 ====================
     LONG_SHORT_RATIO_LIMIT = 30  # 多空比数据查询数量限制
     EXCHANGE_INFO_CACHE_TTL = 6 * 60 * 60  # 交易所元数据缓存过期时间（6小时）
     FIVE_MIN_PERIOD_MS = 300_000  # 5m周期长度（毫秒），用于算当前周期边界
-    LONG_SHORT_RATIO_SHORT_LIMIT = 7 / 3  # SHORT额外放行阈值（多空比）
     OI_DELTA_LONG_RATIO_WEIGHT = 0.4  # LONG融合公式中(oi_5m-oi_1d)项权重
 
     # ==================== ATR风控常量 ====================
@@ -324,7 +322,6 @@ class AUTOBN:
     STOP_LOSS_DECAY_PER_MINUTE = 0.0001  # 每分钟止盈止损衰减比例 (0.01%)
 
     # ==================== 回溯周期常量 ====================
-    OI_LOOKBACK_PERIOD = 10  # 持仓量检查回溯周期
     VOLUME_LOOKBACK_PERIOD = 10  # 成交量检查回溯周期
     OI_QUERY_LIMIT = 30  # 持仓量数据查询数量限制
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
@@ -340,8 +337,10 @@ class AUTOBN:
     SHORT_OI_CHEB_THRESHOLD = 0.05  # SHORT入池的1d OI堆积极端阈值（5%）
 
     # ==================== BD做空入池/扣扳机常量 ====================
-    BD_OI_PEAK_LOOKBACK = 10  # 入池取近N日1d OI最大值参与切比雪夫
-    BD_VOLUME_PEAK_MIN_AGE = 3  # 量峰距今最少天数（避开资金成本位，<该值不入池）
+    BD_VOLUME_LOOKBACK_COUNT = 10  # 入池成交量回看总根数
+    BD_VOLUME_RECENT_COUNT = 3  # 入池成交量近期区间根数
+    BD_OI_LOOKBACK_COUNT = 10  # 入池1d OI回看总根数
+    BD_OI_RECENT_COUNT = 3  # 入池1d OI近期区间根数
     BD_OI_DRAWDOWN_RATIO = 0.1  # 扣扳机：5m OI 需自30日峰值回撤的比例（10%）
 
     # ==================== 基差率常量 ====================
@@ -391,10 +390,9 @@ class AUTOBN:
             obj.logger.addHandler(handler)
 
         # 基本配置：优先使用 kwargs，其次使用默认/环境
-        # 支持键：qy_key, leverage, health4open, margin_mode/position_mode,
+        # 支持键：qy_key, leverage, health4open,
         #        session/session_verify/session_headers,
-        #        wx_key, user_name,
-        #        alert_all_file/allert_all_file, api_key, api_secret, slot_balance
+        #        alert_all_file/allert_all_file, api_key, api_secret
         obj.qy_key = kwargs.get("qy_key") or kwargs.get("qyWechatKey")
         if not obj.qy_key:
             raise ValueError("from_cfg 需要提供 qy_key")
@@ -404,34 +402,6 @@ class AUTOBN:
         obj.leverage = kwargs.get("leverage", cls.DEFAULT_LEVERAGE)
         obj.health4open = kwargs.get("health4open", cls.DEFAULT_HEALTH_THRESHOLD)
 
-        # 仓位模式：'CROSSED' 全仓，'ISOLATED' 逐仓；支持大小写/中文/别名
-        # 仅设置新开仓/下单前的目标模式；若该 symbol 已有仓位，交易所可能拒绝切换
-        margin_mode_raw = (
-            str(kwargs.get("margin_mode", kwargs.get("position_mode", "CROSSED")))
-            .strip()
-            .lower()
-        )
-        margin_mode_map = {
-            "cross": "CROSSED",
-            "crossed": "CROSSED",
-            "全仓": "CROSSED",
-            "全倉": "CROSSED",
-            "c": "CROSSED",
-            "isolated": "ISOLATED",
-            "iso": "ISOLATED",
-            "逐仓": "ISOLATED",
-            "逐倉": "ISOLATED",
-            "i": "ISOLATED",
-        }
-        obj.margin_mode = margin_mode_map.get(margin_mode_raw, "CROSSED")
-
-        # 微信配置（可覆盖 -> 环境 -> 默认）
-        obj.wx_key = kwargs.get(
-            "wx_key", os.getenv("WX_KEY", "fe197940-30c1-4cea-a41a-17b461423f83")
-        )
-        obj.user_name = kwargs.get(
-            "user_name", os.getenv("USER_NAME", "49124710049@chatroom")
-        )
         obj.alert_all_file = kwargs.get(
             "alert_all_file", kwargs.get("allert_all_file", "alert_all.json")
         )
@@ -470,9 +440,6 @@ class AUTOBN:
         with open(obj.alert_all_file, "r", encoding="utf-8") as f:
             obj.alert_all = json.load(f)
 
-        # 初始化资金槽位(用于资金管理)(可覆盖)
-        # 含义:用于控制单次下单的资金使用上限(与 open_ratio 一起作用)
-        obj.slot_balance = kwargs.get("slot_balance", [0.0])
         obj.symbols_info = {}
         obj._exchange_info_cache = None
         obj._exchange_info_cache_timestamp = 0.0
@@ -599,16 +566,15 @@ class AUTOBN:
         self._http_session = None
 
     async def send_msg(
-        self, msg: str, wx: bool = False, qy_key: Optional[str] = None
+        self, msg: str, *, qy_key: Optional[str] = None
     ) -> None:
         """
         发送消息通知函数
 
-        功能：通过企业微信或微信发送交易通知消息
+        功能：通过企业微信发送交易通知消息
 
         参数：
             msg: 要发送的消息内容
-            wx: 是否使用微信发送（True=微信，False=企业微信）
             qy_key: 可选的企业微信机器人key，未提供时默认使用 self.qy_key
 
         返回：
@@ -625,27 +591,11 @@ class AUTOBN:
                     self.logger.error(f"PushPlus 消息发送异常: {str(e)}")
             if not self.ENABLE_MESSAGES and target_qy_key != self.signal_qy_key:
                 return
-            if wx:
-                json_msg = {
-                    "MsgItem": [
-                        {
-                            "AtWxIDList": ["string"],
-                            "ImageContent": "",
-                            "MsgType": 0,
-                            "TextContent": msg,
-                            "ToUserName": self.user_name,
-                        }
-                    ]
-                }
-                url = (
-                    f"http://wechatpadpro:1238/message/SendTextMessage?key={self.wx_key}"
-                )
-            else:
-                json_msg = {"msgtype": "text", "text": {"content": msg}}
-                url = (
-                    "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
-                    f"{target_qy_key}"
-                )
+            json_msg = {"msgtype": "text", "text": {"content": msg}}
+            url = (
+                "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
+                f"{target_qy_key}"
+            )
 
             http_session = await self._get_http_session()
             async with http_session.post(url=url, json=json_msg) as response:
@@ -862,6 +812,11 @@ class AUTOBN:
         )
         self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
+    def _clear_closed_position(self, symbol, close_info):
+        self._handle_closed_position_observation(symbol, close_info, time.time())
+        if symbol in self.alert_all["POSITIONS"]:
+            self.alert_all["POSITIONS"].pop(symbol)
+
     async def close_bn_position(
         self,
         symbol,
@@ -890,11 +845,7 @@ class AUTOBN:
         amount = amount_price[0]
         if not amount:
             await self.send_msg(f"{symbol} 平仓跳过：确认持仓数量为0")
-            self._handle_closed_position_observation(
-                symbol, close_info, time.time()
-            )
-            if symbol in self.alert_all["POSITIONS"]:
-                self.alert_all["POSITIONS"].pop(symbol)
+            self._clear_closed_position(symbol, close_info)
             return
         close_ratio = (
             1 if amount * close_ratio * price_close < self.MIN_NOTIONAL else close_ratio
@@ -962,11 +913,7 @@ class AUTOBN:
                     return symbol
                 remaining_amount = remaining_amount_price[0]
                 if remaining_amount == 0:
-                    self._handle_closed_position_observation(
-                        symbol, close_info, time.time()
-                    )
-                    if symbol in self.alert_all["POSITIONS"]:
-                        self.alert_all["POSITIONS"].pop(symbol)
+                    self._clear_closed_position(symbol, close_info)
                 elif atr_value > 0:
                     is_long = positionSide == PositionSide.LONG.value
                     new_tp, new_sl = self.calc_stop_profit_loss(
@@ -996,11 +943,7 @@ class AUTOBN:
                     await self.send_msg(
                         f"{symbol} 平仓跳过：重试后确认持仓数量为0"
                     )
-                    self._handle_closed_position_observation(
-                        symbol, close_info, time.time()
-                    )
-                    if symbol in self.alert_all["POSITIONS"]:
-                        self.alert_all["POSITIONS"].pop(symbol)
+                    self._clear_closed_position(symbol, close_info)
                     return None
                 close_amount = current_amount * close_ratio
                 close_amount = float(
@@ -1140,7 +1083,7 @@ class AUTOBN:
                     realtime_oi, completed_oi = await self._get_bd_oi_windows(
                         symbol, dtn
                     )
-                    if realtime_oi is None or completed_oi is None:
+                    if realtime_oi is None:
                         return False, None, None
                     oi_5m_last = realtime_oi[-1]
                     oi_peak = max(completed_oi)
@@ -1392,9 +1335,6 @@ class AUTOBN:
             tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
             tr_list.append(tr)
 
-        if len(tr_list) < period:
-            return 0.0
-
         # Wilder's Smoothing (RMA)
         # 第一个 ATR 使用 SMA
         atr = sum(tr_list[:period]) / period
@@ -1461,7 +1401,6 @@ class AUTOBN:
                 "chebyshev_upper_bound": 0.0,
                 "min_probability_in_range": 1.0,
                 "deviation": value - data_list[0],
-                "message": "数据只有一个元素，标准差为0",
             }
 
         # 计算均值
@@ -1483,7 +1422,6 @@ class AUTOBN:
                 "chebyshev_upper_bound": 0.0,
                 "min_probability_in_range": 1.0,
                 "deviation": deviation,
-                "message": "所有数据相同，标准差为0",
             }
 
         # 计算 k 值（给定数值距离均值有多少个标准差）
@@ -1507,20 +1445,6 @@ class AUTOBN:
             "min_probability_in_range": min_probability_in_range,
             "deviation": deviation,
         }
-
-        # 添加人类可读的解释
-        if k <= 1:
-            result["message"] = (
-                f"数值 {value:.4f} 距离均值 {mean:.4f} 只有 {k:.4f} 个标准差（在 1σ 范围内），切比雪夫不等式不提供有用信息"
-            )
-        else:
-            result["message"] = (
-                f"数值 {value:.4f} 距离均值 {mean:.4f} 约 {k:.4f} 个标准差。"
-                f"根据切比雪夫不等式，至少有 {min_probability_in_range:.2%} 的数据"
-                f"落在 [μ - {k:.4f}σ, μ + {k:.4f}σ] 范围内，"
-                f"即 [{mean - k * std:.4f}, {mean + k * std:.4f}] 区间。"
-                f"超出此范围的数据比例不超过 {chebyshev_upper_bound:.2%}。"
-            )
 
         return result
 
@@ -1614,11 +1538,7 @@ class AUTOBN:
                     target_take_profit,
                 )
             else:
-                if (
-                    close_info.strategy
-                    and close_info.strategy[-1] == PositionSide.DCA
-                ):
-                    close_info.strategy.pop()
+                close_info.strategy.pop()
         else:
             # 做多: 基于入场价格计算初始距离，线性衰减
             # 衰减系数 = 1 + tp_count (每次止盈后加速)
@@ -1733,11 +1653,7 @@ class AUTOBN:
                     target_take_profit,
                 )
             else:
-                if (
-                    close_info.strategy
-                    and close_info.strategy[-1] == PositionSide.DCA
-                ):
-                    close_info.strategy.pop()
+                close_info.strategy.pop()
         else:
             # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
             # 衰减系数 = 1 + tp_count (每次止盈后加速)
@@ -1823,13 +1739,13 @@ class AUTOBN:
     ):
         # 获取15分钟K线数据用于ATR计算（与supertrend保持一致）
         atr_value = self.calculate_atr(kline)
+        hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
         # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
         if (
             close_info.take_profit == 0 or close_info.stop_loss == 0
         ) and atr_value > 0:
             is_long = close_info.position_side.value == PositionSide.LONG.value
             # 使用hl2中间价计算止盈止损，与supertrend保持一致
-            hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
             tp, sl = self.calc_stop_profit_loss(
                 hl2, is_long=is_long, atr=atr_value
             )
@@ -1846,7 +1762,6 @@ class AUTOBN:
             return open_info
 
         # 计算当前supertrend上下轨，用于止盈边界限制
-        hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
         current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
         current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
         # ATR触发阈值：用于收益阈值比较（与1/3预期收益取较小值）
@@ -1881,24 +1796,26 @@ class AUTOBN:
         refresh=False,
     ):
         """判断BD观察是否满足首次入池或刷新条件。"""
-        if len(kline_close) < 30 or len(kline_volume) < 30:
-            return False
         if kline_close[-1] < max(kline_close[:-1]):
             return False
 
         if oi_window is None:
             oi_window, _ = await self._get_bd_oi_windows(symbol, dtn)
-        if oi_window is None or len(oi_window) < 30:
+        if oi_window is None or len(oi_window) < self.OI_QUERY_LIMIT:
             return False
 
-        old_volume = kline_volume[-10:-3]
-        recent_volume = kline_volume[-3:]
+        old_volume = kline_volume[
+            -self.BD_VOLUME_LOOKBACK_COUNT : -self.BD_VOLUME_RECENT_COUNT
+        ]
+        recent_volume = kline_volume[-self.BD_VOLUME_RECENT_COUNT :]
         if max(recent_volume) >= max(kline_volume):
             return False
 
-        oi_baseline = oi_window[:-10]
-        oi_old = oi_window[-10:-3]
-        oi_recent = oi_window[-3:]
+        oi_baseline = oi_window[: -self.BD_OI_LOOKBACK_COUNT]
+        oi_old = oi_window[
+            -self.BD_OI_LOOKBACK_COUNT : -self.BD_OI_RECENT_COUNT
+        ]
+        oi_recent = oi_window[-self.BD_OI_RECENT_COUNT :]
         if max(oi_recent) <= max(oi_old):
             return False
         if refresh:
@@ -1912,6 +1829,44 @@ class AUTOBN:
             ]
             < self.SHORT_OI_CHEB_THRESHOLD
         )
+
+    async def _build_open_signal(
+        self, symbol, kline, current_price, open_info, is_long, long_short_ratio
+    ):
+        hl2 = (kline[-1][2] + kline[-1][3]) / 2
+        atr_value = self.calculate_atr(kline)
+        take_profit, stop_loss = self.calc_stop_profit_loss(
+            hl2, is_long=is_long, atr=atr_value
+        )
+        if take_profit == 0 and stop_loss == 0:
+            return None
+
+        basis_rate = await self.get_basis_rate(symbol)
+        basis_triggered = (
+            basis_rate < -self.BASIS_RATE_THRESHOLD
+            if is_long
+            else basis_rate > self.BASIS_RATE_THRESHOLD
+        )
+        if basis_triggered:
+            open_info.strategy.append(PositionSide.Basis)
+
+        lsr_show = (
+            f"{long_short_ratio:.4f}" if long_short_ratio is not None else "N/A"
+        )
+        rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
+        strategy_tag = format_strategy_tags(open_info.strategy)
+        msg = (
+            f"==={symbol}**{strategy_tag}**===\n"
+            f"价格:{current_price}\n"
+            f"基差率:{basis_rate:.4%}\n"
+            f"多空比:{lsr_show}\n"
+            f"止盈:{take_profit}\n"
+            f"止损:{stop_loss}\n"
+            f"收益率:{rate_show:.2%}"
+        )
+        await self.send_msg(msg, qy_key=self.signal_qy_key)
+        await self.send_msg(msg)
+        return take_profit, stop_loss, basis_rate
 
     async def rzq_token(self, semaphore, symbol, success, dtn):
         """
@@ -1963,8 +1918,9 @@ class AUTOBN:
                     open_info = None
                 else:
                     should_open = False
-                    atr_value = None
-                    hl2 = None
+                    take_profit = None
+                    stop_loss = None
+                    basis_rate = None
 
                     long_ok, long_lsr, long_stop_guard_threshold = False, None, None
                     if (
@@ -1983,32 +1939,16 @@ class AUTOBN:
                             dtn,
                         )
                     if long_ok:
-                        # 在基差率判断前发送观察信号
-                        hl2 = (kline[-1][2] + kline[-1][3]) / 2
-                        atr_value = self.calculate_atr(kline)
-                        zy_msg, zs_msg = self.calc_stop_profit_loss(
-                            hl2,
+                        signal = await self._build_open_signal(
+                            symbol,
+                            kline,
+                            current_price,
+                            open_info,
                             is_long=True,
-                            atr=atr_value,
+                            long_short_ratio=long_lsr,
                         )
-                        if not (zy_msg == 0 and zs_msg == 0):
-                            basis_rate = await self.get_basis_rate(symbol)
-                            if basis_rate < -self.BASIS_RATE_THRESHOLD:
-                                open_info.strategy.append(PositionSide.Basis)
-                            lsr_show = (
-                                f"{long_lsr:.4f}" if long_lsr is not None else "N/A"
-                            )
-                            rate_show = (
-                                atr_value * self.SUPERTREND_FACTOR / current_price
-                            )
-                            strategy_tag = format_strategy_tags(open_info.strategy)
-                            await self.send_msg(
-                                f"==={symbol}**{strategy_tag}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
-                                qy_key=self.signal_qy_key,
-                            )
-                            await self.send_msg(
-                                f"==={symbol}**{strategy_tag}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
-                            )
+                        if signal is not None:
+                            take_profit, stop_loss, basis_rate = signal
                             open_info.side = OrderSide.BUY
                             should_open = True
                     short_ok, short_lsr, _ = False, None, None
@@ -2025,32 +1965,16 @@ class AUTOBN:
                             dtn,
                         )
                     if short_ok:
-                        # 在基差率判断前发送观察信号
-                        hl2 = (kline[-1][2] + kline[-1][3]) / 2
-                        atr_value = self.calculate_atr(kline)
-                        zy_msg, zs_msg = self.calc_stop_profit_loss(
-                            hl2,
+                        signal = await self._build_open_signal(
+                            symbol,
+                            kline,
+                            current_price,
+                            open_info,
                             is_long=False,
-                            atr=atr_value,
+                            long_short_ratio=short_lsr,
                         )
-                        if not (zy_msg == 0 and zs_msg == 0):
-                            basis_rate = await self.get_basis_rate(symbol)
-                            if basis_rate > self.BASIS_RATE_THRESHOLD:
-                                open_info.strategy.append(PositionSide.Basis)
-                            lsr_show = (
-                                f"{short_lsr:.4f}" if short_lsr is not None else "N/A"
-                            )
-                            rate_show = (
-                                atr_value * self.SUPERTREND_FACTOR / current_price
-                            )
-                            strategy_tag = format_strategy_tags(open_info.strategy)
-                            await self.send_msg(
-                                f"==={symbol}**{strategy_tag}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}",
-                                qy_key=self.signal_qy_key,
-                            )
-                            await self.send_msg(
-                                f"==={symbol}**{strategy_tag}**===\n价格:{current_price}\n基差率:{basis_rate:.4%}\n多空比:{lsr_show}\n止盈:{zy_msg}\n止损:{zs_msg}\n收益率:{rate_show:.2%}"
-                            )
+                        if signal is not None:
+                            take_profit, stop_loss, basis_rate = signal
                             open_info.side = OrderSide.SELL
                             should_open = True
                     if should_open:
@@ -2058,16 +1982,6 @@ class AUTOBN:
                             self.logger.info(f"{symbol} 仍在平仓冷却期，跳过开仓信号")
                             return
                         is_long = open_info.side.value == OrderSide.BUY.value
-                        if atr_value is None or hl2 is None:
-                            # 兜底：确保后续止盈止损计算可用
-                            hl2 = (kline[-1][2] + kline[-1][3]) / 2
-                            atr_value = self.calculate_atr(kline)
-                        zy, zs = self.calc_stop_profit_loss(
-                            hl2, is_long=is_long, atr=atr_value
-                        )
-                        if zy == 0 and zs == 0:
-                            return
-
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
                         )
@@ -2075,17 +1989,17 @@ class AUTOBN:
                             symbol,
                             OrderSide.BUY.value if is_long else OrderSide.SELL.value,
                             position_side.value,
-                            zy,
-                            zs,  # 止损价用于计算风险仓位
+                            take_profit,
+                            stop_loss,  # 止损价用于计算风险仓位
                             open_info,
                         )
                         if not order_result:
                             return
-                        # 多头: zy=高价(止盈), zs=低价(止损)
-                        # 空头: zy=低价(止盈), zs=高价(止损)
+                        # 多头: take_profit=高价, stop_loss=低价
+                        # 空头: take_profit=低价, stop_loss=高价
                         close_info = Position(
-                            take_profit=zy,  # 多头高价止盈，空头低价止盈
-                            stop_loss=zs,  # 多头低价止损，空头高价止损
+                            take_profit=take_profit,
+                            stop_loss=stop_loss,
                             close_side=OrderSide.SELL if is_long else OrderSide.BUY,
                             position_side=position_side,
                             entry_price=current_price,
@@ -2192,10 +2106,8 @@ class AUTOBN:
         self._exchange_info_cache_timestamp = current_time
         return exchange_info
 
-    def get_symbols_info(self, exchange_info=None):
+    def get_symbols_info(self, exchange_info):
         # 获取交易所信息（公开合约元信息使用 USDS-M Futures 新 SDK）
-        if exchange_info is None:
-            exchange_info = self.market_client.rest_api.exchange_information()
 
         # 计算数量精度：根据quantityPrecision生成对应的Decimal精度
         sp = {
@@ -2511,8 +2423,8 @@ class AUTOA:
         if not tr_list:
             return 0.0
         atr = sum(tr_list[-period:]) / min(len(tr_list), period)
-        latest_high = float(hist_data.iloc[-1]["high"])
-        latest_low = float(hist_data.iloc[-1]["low"])
+        latest_high = float(highs[-1])
+        latest_low = float(lows[-1])
         hl2 = (latest_high + latest_low) / 2
         atr_cap = hl2 * cls.ATR_HL2_CAP_RATIO
         return min(atr, atr_cap) if atr_cap > 0 else atr
@@ -2558,12 +2470,8 @@ class AUTOA:
         if isinstance(data, list):
             series = pd.Series(data)
         elif isinstance(data, pd.DataFrame):
-            if data.shape[1] != 1:
-                # 如果是多列 DataFrame，尝试取第一列，或者抛出异常
-                # 这里假设用户传入的是单列数据
-                series = data.iloc[:, 0]
-            else:
-                series = data.iloc[:, 0]
+            # 多列输入沿用现有口径，只使用第一列。
+            series = data.iloc[:, 0]
         elif isinstance(data, pd.Series):
             series = data
         else:
@@ -2589,7 +2497,6 @@ class AUTOA:
                 "chebyshev_upper_bound": 0.0,
                 "min_probability_in_range": 1.0,
                 "deviation": value - item,
-                "message": "数据只有一个元素，标准差为0",
             }
 
         # 利用 pandas 向量化计算均值和标准差
@@ -2608,7 +2515,6 @@ class AUTOA:
                 "chebyshev_upper_bound": 0.0,
                 "min_probability_in_range": 1.0,
                 "deviation": deviation,
-                "message": "所有数据相同，标准差为0",
             }
 
         # 计算 k 值（给定数值距离均值有多少个标准差）
@@ -2633,20 +2539,6 @@ class AUTOA:
             "deviation": deviation,
         }
 
-        # 添加人类可读的解释
-        if k <= 1:
-            result["message"] = (
-                f"数值 {value:.4f} 距离均值 {mean:.4f} 只有 {k:.4f} 个标准差（在 1σ 范围内），切比雪夫不等式不提供有用信息"
-            )
-        else:
-            result["message"] = (
-                f"数值 {value:.4f} 距离均值 {mean:.4f} 约 {k:.4f} 个标准差。"
-                f"根据切比雪夫不等式，至少有 {min_probability_in_range:.2%} 的数据"
-                f"落在 [μ - {k:.4f}σ, μ + {k:.4f}σ] 范围内，"
-                f"即 [{mean - k * std:.4f}, {mean + k * std:.4f}] 区间。"
-                f"超出此范围的数据比例不超过 {chebyshev_upper_bound:.2%}。"
-            )
-
         return result
 
     @classmethod
@@ -2663,7 +2555,7 @@ class AUTOA:
         cls._http_session = None
 
     @classmethod
-    async def send_msg(cls, msg, pushplus_notification=None):
+    async def send_msg(cls, msg, *, pushplus_notification=None):
         """
         发送消息通知函数
 
@@ -2978,7 +2870,7 @@ class AUTOA:
                 cls.logger.warning(f"{code} 分时数据格式异常: {type(res[0])}")
                 return pd.DataFrame()
             hist_today = pd.DataFrame(res)
-            required_columns = ["m", "v", "p", "avg_p"]
+            required_columns = ["m", "v", "p", "avg_p", "tot_v"]
             if not set(required_columns).issubset(hist_today.columns):
                 cls.logger.warning(
                     f"{code} 分时数据字段异常: {list(hist_today.columns)}"
@@ -2988,7 +2880,7 @@ class AUTOA:
             hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
             hist_today["p"] = pd.to_numeric(hist_today["p"], errors="coerce")
             hist_today["tot_v"] = pd.to_numeric(
-                pd.DataFrame(res).get("tot_v"), errors="coerce"
+                hist_today["tot_v"], errors="coerce"
             )
             hist_today = hist_today.dropna(subset=["p"])
             if hist_today.empty:
@@ -3175,8 +3067,6 @@ class AUTOA:
             close_info.close_reason = "成交量止损"
         elif stop_loss_triggered and not close_info.close_reason:
             close_info.close_reason = "初始止损"
-        elif not close_info.close_reason:
-            close_info.close_reason = "初始止损"
 
         position_shares = cls._get_position_share_count(close_info)
         earliest_open_timestamp = await cls._get_reopen_timestamp_after_close(today)
@@ -3208,7 +3098,7 @@ class AUTOA:
             pushplus_notification = format_trade_notification(
                 "AUTOA", "平仓", close_info.name, msg
             )
-        await cls.send_msg(msg, pushplus_notification)
+        await cls.send_msg(msg, pushplus_notification=pushplus_notification)
 
         await CloseRecordManager.record_close_async(
             source="AUTOA",
@@ -3348,7 +3238,7 @@ class AUTOA:
                 pushplus_notification = format_trade_notification(
                     "AUTOA", "开仓", open_info.name, msg
                 )
-            await cls.send_msg(msg, pushplus_notification)
+            await cls.send_msg(msg, pushplus_notification=pushplus_notification)
 
             # 6. 从观察列表移除
             cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
