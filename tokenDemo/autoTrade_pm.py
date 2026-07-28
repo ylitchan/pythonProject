@@ -1160,9 +1160,9 @@ class AUTOBN:
                     if current_total_oi <= 0:
                         return False, None, None
 
-                    # blend 基准：切比雪夫区间的平均OI + 该区间最后一根的多仓比例
+                    # blend 基准：切比雪夫区间最后一根的OI和多仓比例（同一根）
                     # 两条1d序列各自按UTC日缓存，按时间戳定位才不受刷新时点差异影响
-                    avg_oi_1d = sum(oi_hist_for_cheb) / len(oi_hist_for_cheb)
+                    window_end_oi = oi_hist_for_cheb[-1]
                     window_end_ts = int(
                         oi_1d[-self.OI_CHEB_EXCLUDE_RECENT_COUNT - 1]["timestamp"]
                     )
@@ -1171,12 +1171,13 @@ class AUTOBN:
                     if window_end_lsr is None:
                         return False, None, None
 
-                    avg_end_long_ratio = _extract_long_ratio(window_end_lsr)
+                    window_end_long_ratio = _extract_long_ratio(window_end_lsr)
                     long_ratio_5m = _extract_long_ratio(lsr_5m[0])
 
                     blend = (
-                        avg_oi_1d * avg_end_long_ratio
-                        + (oi_5m_last - avg_oi_1d) * self.OI_DELTA_LONG_RATIO_WEIGHT
+                        window_end_oi * window_end_long_ratio
+                        + (oi_5m_last - window_end_oi)
+                        * self.OI_DELTA_LONG_RATIO_WEIGHT
                     ) / current_total_oi
 
                     if blend < long_ratio_5m:
@@ -1190,7 +1191,10 @@ class AUTOBN:
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    stop_guard_threshold = avg_oi_1d
+                    # 止损护栏仍用区间均值，与 blend 口径无关
+                    stop_guard_threshold = sum(oi_hist_for_cheb) / len(
+                        oi_hist_for_cheb
+                    )
                     return (
                         (True, lsrd, stop_guard_threshold)
                         if passed

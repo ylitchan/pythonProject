@@ -1628,15 +1628,15 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
 
 class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
-    """BZ做多blend：平均OI取切比雪夫区间，多仓比例按时间戳取该区间最后一根。"""
+    """BZ做多blend：OI和多仓比例都取切比雪夫区间最后一根，比例按时间戳定位。"""
 
-    # 前20根为切比雪夫区间（均值100，末根105与均值不等），后10根被排除
+    # 前20根为切比雪夫区间（末根105，区间均值100，两者不等以便区分口径）
     OI_1D_VALUES = ["95"] * 10 + ["105"] * 10 + ["120"] * 10
     BASE_TS = 1_700_006_400_000  # 某个UTC零点
     DAY_MS = 86_400_000
 
     @classmethod
-    def make_autobn(cls, avg_end_long_ratio, long_ratio_5m, lsr_lag_days=0):
+    def make_autobn(cls, window_end_long_ratio, long_ratio_5m, lsr_lag_days=0):
         obj = AUTOBN.__new__(AUTOBN)
         obj.logger = MagicMock()
         dtn = pd.Timestamp("2026-07-25 12:30:00", tz="UTC").to_pydatetime()
@@ -1649,7 +1649,7 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
             {
                 "longShortRatio": "1.5",
                 "longAccount": (
-                    str(avg_end_long_ratio) if t == window_end_ts else "0.9"
+                    str(window_end_long_ratio) if t == window_end_ts else "0.9"
                 ),
                 "timestamp": t,
             }
@@ -1671,8 +1671,8 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
         return obj, dtn
 
     async def test_long_signal_allows_high_raw_ratio_when_blend_passes(self):
-        # blend = (100*0.7 + (120-100)*0.4) / 120 = 0.65 >= 0.6
-        obj, dtn = self.make_autobn(avg_end_long_ratio=0.7, long_ratio_5m=0.6)
+        # blend = (105*0.7 + (120-105)*0.4) / 120 ≈ 0.6625 >= 0.6
+        obj, dtn = self.make_autobn(window_end_long_ratio=0.7, long_ratio_5m=0.6)
 
         passed, lsrd, stop_guard = await obj.check_side(
             asyncio.Semaphore(1),
@@ -1683,11 +1683,13 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(passed)
         self.assertEqual(lsrd, 1.5)
+        # 止损护栏仍是区间均值100，不是blend用的末根105
         self.assertAlmostEqual(stop_guard, 100.0)
 
     async def test_long_signal_still_rejects_when_blend_fails(self):
-        # blend = (100*0.5 + (120-100)*0.4) / 120 ≈ 0.483 < 0.6
-        obj, dtn = self.make_autobn(avg_end_long_ratio=0.5, long_ratio_5m=0.6)
+        # blend = (105*0.5 + (120-105)*0.4) / 120 ≈ 0.4875 < 0.6
+        # 若误取整条序列末根(120)，会拿到区间外诱饵0.9并误放行
+        obj, dtn = self.make_autobn(window_end_long_ratio=0.5, long_ratio_5m=0.6)
 
         passed, lsrd, stop_guard = await obj.check_side(
             asyncio.Semaphore(1),
@@ -1700,9 +1702,9 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(lsrd)
         self.assertIsNone(stop_guard)
 
-    async def test_long_signal_blend_uses_cheb_window_avg_oi_and_ratio(self):
-        """区分口径：新口径blend=0.65被拒；取末根OI或区间外比例（0.9）会误放行。"""
-        obj, dtn = self.make_autobn(avg_end_long_ratio=0.7, long_ratio_5m=0.66)
+    async def test_long_signal_blend_uses_window_end_oi_not_window_mean(self):
+        """区分口径：末根OI(105)得0.6625放行；改用区间均值(100)得0.65会被拒。"""
+        obj, dtn = self.make_autobn(window_end_long_ratio=0.7, long_ratio_5m=0.655)
 
         passed, lsrd, stop_guard = await obj.check_side(
             asyncio.Semaphore(1),
@@ -1711,14 +1713,13 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
             dtn=dtn,
         )
 
-        self.assertFalse(passed)
-        self.assertIsNone(lsrd)
-        self.assertIsNone(stop_guard)
+        self.assertTrue(passed)
+        self.assertAlmostEqual(stop_guard, 100.0)
 
     async def test_long_signal_matches_window_end_ratio_by_timestamp(self):
         """多空比整体滞后一天时仍按时间戳取到区间末根；按位置切片会误取诱饵0.9放行。"""
         obj, dtn = self.make_autobn(
-            avg_end_long_ratio=0.7, long_ratio_5m=0.66, lsr_lag_days=1
+            window_end_long_ratio=0.5, long_ratio_5m=0.6, lsr_lag_days=1
         )
 
         passed, lsrd, stop_guard = await obj.check_side(
@@ -1735,7 +1736,7 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
     async def test_long_signal_rejects_without_error_when_window_end_missing(self):
         """错位到区间末根整根缺失时不开仓，且不靠抛异常兜底。"""
         obj, dtn = self.make_autobn(
-            avg_end_long_ratio=0.7, long_ratio_5m=0.6, lsr_lag_days=25
+            window_end_long_ratio=0.7, long_ratio_5m=0.6, lsr_lag_days=25
         )
 
         passed, lsrd, stop_guard = await obj.check_side(
