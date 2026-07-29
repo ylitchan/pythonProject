@@ -2121,6 +2121,14 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
 
+    async def test_bd_pool_rejects_when_latest_5m_oi_not_above_old_peak(self):
+        oi_window = self.make_oi_window(old_peak=130, recent_peak=120)
+        oi_window[-3] = 140
+        obj = self.make_autobn(oi_window, [100] * 30)
+        close, volume = self.make_klines()
+
+        self.assertFalse(await obj._is_bd_observation("BTCUSDT", close, volume, None))
+
     async def test_bd_pool_accepts_two_cohort_structure(self):
         obj = self.make_autobn(self.make_oi_window(), [100] * 30)
         close, volume = self.make_klines()

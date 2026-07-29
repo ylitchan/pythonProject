@@ -1815,8 +1815,8 @@ class AUTOBN:
         oi_old = oi_window[
             -self.BD_OI_LOOKBACK_COUNT : -self.BD_OI_RECENT_COUNT
         ]
-        oi_recent = oi_window[-self.BD_OI_RECENT_COUNT :]
-        if max(oi_recent) <= max(oi_old):
+        latest_oi_5m = oi_window[-1]
+        if latest_oi_5m <= max(oi_old):
             return False
         if refresh:
             return True
