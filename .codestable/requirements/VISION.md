@@ -2,6 +2,7 @@
 
 ## Current
 
+- [AUTOA 达到早期盈利目标时全平](autoa-early-take-profit.md) — AUTOA在较早盈利目标出现时及时兑现全部收益（current）
 - [AUTOBN 分阶段止盈并保护剩余利润](autobn-staged-take-profit.md) — 在利润出现时先兑现大部分仓位，并立即保护剩余收益（current）
 - [AUTOA 按风控职责管理 ATR 价格线](autoa-directional-atr-price-control.md) — 让AUTOA保留盈利空间的同时独立收紧亏损边界（current）
 - [AUTOBN 按风控职责管理 ATR 价格线](autobn-directional-atr-price-control.md) — 让多空交易的盈利空间和亏损边界可以独立控制，避免调整一侧时意外改变另一侧（current）

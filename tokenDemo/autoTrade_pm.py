@@ -2406,7 +2406,7 @@ class AUTOA:
     ATR_PERIOD = 10  # ATR计算周期
     TAKE_PROFIT_ATR_FACTOR = 3.0  # AUTOA止盈价与止盈轨ATR倍数
     STOP_LOSS_ATR_FACTOR = 1.0  # AUTOA止损价与止损轨ATR倍数
-    ATR_TRIGGER_CAP_RATIO = 0.10
+    ATR_TRIGGER_CAP_RATIO = 0.05
     ATR_HL2_CAP_RATIO = 0.1  # ATR返回值上限比例（不超过hl2的10%）
     MIN_ATR_TRIGGER = 1e-8
     DCA_TP_ATR_RATIO = 0.5  # DCA触发后止盈收紧系数(按ATR与触发次数)
@@ -2420,7 +2420,6 @@ class AUTOA:
     # ==================== Trading Configuration ====================
     TRADING_DAYS_LOOKBACK = 60
     STOP_LOSS_DECAY = 0.001  # 止损衰减系数 (1‰)
-    TRAILING_STOP_PROFIT_RATIO = 0.7  # 追踪止损盈利保护比例 (保护70%盈利，允许30%回撤)
     MARKET_OPEN_HOUR = 9  # A股开盘小时
     MARKET_OPEN_MINUTE = 30  # A股开盘分钟
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
@@ -3032,6 +3031,7 @@ class AUTOA:
         # 检查是否触及止盈或止损（且已持仓至少1天）
         take_profit_triggered = price_close >= close_info.take_profit
         stop_loss_triggered = price_close <= close_info.stop_loss
+        first_take_profit_triggered = False
         volume_stop_triggered = (
             not take_profit_triggered
             and not stop_loss_triggered
@@ -3048,8 +3048,23 @@ class AUTOA:
             hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
             current_upper = hl2 + atr_value * cls.TAKE_PROFIT_ATR_FACTOR
             current_lower = hl2 - atr_value * cls.STOP_LOSS_ATR_FACTOR
+            profit = price_close - close_info.entry_price
+            initial_tp_gap = close_info.take_profit - close_info.entry_price
+            atr_trigger = max(
+                min(atr_value, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO),
+                cls.MIN_ATR_TRIGGER,
+            )
+            target_profit = min(
+                initial_tp_gap / cls.TARGET_PROFIT_DIVISOR,
+                atr_trigger,
+            )
+            first_take_profit_triggered = (
+                initial_tp_gap > 0 and profit >= target_profit
+            )
 
-            if (
+            if first_take_profit_triggered:
+                close_info.close_reason = "首次止盈"
+            elif (
                 atr_value > 0
                 and close_info.entry_price > 0
                 and price_close < close_info.entry_price - atr_value
@@ -3109,36 +3124,16 @@ class AUTOA:
                         close_info.entry_price,
                     )
 
-                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
-                profit = price_close - close_info.entry_price
-                atr_trigger = max(
-                    min(atr_value, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO),
-                    cls.MIN_ATR_TRIGGER,
-                )
-                target_profit = min(
-                    initial_tp_gap / cls.TARGET_PROFIT_DIVISOR,
-                    atr_trigger,
-                )  # 预期收益的1/3 与 ATR触发阈值取较小值
-                if profit >= target_profit:
-                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                    # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
-                    trailing_stop = (
-                        close_info.entry_price + profit * cls.TRAILING_STOP_PROFIT_RATIO
-                    )
-                    new_stop_loss = max(close_info.stop_loss, trailing_stop)
-                    if new_stop_loss != close_info.stop_loss:
-                        close_info.stop_loss = new_stop_loss
-                        close_info.close_reason = "追踪止损(保护盈利)"
-                else:
-                    # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
-                    # 取当前下轨和原止损的较大值
-                    new_stop_loss = max(close_info.stop_loss, current_lower)
-                    if new_stop_loss != close_info.stop_loss:
-                        close_info.stop_loss = new_stop_loss
-                        close_info.close_reason = "移动止损(轨道)"
+                # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
+                # 取当前下轨和原止损的较大值
+                new_stop_loss = max(close_info.stop_loss, current_lower)
+                if new_stop_loss != close_info.stop_loss:
+                    close_info.stop_loss = new_stop_loss
+                    close_info.close_reason = "移动止损(轨道)"
 
-            cls.alert_all["POSITIONS"][code] = close_info.model_dump()
-            return
+            if not first_take_profit_triggered:
+                cls.alert_all["POSITIONS"][code] = close_info.model_dump()
+                return
 
         if take_profit_triggered:
             close_info.close_reason = "止盈"
@@ -3146,6 +3141,8 @@ class AUTOA:
             close_info.close_reason = "成交量止损"
         elif stop_loss_triggered and not close_info.close_reason:
             close_info.close_reason = "初始止损"
+        elif first_take_profit_triggered:
+            close_info.close_reason = "首次止盈"
 
         position_shares = cls._get_position_share_count(close_info)
         earliest_open_timestamp = await cls._get_reopen_timestamp_after_close(today)

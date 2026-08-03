@@ -266,6 +266,55 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(stored.stop_loss, 8)
 
+    async def test_early_profit_threshold_closes_full_position(self):
+        position = self.make_position(strategies=[PositionSide.BZ])
+        position.take_profit = 13
+        observation = Observation(
+            price=10,
+            timestamp=pd.Timestamp("2026-07-01").timestamp(),
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="测试股票",
+        )
+        hist = pd.DataFrame([
+            *[
+                {"high": 11, "low": 9, "close": 10, "volume": 100}
+                for _ in range(29)
+            ],
+            {"high": 11, "low": 10, "close": 10.5, "volume": 100},
+        ])
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {"000001": position.model_dump()},
+                "OBSERVATIONS": {"000001": observation.model_dump()},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(AUTOA, "calculate_atr", return_value=2),
+            patch.object(
+                AUTOA,
+                "_get_reopen_timestamp_after_close",
+                new=AsyncMock(return_value=pd.Timestamp("2026-07-24").timestamp()),
+            ),
+            patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
+            patch.object(
+                CloseRecordManager,
+                "record_close_async",
+                new=AsyncMock(),
+            ) as record_close,
+        ):
+            await AUTOA.on_positions(
+                "000001",
+                ["2026-07-22", "2026-07-21"],
+                position.model_dump(),
+                pd.Timestamp("2026-07-22 15:00").to_pydatetime(),
+            )
+
+        self.assertNotIn("000001", AUTOA.alert_all["POSITIONS"])
+        self.assertIn("平仓依据:首次止盈", send_msg.await_args.args[0])
+        self.assertEqual(record_close.await_args.kwargs["close_ratio"], 1.0)
+        self.assertEqual(record_close.await_args.kwargs["close_reason"], "首次止盈")
+        self.assertEqual(record_close.await_args.kwargs["close_amount"], 100)
+
     async def test_second_dca_uses_quarter_atr_take_profit_distance(self):
         position = self.make_position(
             strategies=[PositionSide.BZ, PositionSide.DCA]
@@ -306,10 +355,10 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         position.take_profit = 20
         hist = pd.DataFrame([
             *[
-                {"high": 12, "low": 10, "close": 11, "volume": 100}
+                {"high": 12, "low": 10, "close": 10.4, "volume": 100}
                 for _ in range(29)
             ],
-            {"high": 12, "low": 10, "close": 11, "volume": 100},
+            {"high": 12, "low": 10, "close": 10.4, "volume": 100},
         ])
         with (
             patch.object(AUTOA, "alert_all", {
