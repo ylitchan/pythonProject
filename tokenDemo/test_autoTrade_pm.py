@@ -197,10 +197,15 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
             stored = Observation.model_validate(
                 AUTOA.alert_all["OBSERVATIONS"]["000001"]
             )
+            position = Position.model_validate(
+                AUTOA.alert_all["POSITIONS"]["000001"]
+            )
             has_position = "000001" in AUTOA.alert_all["POSITIONS"]
 
         self.assertEqual(stored.strategy, [PositionSide.BZ, PositionSide.N])
         self.assertEqual(stored.timestamp, timestamp)
+        self.assertEqual(position.take_profit, 15)
+        self.assertEqual(position.stop_loss, 11)
         self.assertTrue(has_position)
 
 
@@ -229,6 +234,37 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(notional, 2100)
         self.assertEqual(pnl, 100)
         self.assertEqual(rate, 0.05)
+
+    async def test_dynamic_stop_loss_rail_uses_one_atr(self):
+        position = self.make_position(strategies=[PositionSide.BZ])
+        position.take_profit = 20
+        position.stop_loss = 5
+        hist = pd.DataFrame([
+            *[
+                {"high": 11, "low": 9, "close": 10, "volume": 100}
+                for _ in range(29)
+            ],
+            {"high": 11, "low": 9, "close": 10, "volume": 100},
+        ])
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {"000001": position.model_dump()},
+                "OBSERVATIONS": {},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(AUTOA, "calculate_atr", return_value=2),
+        ):
+            await AUTOA.on_positions(
+                "000001",
+                ["20260711", "20260710"],
+                position.model_dump(),
+                pd.Timestamp("2026-07-11").to_pydatetime(),
+            )
+            stored = Position.model_validate(
+                AUTOA.alert_all["POSITIONS"]["000001"]
+            )
+
+        self.assertEqual(stored.stop_loss, 8)
 
     async def test_second_dca_uses_quarter_atr_take_profit_distance(self):
         position = self.make_position(

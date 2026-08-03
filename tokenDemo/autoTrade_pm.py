@@ -2347,6 +2347,8 @@ class AUTOBN:
 class AUTOA:
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
+    TAKE_PROFIT_ATR_FACTOR = 3.0  # AUTOA止盈价与止盈轨ATR倍数
+    STOP_LOSS_ATR_FACTOR = 1.0  # AUTOA止损价与止损轨ATR倍数
     ATR_TRIGGER_CAP_RATIO = 0.10
     ATR_HL2_CAP_RATIO = 0.1  # ATR返回值上限比例（不超过hl2的10%）
     MIN_ATR_TRIGGER = 1e-8
@@ -2357,9 +2359,6 @@ class AUTOA:
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 30 * 24 * 60 * 60  # 观察记录超时时间（30天）
-
-    # ==================== Supertrend Constants ====================
-    SUPERTREND_FACTOR = 3.0
 
     # ==================== Trading Configuration ====================
     TRADING_DAYS_LOOKBACK = 60
@@ -2990,8 +2989,8 @@ class AUTOA:
             DECAY = cls.STOP_LOSS_DECAY
             atr_value = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
             hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
-            current_upper = hl2 + atr_value * cls.SUPERTREND_FACTOR
-            current_lower = hl2 - atr_value * cls.SUPERTREND_FACTOR
+            current_upper = hl2 + atr_value * cls.TAKE_PROFIT_ATR_FACTOR
+            current_lower = hl2 - atr_value * cls.STOP_LOSS_ATR_FACTOR
 
             if (
                 atr_value > 0
@@ -3227,8 +3226,8 @@ class AUTOA:
             price_close = float(hist.iloc[-1]["close"])
             # 初始化止盈止损与AUTOBN一致：基于hl2和ATR倍数计算
             hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
-            take_profit = hl2 + current_atr * cls.SUPERTREND_FACTOR
-            stop_loss = hl2 - current_atr * cls.SUPERTREND_FACTOR
+            take_profit = hl2 + current_atr * cls.TAKE_PROFIT_ATR_FACTOR
+            stop_loss = hl2 - current_atr * cls.STOP_LOSS_ATR_FACTOR
             atr_percent = (
                 abs(take_profit - price_close) / price_close
                 if price_close > 0
