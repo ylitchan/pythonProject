@@ -1,0 +1,37 @@
+feature: 2026-08-03-autobn-staged-take-profit
+status: done
+steps:
+  - id: 1
+    action: 建立第一阶段止盈触发计算和一次性守卫
+    status: done
+  - id: 2
+    action: 接入部分平仓并在成功后提交保护止损与下一止盈
+    status: done
+  - id: 3
+    action: 移除旧早期阈值仅追踪职责并验证互斥
+    status: done
+  - id: 4
+    action: 补充测试并执行全量验证
+    status: done
+checks:
+  - id: first-stage
+    description: tp_count为0且浮盈达到阈值时平仓70%
+    status: passed
+  - id: protected-stop
+    description: 成功后剩仓止损锁住触发浮盈的70%且不放宽
+    status: passed
+  - id: next-target
+    description: 下一止盈按当前价与1ATR或5%较小距离设置
+    status: passed
+  - id: once-only
+    description: tp_count大于等于1时不再触发第一阶段
+    status: passed
+  - id: exclusive
+    description: 同轮满足第一阶段与绝对止盈时仅触发第一阶段
+    status: passed
+  - id: failure
+    description: 平仓失败时不提交阶段价格线
+    status: passed
+  - id: regression
+    description: 相关测试、全量单测与Ruff全部通过
+    status: passed

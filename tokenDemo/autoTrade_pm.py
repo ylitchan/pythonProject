@@ -1459,15 +1459,43 @@ class AUTOBN:
         self, symbol, close_info, atr_value, current_price
     ):
         is_long = close_info.position_side.value == PositionSide.LONG.value
+        profit = (
+            current_price - close_info.entry_price
+            if is_long
+            else close_info.entry_price - current_price
+        )
+        atr_trigger = max(
+            min(
+                atr_value,
+                close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO,
+            ),
+            self.MIN_ATR_TRIGGER,
+        )
+        take_profit_gap = (
+            close_info.take_profit - close_info.entry_price
+            if is_long
+            else close_info.entry_price - close_info.take_profit
+        )
+        first_tp_target = min(
+            take_profit_gap / self.TARGET_PROFIT_DIVISOR,
+            atr_trigger,
+        )
         sl_triggered = (is_long and current_price <= close_info.stop_loss) or (
             not is_long and current_price >= close_info.stop_loss
+        )
+        first_tp_triggered = (
+            not sl_triggered
+            and close_info.tp_count < 1
+            and first_tp_target > 0
+            and profit >= first_tp_target
         )
         tp_triggered = (
             is_long and current_price >= close_info.take_profit
         ) or (not is_long and current_price <= close_info.take_profit)
         oi_stop_triggered = False
         if (
-            not sl_triggered
+            not first_tp_triggered
+            and not sl_triggered
             and not tp_triggered
             and is_long
             and close_info.stop_guard_threshold > 0
@@ -1479,14 +1507,43 @@ class AUTOBN:
                 <= close_info.stop_guard_threshold
             )
 
-        if oi_stop_triggered:
-            close_info.close_reason = "OI止损"
+        if sl_triggered:
+            if not close_info.close_reason:
+                close_info.close_reason = "初始止损"
             await self.close_bn_position(
                 symbol, close_info, atr_value, current_price, 1
             )
-        elif sl_triggered:
-            if not close_info.close_reason:
-                close_info.close_reason = "初始止损"
+        elif first_tp_triggered:
+            close_info.close_reason = "首次止盈"
+            close_result = await self.close_bn_position(
+                symbol,
+                close_info,
+                atr_value,
+                current_price,
+                self.PARTIAL_CLOSE_RATIO,
+            )
+            if close_result and symbol in self.alert_all["POSITIONS"]:
+                close_info.tp_count += 1
+                protected_profit = profit * self.TRAILING_STOP_PROFIT_RATIO
+                next_tp_distance = min(
+                    atr_value,
+                    current_price * self.ATR_TRIGGER_CAP_RATIO,
+                )
+                if is_long:
+                    close_info.stop_loss = max(
+                        close_info.stop_loss,
+                        close_info.entry_price + protected_profit,
+                    )
+                    close_info.take_profit = current_price + next_tp_distance
+                else:
+                    close_info.stop_loss = min(
+                        close_info.stop_loss,
+                        close_info.entry_price - protected_profit,
+                    )
+                    close_info.take_profit = current_price - next_tp_distance
+                self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
+        elif oi_stop_triggered:
+            close_info.close_reason = "OI止损"
             await self.close_bn_position(
                 symbol, close_info, atr_value, current_price, 1
             )
@@ -1501,7 +1558,7 @@ class AUTOBN:
                 self.PARTIAL_CLOSE_RATIO,
             )
 
-        return oi_stop_triggered or sl_triggered or tp_triggered
+        return first_tp_triggered or oi_stop_triggered or sl_triggered or tp_triggered
 
     async def _manage_long_position(
         self, symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
