@@ -782,7 +782,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(obj.close_bn_position.await_args.args[-1], 1)
         obj._get_lsr_5m_data.assert_not_awaited()
 
-    async def test_long_oi_stop_uses_ratio_over_one_even_when_losing(self):
+    async def test_long_oi_stop_triggers_without_long_short_ratio(self):
         obj = self.make_autobn()
         position = self.make_position(
             entry_price=12,
@@ -792,8 +792,8 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj._get_lsr_5m_data.reset_mock()
         obj._get_oi_5m_data.reset_mock()
         obj.close_bn_position.reset_mock()
-        obj._get_lsr_5m_data.return_value = [{"longShortRatio": "1.1"}]
-        obj._get_oi_5m_data.return_value = [{"sumOpenInterest": "90"}]
+        obj._get_lsr_5m_data.return_value = []
+        obj._get_oi_5m_data.return_value = [{"sumOpenInterest": "100"}]
 
         await obj.rzq_token(
             __import__("asyncio").Semaphore(1),
@@ -802,19 +802,19 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
         )
 
-        obj._get_lsr_5m_data.assert_awaited_once_with("BTCUSDT")
+        obj._get_lsr_5m_data.assert_not_awaited()
         obj._get_oi_5m_data.assert_awaited_once_with("BTCUSDT")
         obj.close_bn_position.assert_awaited_once()
         self.assertEqual(obj.close_bn_position.await_args.args[1].close_reason, "OI止损")
 
-    async def test_long_oi_stop_skips_oi_when_ratio_not_over_one(self):
+    async def test_long_oi_stop_does_not_trigger_above_threshold(self):
         obj = self.make_autobn()
         position = self.make_position(stop_guard_threshold=100)
         await self.run_position(obj, position, self.make_kline(10, 10))
         obj._get_lsr_5m_data.reset_mock()
         obj._get_oi_5m_data.reset_mock()
         obj.close_bn_position.reset_mock()
-        obj._get_lsr_5m_data.return_value = [{"longShortRatio": "1.0"}]
+        obj._get_oi_5m_data.return_value = [{"sumOpenInterest": "101"}]
 
         await obj.rzq_token(
             __import__("asyncio").Semaphore(1),
@@ -823,8 +823,9 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
         )
 
-        obj._get_lsr_5m_data.assert_awaited_once_with("BTCUSDT")
-        obj._get_oi_5m_data.assert_not_awaited()
+        obj._get_lsr_5m_data.assert_not_awaited()
+        obj._get_oi_5m_data.assert_awaited_once_with("BTCUSDT")
+        obj.close_bn_position.assert_not_awaited()
 
     async def test_take_profit_skips_ratio_oi_and_position_management(self):
         obj = self.make_autobn()
@@ -1994,8 +1995,8 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(passed)
         self.assertEqual(lsrd, 1.5)
-        # 止损护栏仍是区间均值100，不是blend用的末根105
-        self.assertAlmostEqual(stop_guard, 100.0)
+        # 开仓最新5m OI为120，独立10%回撤线为108
+        self.assertAlmostEqual(stop_guard, 108.0)
 
     async def test_long_signal_still_rejects_when_blend_fails(self):
         # blend = (105*0.5 + (120-105)*0.4) / 120 ≈ 0.4875 < 0.6
@@ -2025,7 +2026,7 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(passed)
-        self.assertAlmostEqual(stop_guard, 100.0)
+        self.assertAlmostEqual(stop_guard, 108.0)
 
     async def test_long_signal_matches_window_end_ratio_by_timestamp(self):
         """多空比整体滞后一天时仍按时间戳取到区间末根；按位置切片会误取诱饵0.9放行。"""

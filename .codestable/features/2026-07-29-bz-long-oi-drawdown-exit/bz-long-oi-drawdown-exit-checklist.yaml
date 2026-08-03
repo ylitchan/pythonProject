@@ -1,0 +1,28 @@
+feature: 2026-07-29-bz-long-oi-drawdown-exit
+status: done
+steps:
+  - id: 1
+    action: 新增独立 BZ 多头 OI 回撤比例并按开仓 OI 生成平仓线
+    status: done
+  - id: 2
+    action: 移除多头 OI 平仓的 LSR 门槛并直接按 OI 回撤线触发
+    status: done
+  - id: 3
+    action: 补充回归测试并执行全量验证
+    status: done
+checks:
+  - id: threshold
+    description: 开仓最新 5m OI 为 200 时保存的平仓线为 180
+    status: passed
+  - id: boundary
+    description: 最新 5m OI 等于或低于平仓线时全平，高于时不触发
+    status: passed
+  - id: no-lsr
+    description: 多头 OI 平仓不再请求或依赖多空比
+    status: passed
+  - id: unavailable-oi
+    description: 最新 5m OI 不可用时不误平仓
+    status: passed
+  - id: regression
+    description: 相关测试、全量单测与 Ruff 全部通过
+    status: passed

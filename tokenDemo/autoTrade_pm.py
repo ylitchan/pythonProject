@@ -341,6 +341,7 @@ class AUTOBN:
     BD_VOLUME_RECENT_COUNT = 3  # 入池成交量近期区间根数
     BD_OI_LOOKBACK_COUNT = 10  # 入池1d OI回看总根数
     BD_OI_RECENT_COUNT = 3  # 入池1d OI近期区间根数
+    BZ_LONG_OI_DRAWDOWN_RATIO = 0.1  # BZ多头：自开仓5m OI回撤10%触发平仓
     BD_OI_DRAWDOWN_RATIO = 0.1  # 扣扳机：5m OI 需自30日峰值回撤的比例（10%）
 
     # ==================== 基差率常量 ====================
@@ -1158,9 +1159,8 @@ class AUTOBN:
                         )["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    # 止损护栏仍用区间均值，与 blend 口径无关
-                    stop_guard_threshold = sum(oi_hist_for_cheb) / len(
-                        oi_hist_for_cheb
+                    stop_guard_threshold = oi_5m_last * (
+                        1 - self.BZ_LONG_OI_DRAWDOWN_RATIO
                     )
                     return (
                         (True, lsrd, stop_guard_threshold)
@@ -1459,26 +1459,18 @@ class AUTOBN:
             is_long and current_price >= close_info.take_profit
         ) or (not is_long and current_price <= close_info.take_profit)
         oi_stop_triggered = False
-        if not sl_triggered and not tp_triggered:
-            lsr_5m = await self._get_lsr_5m_data(symbol)
-            latest_lsr = None
-            if lsr_5m:
-                try:
-                    latest_lsr = float(lsr_5m[0]["longShortRatio"])
-                except (KeyError, TypeError, ValueError):
-                    latest_lsr = None
-            if (
-                is_long
-                and latest_lsr is not None
-                and latest_lsr > 1
-                and close_info.stop_guard_threshold > 0
-            ):
-                oi_5m = await self._get_oi_5m_data(symbol)
-                oi_stop_triggered = (
-                    oi_5m
-                    and float(oi_5m[-1]["sumOpenInterest"])
-                    <= close_info.stop_guard_threshold
-                )
+        if (
+            not sl_triggered
+            and not tp_triggered
+            and is_long
+            and close_info.stop_guard_threshold > 0
+        ):
+            oi_5m = await self._get_oi_5m_data(symbol)
+            oi_stop_triggered = bool(
+                oi_5m
+                and float(oi_5m[-1]["sumOpenInterest"])
+                <= close_info.stop_guard_threshold
+            )
 
         if oi_stop_triggered:
             close_info.close_reason = "OI止损"
