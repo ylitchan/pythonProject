@@ -1303,6 +1303,44 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(stored.timestamp, observation.timestamp)
                 self.assertIn("BTCUSDT", obj.alert_all["POSITIONS"])
 
+    def test_calc_stop_profit_loss_uses_independent_atr_factors(self):
+        obj = self.make_autobn()
+
+        self.assertEqual(obj.calc_stop_profit_loss(100, True, 2), (106, 98))
+        self.assertEqual(obj.calc_stop_profit_loss(100, False, 2), (94, 102))
+        self.assertEqual(obj.calc_stop_profit_loss(100, True, 0), (0, 0))
+        self.assertEqual(obj.calc_stop_profit_loss(100, False, -1), (0, 0))
+
+    async def test_manage_position_uses_directional_atr_rails(self):
+        for position_side, expected_rails in (
+            (PositionSide.LONG, (16, 8)),
+            (PositionSide.SHORT, (12, 4)),
+        ):
+            with self.subTest(position_side=position_side):
+                obj = self.make_autobn()
+                position = self.make_position(position_side=position_side)
+                obj.calculate_atr = MagicMock(return_value=2)
+                obj._close_triggered_position = AsyncMock(return_value=False)
+                obj._manage_long_position = AsyncMock()
+                obj._manage_short_position = AsyncMock()
+
+                await obj._manage_position(
+                    "BTCUSDT",
+                    position,
+                    None,
+                    self.make_kline(100, 100),
+                    100,
+                    999,
+                )
+
+                manager = (
+                    obj._manage_long_position
+                    if position_side == PositionSide.LONG
+                    else obj._manage_short_position
+                )
+                args = manager.await_args.args
+                self.assertEqual(args[4:6], expected_rails)
+
     async def test_atr_initialization_preserves_existing_observation(self):
         obj = self.make_autobn()
         position = self.make_position(take_profit=0, stop_loss=0)

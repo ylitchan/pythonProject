@@ -2,6 +2,7 @@
 
 ## Current
 
+- [AUTOBN 按风控职责管理 ATR 价格线](autobn-directional-atr-price-control.md) — 让多空交易的盈利空间和亏损边界可以独立控制，避免调整一侧时意外改变另一侧（current）
 - [AUTOBN BZ 多头 OI 回撤退出](autobn-bz-long-oi-drawdown-exit.md) — BZ 多头所依赖的持仓热度明显退潮时及时退出，避免等待行情完全回归常态（current）
 
 - [统一观察状态生命周期与重开冷却](shared-observation-reopen-cooldown.md) — 让每个市场和策略按真实观察信号管理有效期，并在平仓后只保留仍可复用的观察机会（current）

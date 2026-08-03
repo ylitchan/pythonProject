@@ -314,7 +314,8 @@ class AUTOBN:
 
     # ==================== ATR风控常量 ====================
     ATR_PERIOD = 10  # ATR计算周期
-    SUPERTREND_FACTOR = 3.0  # ATR倍数，用于计算止盈止损和supertrend上下轨
+    TAKE_PROFIT_ATR_FACTOR = 3.0  # AUTOBN止盈价与止盈轨ATR倍数
+    STOP_LOSS_ATR_FACTOR = 1.0  # AUTOBN止损价与止损轨ATR倍数
     ATR_TRIGGER_CAP_RATIO = 0.05
     ATR_HL2_CAP_RATIO = 0.1  # ATR返回值上限比例（不超过hl2的10%）
     MIN_ATR_TRIGGER = 1e-8
@@ -1346,18 +1347,24 @@ class AUTOBN:
         atr_cap = hl2 * self.ATR_HL2_CAP_RATIO
         return min(atr, atr_cap) if atr_cap > 0 else atr
 
-    # 止盈止损计算辅助函数 (使用supertrend的factor倍ATR)
+    # 止盈止损计算辅助函数
     def calc_stop_profit_loss(self, price, is_long=True, atr=0):
         if atr <= 0:
             return (0, 0)
 
-        # 使用supertrend的factor倍ATR作为止盈止损距离
-        atr_distance = atr * self.SUPERTREND_FACTOR
+        take_profit_distance = atr * self.TAKE_PROFIT_ATR_FACTOR
+        stop_loss_distance = atr * self.STOP_LOSS_ATR_FACTOR
         if is_long:
-            return (price + atr_distance, price - atr_distance)
+            return (
+                price + take_profit_distance,
+                price - stop_loss_distance,
+            )
         else:
             # 做空：返回 (下界/止盈位, 上界/止损位)
-            return (price - atr_distance, price + atr_distance)
+            return (
+                price - take_profit_distance,
+                price + stop_loss_distance,
+            )
 
     def calculate_chebyshev_probability(self, data_list, value):
         """
@@ -1753,9 +1760,21 @@ class AUTOBN:
         ):
             return open_info
 
-        # 计算当前supertrend上下轨，用于止盈边界限制
-        current_upper = hl2 + atr_value * self.SUPERTREND_FACTOR  # 当前上轨
-        current_lower = hl2 - atr_value * self.SUPERTREND_FACTOR  # 当前下轨
+        is_long = close_info.position_side.value == PositionSide.LONG.value
+        if is_long:
+            current_take_profit_rail = (
+                hl2 + atr_value * self.TAKE_PROFIT_ATR_FACTOR
+            )
+            current_stop_loss_rail = (
+                hl2 - atr_value * self.STOP_LOSS_ATR_FACTOR
+            )
+        else:
+            current_take_profit_rail = (
+                hl2 - atr_value * self.TAKE_PROFIT_ATR_FACTOR
+            )
+            current_stop_loss_rail = (
+                hl2 + atr_value * self.STOP_LOSS_ATR_FACTOR
+            )
         # ATR触发阈值：用于收益阈值比较（与1/3预期收益取较小值）
         atr_trigger = max(
             min(
@@ -1765,13 +1784,25 @@ class AUTOBN:
             self.MIN_ATR_TRIGGER,
         )
 
-        if close_info.position_side.value == PositionSide.LONG.value:
+        if is_long:
             await self._manage_long_position(
-                symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
+                symbol,
+                close_info,
+                atr_value,
+                current_price,
+                current_take_profit_rail,
+                current_stop_loss_rail,
+                atr_trigger,
             )
-        elif close_info.position_side.value == PositionSide.SHORT.value:
+        else:
             await self._manage_short_position(
-                symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
+                symbol,
+                close_info,
+                atr_value,
+                current_price,
+                current_stop_loss_rail,
+                current_take_profit_rail,
+                atr_trigger,
             )
 
         # 更新回字典
@@ -1845,7 +1876,7 @@ class AUTOBN:
         lsr_show = (
             f"{long_short_ratio:.4f}" if long_short_ratio is not None else "N/A"
         )
-        rate_show = atr_value * self.SUPERTREND_FACTOR / current_price
+        rate_show = atr_value * self.TAKE_PROFIT_ATR_FACTOR / current_price
         strategy_tag = format_strategy_tags(open_info.strategy)
         msg = (
             f"==={symbol}**{strategy_tag}**===\n"
