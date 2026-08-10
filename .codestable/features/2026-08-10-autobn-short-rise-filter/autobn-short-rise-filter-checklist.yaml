@@ -1,0 +1,22 @@
+feature: 2026-08-10-autobn-short-rise-filter
+status: done
+steps:
+  - id: 1
+    action: 增加20%常量并接入做空开仓过滤
+    status: done
+  - id: 2
+    action: 补充边界测试并执行回归验证
+    status: done
+checks:
+  - id: threshold
+    description: 涨幅达到20%允许做空，低于20%拒绝做空
+    status: passed
+  - id: formula
+    description: 使用最高量基准日开盘到以来最高价计算涨幅
+    status: passed
+  - id: scope
+    description: LONG、BD入池、OI回撤和平仓逻辑未改变
+    status: passed
+  - id: regression
+    description: 单测与Ruff通过
+    status: passed

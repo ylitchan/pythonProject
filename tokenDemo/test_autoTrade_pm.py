@@ -1429,6 +1429,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 kline[-1][5] = 50
                 obj.get_kline = AsyncMock(return_value=kline)
                 obj.check_side = AsyncMock(return_value=(True, None, None))
+                obj._short_rise_from_volume_peak = MagicMock(return_value=1.0)
                 obj.calculate_atr = MagicMock(return_value=1)
                 obj.calc_stop_profit_loss = MagicMock(
                     return_value=(12, 8) if side == OrderSide.BUY else (8, 12)
@@ -1451,7 +1452,30 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(stored.timestamp, observation.timestamp)
                 self.assertIn("BTCUSDT", obj.alert_all["POSITIONS"])
 
-    def test_calc_stop_profit_loss_uses_independent_atr_factors(self):
+    def test_short_rise_uses_volume_peak_open_to_since_peak_high(self):
+        obj = self.make_autobn()
+        kline = [
+            [0, 100, 105, 95, 102, 10],
+            [1, 110, 119, 108, 115, 30],
+            [2, 116, 140, 114, 120, 20],
+        ]
+
+        self.assertEqual(obj._short_rise_from_volume_peak(kline), 0.2727272727272727)
+        self.assertLess(0.19, obj._short_rise_from_volume_peak(kline))
+        self.assertGreaterEqual(
+            obj._short_rise_from_volume_peak(kline), obj.SHORT_RISE_THRESHOLD
+        )
+
+    def test_short_rise_below_threshold_is_rejected(self):
+        obj = self.make_autobn()
+        kline = [
+            [0, 100, 105, 95, 102, 10],
+            [1, 110, 119, 108, 115, 30],
+            [2, 116, 130, 114, 120, 20],
+        ]
+
+        self.assertLess(obj._short_rise_from_volume_peak(kline), obj.SHORT_RISE_THRESHOLD)
+
         obj = self.make_autobn()
 
         self.assertEqual(obj.calc_stop_profit_loss(100, True, 2), (106, 98))
@@ -1549,6 +1573,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             ]
         )
         obj.check_side = AsyncMock(return_value=(True, None, None))
+        obj._short_rise_from_volume_peak = MagicMock(return_value=1.0)
         obj.calculate_atr = MagicMock(return_value=1)
         obj.calc_stop_profit_loss = MagicMock(return_value=(8, 10))
         obj.get_basis_rate = AsyncMock(return_value=0)
