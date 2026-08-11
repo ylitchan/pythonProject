@@ -344,7 +344,6 @@ class AUTOBN:
     BD_OI_RECENT_COUNT = 3  # 入池1d OI近期区间根数
     BZ_LONG_OI_DRAWDOWN_RATIO = 0.1  # BZ多头：自开仓5m OI回撤10%触发平仓
     BD_OI_DRAWDOWN_RATIO = 0.1  # 扣扳机：5m OI 需自30日峰值回撤的比例（10%）
-    SHORT_RISE_THRESHOLD = 0.2  # 做空要求最高量日以来高位涨幅至少20%
 
     # ==================== 基差率常量 ====================
     BASIS_RATE_THRESHOLD = 0.02  # 基差率开仓阈值（2%）
@@ -1867,15 +1866,6 @@ class AUTOBN:
         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
         return open_info
 
-    @classmethod
-    def _short_rise_from_volume_peak(cls, kline):
-        volume_peak_index = max(range(len(kline)), key=lambda i: kline[i][5])
-        peak_open = kline[volume_peak_index][1]
-        if peak_open <= 0:
-            return 0.0
-        peak_high = max(item[2] for item in kline[volume_peak_index:])
-        return (peak_high - peak_open) / peak_open
-
     async def _is_bd_observation(
         self,
         symbol,
@@ -2054,9 +2044,6 @@ class AUTOBN:
                             kline_close,
                             dtn,
                         )
-                    if short_ok:
-                        short_rise = self._short_rise_from_volume_peak(kline)
-                        short_ok = short_rise >= self.SHORT_RISE_THRESHOLD
                     if short_ok:
                         signal = await self._build_open_signal(
                             symbol,
