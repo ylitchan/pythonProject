@@ -96,6 +96,21 @@ class AutoABzReferenceHighTest(unittest.TestCase):
 
 
 class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
+    async def test_default_trading_history_contains_20_daily_bars(self):
+        dates = pd.date_range("2026-06-01", periods=30, freq="B")
+        calendar = pd.DataFrame({"trade_date": dates})
+        with patch(
+            "tokenDemo.autoTrade_pm.ak.tool_trade_date_hist_sina",
+            return_value=calendar,
+        ):
+            trading_days = await AUTOA.get_last_trading_days(
+                dates[-1].to_pydatetime()
+            )
+
+        self.assertEqual(len(trading_days), 20)
+        self.assertEqual(trading_days[0], dates[-1].strftime("%Y-%m-%d"))
+        self.assertEqual(trading_days[-1], dates[-20].strftime("%Y-%m-%d"))
+
     async def test_following_trading_days_skip_weekend_and_market_holiday(self):
         calendar = pd.DataFrame({
             "trade_date": [
@@ -171,7 +186,7 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
                 "close": 10.5,
                 "volume": 100,
             }
-            for _ in range(29)
+            for _ in range(19)
         ] + [{
             "open": 12,
             "high": 13,
@@ -196,7 +211,7 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
                 AUTOA,
                 "calculate_chebyshev_probability",
                 return_value={"chebyshev_upper_bound": 0.001},
-            ),
+            ) as calculate_chebyshev,
             patch.object(AUTOA, "calculate_atr", return_value=1),
             patch.object(AUTOA, "_get_http_session", new=AsyncMock(return_value=session)),
             patch.dict(os.environ, {"AUTOA_WECOM_KEY": "test-wecom-key"}, clear=False),
@@ -210,6 +225,10 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
             )
 
         send_pushplus.assert_not_awaited()
+        self.assertEqual(
+            list(calculate_chebyshev.call_args.args[0]),
+            [100] * 15,
+        )
         session.post.assert_called_once_with(
             url=(
                 "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
@@ -920,6 +939,7 @@ class AutoBNNotificationRoutingTest(unittest.IsolatedAsyncioTestCase):
 class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
     UTC_DAY_TS = 1_700_006_400_000  # 2023-11-15 00:00 UTC
     DTN_IN_DAY = pd.Timestamp("2023-11-15 12:00:00", tz="UTC").to_pydatetime()
+    UTC_HOUR_TS = UTC_DAY_TS + 12 * 3_600_000
     # 5m 夹具用真实对齐值：币安时间戳一定是300秒整数倍，非对齐值在生产里不存在
     BAR_5M_BOUNDARY = 1_700_000_400  # 当前5m边界（秒），缓存末根对上它就不用拉
     NOW_IN_5M_PERIOD = 1_700_000_500  # 落在该周期内的当前时刻
@@ -930,7 +950,8 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def make_autobn():
         obj = AUTOBN.__new__(AUTOBN)
-        obj._lsr_1d_cache = {}
+        obj._lsr_1h_cache = {}
+        obj._oi_history_cache = {}
         obj._lsr_5m_cache = {}
         obj._oi_5m_cache = {}
         obj.logger = MagicMock()
@@ -2058,137 +2079,137 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(position.take_profit, 1.0009)
 
-    async def test_lsr_1d_uses_cache_when_last_bar_is_utc_day_start(self):
+    async def test_lsr_1h_uses_cache_when_last_bar_is_utc_hour_start(self):
         obj = self.make_autobn()
-        obj._lsr_1d_cache["BTCUSDT"] = [
-            {"longShortRatio": "1.1", "timestamp": self.UTC_DAY_TS}
+        obj._lsr_1h_cache["BTCUSDT"] = [
+            {"longShortRatio": "1.1", "timestamp": self.UTC_HOUR_TS}
             for _ in range(30)
         ]
         obj._call_api = AsyncMock()
 
-        result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+        result = await obj._get_lsr_1h_data("BTCUSDT", self.DTN_IN_DAY)
 
         obj._call_api.assert_not_awaited()
         self.assertEqual(result[0]["longShortRatio"], "1.1")
 
-    async def test_lsr_1d_refetches_after_utc_day_rollover(self):
+    async def test_lsr_1h_refetches_after_utc_hour_rollover(self):
         obj = self.make_autobn()
-        obj._lsr_1d_cache["BTCUSDT"] = [
-            {"longShortRatio": "1.1", "timestamp": self.UTC_DAY_TS - 86_400_000}
+        obj._lsr_1h_cache["BTCUSDT"] = [
+            {"longShortRatio": "1.1", "timestamp": self.UTC_HOUR_TS - 3_600_000}
             for _ in range(30)
         ]
         obj._call_api = AsyncMock(
             return_value=[
-                {"longShortRatio": "1.3", "timestamp": self.UTC_DAY_TS}
+                {"longShortRatio": "1.3", "timestamp": self.UTC_HOUR_TS}
                 for _ in range(30)
             ]
         )
 
-        result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+        result = await obj._get_lsr_1h_data("BTCUSDT", self.DTN_IN_DAY)
 
         obj._call_api.assert_awaited_once_with(
             obj.market_client.rest_api.long_short_ratio,
             symbol="BTCUSDT",
-            period="1d",
+            period="1h",
             limit=obj.LONG_SHORT_RATIO_LIMIT,
         )
         self.assertEqual(result[0]["longShortRatio"], "1.3")
         self.assertEqual(
-            obj._lsr_1d_cache["BTCUSDT"][-1]["timestamp"], self.UTC_DAY_TS
+            obj._lsr_1h_cache["BTCUSDT"][-1]["timestamp"], self.UTC_HOUR_TS
         )
 
-    async def test_lsr_1d_keeps_cache_when_fetched_series_is_not_newer(self):
+    async def test_lsr_1h_keeps_cache_when_fetched_series_is_not_newer(self):
         """拉回来的末根比缓存旧：缓存不动，仍返回缓存那份。"""
         obj = self.make_autobn()
-        obj._lsr_1d_cache["BTCUSDT"] = [
-            {"longShortRatio": "1.1", "timestamp": self.UTC_DAY_TS - 86_400_000}
+        obj._lsr_1h_cache["BTCUSDT"] = [
+            {"longShortRatio": "1.1", "timestamp": self.UTC_HOUR_TS - 3_600_000}
             for _ in range(30)
         ]
         obj._call_api = AsyncMock(
             return_value=[
                 {
                     "longShortRatio": "9.9",
-                    "timestamp": self.UTC_DAY_TS - 2 * 86_400_000,
+                    "timestamp": self.UTC_HOUR_TS - 2 * 3_600_000,
                 }
                 for _ in range(30)
             ]
         )
 
-        result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+        result = await obj._get_lsr_1h_data("BTCUSDT", self.DTN_IN_DAY)
 
         obj._call_api.assert_awaited_once()
         self.assertEqual(result[0]["longShortRatio"], "1.1")
 
-    async def test_lsr_1d_drops_bars_after_utc_day_start(self):
+    async def test_lsr_1h_drops_bars_after_utc_hour_start(self):
         obj = self.make_autobn()
         obj._call_api = AsyncMock(
             return_value=[
-                {"longShortRatio": "1.3", "timestamp": self.UTC_DAY_TS}
+                {"longShortRatio": "1.3", "timestamp": self.UTC_HOUR_TS}
                 for _ in range(29)
             ]
             + [
                 {
                     "longShortRatio": "1.9",
-                    "timestamp": self.UTC_DAY_TS + 86_400_000,
+                    "timestamp": self.UTC_HOUR_TS + 3_600_000,
                 }
             ]
         )
 
-        result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+        result = await obj._get_lsr_1h_data("BTCUSDT", self.DTN_IN_DAY)
 
         self.assertIsNone(result)
-        self.assertNotIn("BTCUSDT", obj._lsr_1d_cache)
+        self.assertNotIn("BTCUSDT", obj._lsr_1h_cache)
 
-    async def test_lsr_1d_falls_back_to_cache_on_api_error(self):
+    async def test_lsr_1h_falls_back_to_cache_on_api_error(self):
         """拉取失败就没有新数据可比：缓存不动，仍照用缓存那份。"""
         obj = self.make_autobn()
-        obj._lsr_1d_cache["BTCUSDT"] = [
-            {"longShortRatio": "1.1", "timestamp": self.UTC_DAY_TS - 86_400_000}
+        obj._lsr_1h_cache["BTCUSDT"] = [
+            {"longShortRatio": "1.1", "timestamp": self.UTC_HOUR_TS - 3_600_000}
             for _ in range(30)
         ]
         obj._call_api = AsyncMock(side_effect=RuntimeError("boom"))
 
-        result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+        result = await obj._get_lsr_1h_data("BTCUSDT", self.DTN_IN_DAY)
 
         self.assertEqual(len(result), 30)
         self.assertEqual(result[0]["longShortRatio"], "1.1")
         obj.logger.error.assert_called_once()
 
-    async def test_lsr_1d_returns_none_on_api_error_without_cache(self):
+    async def test_lsr_1h_returns_none_on_api_error_without_cache(self):
         obj = self.make_autobn()
         obj._call_api = AsyncMock(side_effect=RuntimeError("boom"))
 
-        result = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+        result = await obj._get_lsr_1h_data("BTCUSDT", self.DTN_IN_DAY)
 
         self.assertIsNone(result)
         obj.logger.error.assert_called_once()
 
-    async def test_lsr_1d_caches_lagging_series_then_swaps_in_newer(self):
-        """币安还没发布当天那根：先照用这份，末根对不上就继续拉，拉到更新的才换。"""
+    async def test_lsr_1h_caches_lagging_series_then_swaps_in_newer(self):
+        """币安还没发布当小时那根：先照用这份，末根对不上就继续拉。"""
         obj = self.make_autobn()
         obj._call_api = AsyncMock(
             return_value=[
                 {
                     "longShortRatio": "1.3",
-                    "timestamp": self.UTC_DAY_TS - 86_400_000,
+                    "timestamp": self.UTC_HOUR_TS - 3_600_000,
                 }
                 for _ in range(30)
             ]
         )
 
-        lagging = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+        lagging = await obj._get_lsr_1h_data("BTCUSDT", self.DTN_IN_DAY)
 
         self.assertEqual(lagging[0]["longShortRatio"], "1.3")
         self.assertEqual(
-            obj._lsr_1d_cache["BTCUSDT"][-1]["timestamp"],
-            self.UTC_DAY_TS - 86_400_000,
+            obj._lsr_1h_cache["BTCUSDT"][-1]["timestamp"],
+            self.UTC_HOUR_TS - 3_600_000,
         )
 
         obj._call_api.return_value = [
-            {"longShortRatio": "1.4", "timestamp": self.UTC_DAY_TS}
+            {"longShortRatio": "1.4", "timestamp": self.UTC_HOUR_TS}
             for _ in range(30)
         ]
-        retried = await obj._get_lsr_1d_data("BTCUSDT", self.DTN_IN_DAY)
+        retried = await obj._get_lsr_1h_data("BTCUSDT", self.DTN_IN_DAY)
 
         self.assertEqual(retried[0]["longShortRatio"], "1.4")
         self.assertEqual(obj._call_api.await_count, 2)
@@ -2517,22 +2538,22 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
     """BZ做多blend：OI和多仓比例都取切比雪夫区间最后一根，比例按时间戳定位。"""
 
-    # 前20根为切比雪夫区间（末根105，区间均值100，两者不等以便区分口径）
-    OI_1D_VALUES = ["95"] * 10 + ["105"] * 10 + ["120"] * 10
-    BASE_TS = 1_700_006_400_000  # 某个UTC零点
-    DAY_MS = 86_400_000
+    # 前24根为切比雪夫区间（末根105，区间均值100，两者不等以便区分口径）
+    OI_1H_VALUES = ["95"] * 12 + ["105"] * 12 + ["120"] * 6
+    BASE_TS = 1_700_006_400_000  # 某个UTC整点
+    HOUR_MS = 3_600_000
 
     @classmethod
-    def make_autobn(cls, window_end_long_ratio, long_ratio_5m, lsr_lag_days=0):
+    def make_autobn(cls, window_end_long_ratio, long_ratio_5m, lsr_lag_hours=0):
         obj = AUTOBN.__new__(AUTOBN)
         obj.logger = MagicMock()
         dtn = pd.Timestamp("2026-07-25 12:30:00", tz="UTC").to_pydatetime()
-        oi_ts = [cls.BASE_TS + i * cls.DAY_MS for i in range(len(cls.OI_1D_VALUES))]
-        # 只有切比雪夫区间末根那天填目标比例，其余填诱饵值
-        window_end_ts = oi_ts[-AUTOBN.OI_CHEB_EXCLUDE_RECENT_COUNT - 1]
-        # lsr_lag_days 模拟两条1d序列缓存刷新时点不同导致的整体错位
-        lsr_ts = [t - lsr_lag_days * cls.DAY_MS for t in oi_ts]
-        obj._get_lsr_1d_data = AsyncMock(return_value=[
+        oi_ts = [cls.BASE_TS + i * cls.HOUR_MS for i in range(len(cls.OI_1H_VALUES))]
+        # 只有切比雪夫区间末根那个小时填目标比例，其余填诱饵值
+        window_end_ts = oi_ts[-AUTOBN.LONG_OI_CHEB_EXCLUDE_RECENT_COUNT - 1]
+        # 模拟两条1h序列缓存刷新时点不同导致的整体错位
+        lsr_ts = [t - lsr_lag_hours * cls.HOUR_MS for t in oi_ts]
+        obj._get_lsr_1h_data = AsyncMock(return_value=[
             {
                 "longShortRatio": "1.5",
                 "longAccount": (
@@ -2548,9 +2569,9 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
         obj._get_oi_5m_data = AsyncMock(
             return_value=[{"sumOpenInterest": "120"}]
         )
-        obj._get_oi_1d_data = AsyncMock(return_value=[
+        obj._get_oi_history_data = AsyncMock(return_value=[
             {"sumOpenInterest": v, "timestamp": t}
-            for v, t in zip(cls.OI_1D_VALUES, oi_ts)
+            for v, t in zip(cls.OI_1H_VALUES, oi_ts)
         ])
         obj.calculate_chebyshev_probability = MagicMock(
             return_value={"chebyshev_upper_bound": 0.001}
@@ -2572,6 +2593,11 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(lsrd, 1.5)
         # 开仓最新5m OI为120，独立10%回撤线为108
         self.assertAlmostEqual(stop_guard, 108.0)
+        obj._get_oi_history_data.assert_awaited_once_with("BTCUSDT", dtn, "1h")
+        self.assertEqual(
+            obj.calculate_chebyshev_probability.call_args.args[0],
+            [float(value) for value in self.OI_1H_VALUES[:24]],
+        )
 
     async def test_long_signal_still_rejects_when_blend_fails(self):
         # blend = (105*0.5 + (120-105)*0.4) / 120 ≈ 0.4875 < 0.6
@@ -2604,9 +2630,9 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertAlmostEqual(stop_guard, 108.0)
 
     async def test_long_signal_matches_window_end_ratio_by_timestamp(self):
-        """多空比整体滞后一天时仍按时间戳取到区间末根；按位置切片会误取诱饵0.9放行。"""
+        """多空比整体滞后一小时时仍按时间戳定位，避免按位置误取。"""
         obj, dtn = self.make_autobn(
-            window_end_long_ratio=0.5, long_ratio_5m=0.6, lsr_lag_days=1
+            window_end_long_ratio=0.5, long_ratio_5m=0.6, lsr_lag_hours=1
         )
 
         passed, lsrd, stop_guard = await obj.check_side(
@@ -2623,7 +2649,7 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
     async def test_long_signal_rejects_without_error_when_window_end_missing(self):
         """错位到区间末根整根缺失时不开仓，且不靠抛异常兜底。"""
         obj, dtn = self.make_autobn(
-            window_end_long_ratio=0.7, long_ratio_5m=0.6, lsr_lag_days=25
+            window_end_long_ratio=0.7, long_ratio_5m=0.6, lsr_lag_hours=25
         )
 
         passed, lsrd, stop_guard = await obj.check_side(
@@ -2637,6 +2663,21 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(lsrd)
         self.assertIsNone(stop_guard)
         obj.logger.exception.assert_not_called()
+
+    async def test_long_signal_peak_gate_still_uses_all_30_hourly_bars(self):
+        obj, dtn = self.make_autobn(window_end_long_ratio=0.7, long_ratio_5m=0.6)
+        obj._get_oi_history_data.return_value[-1]["sumOpenInterest"] = "121"
+
+        passed, lsrd, stop_guard = await obj.check_side(
+            asyncio.Semaphore(1),
+            "BTCUSDT",
+            PositionSide.LONG.value,
+            dtn=dtn,
+        )
+
+        self.assertFalse(passed)
+        self.assertIsNone(lsrd)
+        self.assertIsNone(stop_guard)
 
 
 class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
@@ -2740,7 +2781,7 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_bd_oi_windows_combine_30_daily_with_fresh_5m(self):
         obj = AUTOBN.__new__(AUTOBN)
-        obj._get_oi_1d_data = AsyncMock(
+        obj._get_oi_history_data = AsyncMock(
             return_value=[{"sumOpenInterest": str(i)} for i in range(1, 31)]
         )
         dtn = pd.Timestamp("2026-07-25 12:00:00", tz="UTC").to_pydatetime()
@@ -2753,11 +2794,12 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(realtime, [float(i) for i in range(1, 31)] + [99.0])
         self.assertEqual(completed, [float(i) for i in range(1, 31)])
+        obj._get_oi_history_data.assert_awaited_once_with("BTCUSDT", dtn, "1d")
 
     async def test_bd_oi_windows_reject_unavailable_5m(self):
         """5m新鲜度已下沉到 _get_oi_5m_data，BD 只需处理它返回 None。"""
         obj = AUTOBN.__new__(AUTOBN)
-        obj._get_oi_1d_data = AsyncMock(
+        obj._get_oi_history_data = AsyncMock(
             return_value=[{"sumOpenInterest": "100"}] * 30
         )
         obj._get_oi_5m_data = AsyncMock(return_value=None)
@@ -2770,7 +2812,7 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_daily_oi_uses_utc_availability_boundary(self):
         obj = AUTOBN.__new__(AUTOBN)
-        obj._oi_1d_cache = {}
+        obj._oi_history_cache = {}
         boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
         obj._call_api = AsyncMock(return_value=[
             {
@@ -2781,9 +2823,10 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         ])
         obj.market_client = MagicMock()
 
-        result = await obj._get_oi_1d_data(
+        result = await obj._get_oi_history_data(
             "BTCUSDT",
             pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+            "1d",
         )
 
         self.assertEqual(len(result), 30)
@@ -2791,13 +2834,14 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             obj._call_api.await_args.kwargs["limit"], obj.OI_QUERY_LIMIT
         )
+        self.assertEqual(obj._call_api.await_args.kwargs["period"], "1d")
 
     async def test_daily_oi_uses_cache_when_last_bar_is_utc_day_start(self):
         """缓存末根已是当天UTC零点：那就是当前能拿到的最新，不再打API。"""
         obj = AUTOBN.__new__(AUTOBN)
         boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
-        obj._oi_1d_cache = {
-            "BTCUSDT": [
+        obj._oi_history_cache = {
+            ("BTCUSDT", "1d"): [
                 {
                     "sumOpenInterest": str(i),
                     "timestamp": int(
@@ -2810,9 +2854,10 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         obj._call_api = AsyncMock()
         obj.market_client = MagicMock()
 
-        result = await obj._get_oi_1d_data(
+        result = await obj._get_oi_history_data(
             "BTCUSDT",
             pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+            "1d",
         )
 
         obj._call_api.assert_not_awaited()
@@ -2821,7 +2866,7 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
     async def test_daily_oi_drops_bars_after_utc_day_start(self):
         """过滤完不足30根就不入缓存：短序列顶不掉好缓存，也不当成可用数据。"""
         obj = AUTOBN.__new__(AUTOBN)
-        obj._oi_1d_cache = {}
+        obj._oi_history_cache = {}
         boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
         obj._call_api = AsyncMock(return_value=[
             {
@@ -2832,20 +2877,21 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         ])
         obj.market_client = MagicMock()
 
-        result = await obj._get_oi_1d_data(
+        result = await obj._get_oi_history_data(
             "BTCUSDT",
             pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+            "1d",
         )
 
         self.assertIsNone(result)
-        self.assertEqual(obj._oi_1d_cache, {})
+        self.assertEqual(obj._oi_history_cache, {})
 
     async def test_daily_oi_falls_back_to_cache_on_api_error(self):
         """拉取失败与多空比侧同构：记日志后照用缓存，不把异常抛给 rzq_token 外层。"""
         obj = AUTOBN.__new__(AUTOBN)
         boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
-        obj._oi_1d_cache = {
-            "BTCUSDT": [
+        obj._oi_history_cache = {
+            ("BTCUSDT", "1d"): [
                 {
                     "sumOpenInterest": "88",
                     "timestamp": int(
@@ -2859,9 +2905,10 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         obj.market_client = MagicMock()
         obj.logger = MagicMock()
 
-        result = await obj._get_oi_1d_data(
+        result = await obj._get_oi_history_data(
             "BTCUSDT",
             pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+            "1d",
         )
 
         self.assertEqual(len(result), 30)
@@ -2870,14 +2917,15 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_daily_oi_returns_none_on_api_error_without_cache(self):
         obj = AUTOBN.__new__(AUTOBN)
-        obj._oi_1d_cache = {}
+        obj._oi_history_cache = {}
         obj._call_api = AsyncMock(side_effect=RuntimeError("boom"))
         obj.market_client = MagicMock()
         obj.logger = MagicMock()
 
-        result = await obj._get_oi_1d_data(
+        result = await obj._get_oi_history_data(
             "BTCUSDT",
             pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+            "1d",
         )
 
         self.assertIsNone(result)
@@ -2886,7 +2934,7 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
     async def test_daily_oi_caches_lagging_series_then_swaps_in_newer(self):
         """币安还没发布当天那根：先照用这份，末根对不上当天零点就继续拉，更新的才换。"""
         obj = AUTOBN.__new__(AUTOBN)
-        obj._oi_1d_cache = {}
+        obj._oi_history_cache = {}
         lagged = pd.Timestamp("2026-07-24 00:00:00", tz="UTC")
         obj._call_api = AsyncMock(return_value=[
             {
@@ -2898,11 +2946,11 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         obj.market_client = MagicMock()
         dtn = pd.Timestamp("2026-07-25 00:03:00", tz="UTC").to_pydatetime()
 
-        lagging = await obj._get_oi_1d_data("BTCUSDT", dtn)
+        lagging = await obj._get_oi_history_data("BTCUSDT", dtn, "1d")
 
         self.assertEqual(len(lagging), 30)
         self.assertEqual(
-            obj._oi_1d_cache["BTCUSDT"][-1]["timestamp"],
+            obj._oi_history_cache[("BTCUSDT", "1d")][-1]["timestamp"],
             int(lagged.timestamp() * 1000),
         )
 
@@ -2914,7 +2962,7 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
             }
             for i in range(30)
         ]
-        retried = await obj._get_oi_1d_data("BTCUSDT", dtn)
+        retried = await obj._get_oi_history_data("BTCUSDT", dtn, "1d")
 
         self.assertEqual(
             retried[-1]["timestamp"], int(boundary.timestamp() * 1000)
@@ -2924,8 +2972,8 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
     async def test_daily_oi_keeps_cache_when_fetched_series_is_not_newer(self):
         obj = AUTOBN.__new__(AUTOBN)
         boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
-        obj._oi_1d_cache = {
-            "BTCUSDT": [
+        obj._oi_history_cache = {
+            ("BTCUSDT", "1d"): [
                 {
                     "sumOpenInterest": "88",
                     "timestamp": int(
@@ -2946,13 +2994,56 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         ])
         obj.market_client = MagicMock()
 
-        result = await obj._get_oi_1d_data(
+        result = await obj._get_oi_history_data(
             "BTCUSDT",
             pd.Timestamp("2026-07-25 20:00:00", tz="UTC").to_pydatetime(),
+            "1d",
         )
 
         obj._call_api.assert_awaited_once()
         self.assertEqual(result[-1]["sumOpenInterest"], "88")
+
+    async def test_hourly_oi_uses_hour_boundary_without_overwriting_daily_cache(self):
+        obj = AUTOBN.__new__(AUTOBN)
+        daily_boundary = pd.Timestamp("2026-07-25 00:00:00", tz="UTC")
+        hourly_boundary = pd.Timestamp("2026-07-25 12:00:00", tz="UTC")
+        daily_bars = [
+            {
+                "sumOpenInterest": "88",
+                "timestamp": int(
+                    (daily_boundary.timestamp() - (29 - i) * 86400) * 1000
+                ),
+            }
+            for i in range(30)
+        ]
+        hourly_bars = [
+            {
+                "sumOpenInterest": str(i),
+                "timestamp": int(
+                    (hourly_boundary.timestamp() - (29 - i) * 3600) * 1000
+                ),
+            }
+            for i in range(30)
+        ]
+        obj._oi_history_cache = {("BTCUSDT", "1d"): daily_bars}
+        obj._call_api = AsyncMock(return_value=hourly_bars)
+        obj.market_client = MagicMock()
+
+        result = await obj._get_oi_history_data(
+            "BTCUSDT",
+            pd.Timestamp("2026-07-25 12:30:00", tz="UTC").to_pydatetime(),
+            "1h",
+        )
+
+        obj._call_api.assert_awaited_once_with(
+            obj.market_client.rest_api.open_interest_statistics,
+            symbol="BTCUSDT",
+            period="1h",
+            limit=obj.OI_QUERY_LIMIT,
+        )
+        self.assertEqual(result, hourly_bars)
+        self.assertIs(obj._oi_history_cache[("BTCUSDT", "1d")], daily_bars)
+        self.assertEqual(obj._oi_history_cache[("BTCUSDT", "1h")], hourly_bars)
 
     def test_observation_timeouts_are_strategy_specific(self):
         self.assertEqual(
@@ -3186,7 +3277,7 @@ class StrategyStateWindowConsistencyTest(unittest.IsolatedAsyncioTestCase):
             30,
         )
 
-    async def test_autoa_rejects_29_klines_at_entry(self):
+    async def test_autoa_rejects_19_klines_at_entry(self):
         observation = Observation(
             price=10,
             timestamp=pd.Timestamp("2026-07-01").timestamp(),
@@ -3196,7 +3287,7 @@ class StrategyStateWindowConsistencyTest(unittest.IsolatedAsyncioTestCase):
         )
         hist = pd.DataFrame([
             {"open": 10, "high": 11, "low": 9, "close": 10.5, "volume": 100}
-            for _ in range(29)
+            for _ in range(19)
         ])
         with (
             patch.object(AUTOA, "alert_all", {
@@ -3214,6 +3305,30 @@ class StrategyStateWindowConsistencyTest(unittest.IsolatedAsyncioTestCase):
             )
 
         calculate_atr.assert_not_called()
+
+
+class AtrPeriodConfigurationTest(unittest.TestCase):
+    def test_autobn_default_atr_uses_seven_daily_bars(self):
+        strategy = AUTOBN.__new__(AUTOBN)
+        bars = [
+            [index, 10.0, 10.5, 10.0, 10.0, 100.0]
+            for index in range(8)
+        ]
+
+        self.assertEqual(AUTOBN.ATR_PERIOD, 7)
+        self.assertAlmostEqual(strategy.calculate_atr(bars), 0.5)
+
+    def test_autoa_default_atr_uses_five_daily_bars(self):
+        bars = pd.DataFrame(
+            [
+                [index, 10.0, 10.5, 10.0, 10.0, 100.0]
+                for index in range(6)
+            ],
+            columns=["timestamp", "open", "high", "low", "close", "volume"],
+        )
+
+        self.assertEqual(AUTOA.ATR_PERIOD, 5)
+        self.assertAlmostEqual(AUTOA.calculate_atr(bars), 0.5)
 
 
 if __name__ == "__main__":

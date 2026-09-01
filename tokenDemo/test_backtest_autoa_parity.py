@@ -13,6 +13,8 @@ from backtest_autoa import (
 )
 from autoTrade_pm import AUTOA
 
+assert ATR_PERIOD == AUTOA.ATR_PERIOD == 5
+
 rng = np.random.default_rng(20260725)
 N = 400
 close = 10 + np.cumsum(rng.normal(0, 0.3, N))
@@ -50,7 +52,7 @@ print(f"ATR: 比对 {N - HIST_ROWS + 1} 点, 不一致 {bad}")
 bad_cheb = bad_bz = 0
 for i in range(HIST_ROWS - 1, N):
     hv = vol[i - HIST_ROWS + 1 : i + 1]
-    sample = hv[-30:-10]
+    sample = hv[-20:-5]
     cur = hv[-1]
     ref_ok = (
         AUTOA.calculate_chebyshev_probability(list(sample), cur)["chebyshev_upper_bound"]
@@ -66,14 +68,14 @@ for i in range(HIST_ROWS - 1, N):
     # 完整 BZ 条件
     ho = open_[i - HIST_ROWS + 1 : i + 1]
     hh = high[i - HIST_ROWS + 1 : i + 1]
-    ref_bz = ho[-1] > hh[-2] and cur >= max(hv[-10:]) and ref_ok
-    mine_bz = bool(s["gap_up"][i] and s["vmax10"][i] and s["cheb_ok"][i])
+    ref_bz = ho[-1] > hh[-2] and cur >= max(hv[-5:]) and ref_ok
+    mine_bz = bool(s["gap_up"][i] and s["vmax5"][i] and s["cheb_ok"][i])
     if ref_bz != mine_bz:
         bad_bz += 1
         if bad_bz <= 3:
             print(f"  BZ 条件 不一致 i={i} ref={ref_bz} mine={mine_bz}")
 print(f"切比雪夫: 不一致 {bad_cheb}   BZ 完整条件: 不一致 {bad_bz}")
-print(f"  (样本中 BZ 成立 {int(sum(s['gap_up'] & s['vmax10'] & s['cheb_ok']))} 次)")
+print(f"  (样本中 BZ 成立 {int(sum(s['gap_up'] & s['vmax5'] & s['cheb_ok']))} 次)")
 
 # ---------- 3. 阳线 / gap_up ----------
 ref_bull = close > open_
@@ -88,7 +90,9 @@ print(
 # 用完整日线时应与 calculate_atr 完全相等
 bad_atr2 = 0
 for i in range(HIST_ROWS, N):
-    mine = Backtest._atr_at(s["tr_sum9"][i - 1], high[i], low[i], close[i - 1])
+    mine = Backtest._atr_at(
+        s["tr_history_sum"][i - 1], high[i], low[i], close[i - 1]
+    )
     hist = df.iloc[i - HIST_ROWS + 1 : i + 1].reset_index(drop=True)
     ref = AUTOA.calculate_atr(hist, period=ATR_PERIOD)
     if abs(ref - mine) > 1e-9:

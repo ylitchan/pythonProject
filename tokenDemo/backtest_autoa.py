@@ -1,7 +1,7 @@
 """AUTOA 两种入场策略回测.
 
 复刻 autoTrade_pm.py 中 AUTOA 的完整交易逻辑, 在 A 股日线历史上回测:
-  BZ 分支: 涨停入观察池后, 今开 > 昨高 + 量创 10 日新高 + 量对 [-30:-10] 基线切比雪夫 <1%
+  BZ 分支: 涨停入观察池后, 今开 > 昨高 + 量创 5 日新高 + 量对 [-20:-5] 基线切比雪夫 <1%
   N  分支: 已有 BZ 标签后, 昨日最低 < BZ 基准高点 且 今开 > 昨高 -> 再次入场
 
 关键实盘细节(已复刻):
@@ -44,7 +44,7 @@ SOCKET_TIMEOUT_SECONDS = 20
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".backtest_cache")
 
 # ==================== 策略常量(与 AUTOA 逐个对齐) ====================
-ATR_PERIOD = 10
+ATR_PERIOD = 5
 ATR_HL2_CAP_RATIO = 0.1
 ATR_TRIGGER_CAP_RATIO = 0.10
 MIN_ATR_TRIGGER = 1e-8
@@ -56,10 +56,10 @@ STOP_LOSS_DECAY = 0.001
 TRAILING_STOP_PROFIT_RATIO = 0.7
 TARGET_PROFIT_DIVISOR = 3.0
 DEFAULT_POSITION_SHARES = 100
-VOL_SAMPLE_LEN = 20  # hist_volume[-30:-10]
-VOL_SAMPLE_LAG = 10  # 样本尾端距今 10 根
-VOL_MAX_LEN = 10  # max(hist_volume[-10:])
-HIST_ROWS = 60  # TRADING_DAYS_LOOKBACK
+VOL_SAMPLE_LEN = 15  # hist_volume[-20:-5]
+VOL_SAMPLE_LAG = 5  # 样本尾端距今 5 根
+VOL_MAX_LEN = 5  # max(hist_volume[-5:])
+HIST_ROWS = 20  # TRADING_DAYS_LOOKBACK
 
 # on_positions 每分钟一次: 09:30-09:59 + 10:00-14:59(15 点走涨停池分支, 不做持仓)
 CALLS_PER_DAY = 330
@@ -189,7 +189,7 @@ def precompute(s):
         h[1:] - low[1:],
         np.maximum(np.abs(h[1:] - c[:-1]), np.abs(low[1:] - c[:-1])),
     )
-    # ATR: 末 10 根 TR 简单均值(非 Wilder), 上限 hl2*10%
+    # ATR: 末 ATR_PERIOD 根 TR 简单均值(非 Wilder), 上限 hl2*10%
     atr_raw = np.full(n, np.nan)
     if n >= ATR_PERIOD + 1:
         atr_raw[ATR_PERIOD:] = (
@@ -197,17 +197,19 @@ def precompute(s):
         )
     hl2 = (h + low) / 2
     s["atr"] = np.minimum(atr_raw, np.where(hl2 > 0, hl2 * ATR_HL2_CAP_RATIO, atr_raw))
-    # 持仓端要用盘中实时末根 TR 替换 -> 预存前 9 根之和
-    tr_sum9 = np.full(n, np.nan)
+    # 持仓端要用盘中实时末根 TR 替换 -> 预存前 ATR_PERIOD - 1 根之和
+    tr_history_sum = np.full(n, np.nan)
     if n >= ATR_PERIOD:
-        tr_sum9[ATR_PERIOD - 1 :] = sliding_window_view(tr[1:], ATR_PERIOD - 1).sum(axis=1)
-    s["tr_sum9"] = tr_sum9
+        tr_history_sum[ATR_PERIOD - 1 :] = sliding_window_view(
+            tr[1:], ATR_PERIOD - 1
+        ).sum(axis=1)
+    s["tr_history_sum"] = tr_history_sum
 
     s["bull"] = c > o
     gap = np.zeros(n, dtype=bool)
     gap[1:] = o[1:] > h[:-1]
     s["gap_up"] = gap
-    s["vmax10"] = v >= roll_max(v, VOL_MAX_LEN)
+    s["vmax5"] = v >= roll_max(v, VOL_MAX_LEN)
     vm, vs = roll_mean_std(v, VOL_SAMPLE_LEN, VOL_SAMPLE_LAG)
     s["vol_mean"], s["vol_std"] = vm, vs
     with np.errstate(invalid="ignore"):
@@ -298,10 +300,10 @@ class Backtest:
         s = self.stocks[code]
         if not s["bull"][di] or not s["gap_up"][di]:
             return
-        if np.isnan(s["vol_std"][di]):  # 等价于 len(hist_volume) < 30
+        if np.isnan(s["vol_std"][di]):  # 等价于 len(hist_volume) < 20
             return
 
-        if s["vmax10"][di] and s["cheb_ok"][di]:
+        if s["vmax5"][di] and s["cheb_ok"][di]:
             ob.bz_ref = float(s["h"][di - 1])
             if "BZ" not in ob.strategy:
                 ob.strategy.append("BZ")
@@ -345,7 +347,7 @@ class Backtest:
         s = self.stocks[code]
         o, hi, lo, cl = (float(s[k][di]) for k in ("o", "h", "l", "c"))
         prev_close = float(s["c"][di - 1])
-        tr_sum9 = s["tr_sum9"][di - 1]
+        tr_history_sum = s["tr_history_sum"][di - 1]
         prev_volume = float(s["v"][di - 1])
         vol_stop_armed = (
             self.enable_vol_stop
@@ -372,7 +374,7 @@ class Backtest:
                 self.close(p, price, today, "成交量止损")
                 return
 
-            atr = self._atr_at(tr_sum9, run_hi, run_lo, prev_close)
+            atr = self._atr_at(tr_history_sum, run_hi, run_lo, prev_close)
             hl2 = (run_hi + run_lo) / 2
             upper, lower = hl2 + atr * SUPERTREND_FACTOR, hl2 - atr * SUPERTREND_FACTOR
 
@@ -422,11 +424,11 @@ class Backtest:
                 p.close_reason = "移动止损(轨道)"
 
     @staticmethod
-    def _atr_at(tr_sum9, run_hi, run_lo, prev_close):
-        if np.isnan(tr_sum9):
+    def _atr_at(tr_history_sum, run_hi, run_lo, prev_close):
+        if np.isnan(tr_history_sum):
             return 0.0
         tr_last = max(run_hi - run_lo, abs(run_hi - prev_close), abs(run_lo - prev_close))
-        atr = (float(tr_sum9) + tr_last) / ATR_PERIOD
+        atr = (float(tr_history_sum) + tr_last) / ATR_PERIOD
         cap = (run_hi + run_lo) / 2 * ATR_HL2_CAP_RATIO
         return min(atr, cap) if cap > 0 else atr
 

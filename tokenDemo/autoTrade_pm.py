@@ -315,7 +315,7 @@ class AUTOBN:
     OI_DELTA_LONG_RATIO_WEIGHT = 0.4  # LONG融合公式中(oi_5m-oi_1d)项权重
 
     # ==================== ATR风控常量 ====================
-    ATR_PERIOD = 10  # ATR计算周期
+    ATR_PERIOD = 7  # ATR计算周期：加密市场一周
     TAKE_PROFIT_ATR_FACTOR = 3.0  # AUTOBN止盈价与止盈轨ATR倍数
     STOP_LOSS_ATR_FACTOR = 1.0  # AUTOBN止损价与止损轨ATR倍数
     ATR_TRIGGER_CAP_RATIO = 0.05
@@ -370,7 +370,7 @@ class AUTOBN:
     DEFAULT_LEVERAGE = 5  # 默认杠杆倍数
     DEFAULT_HEALTH_THRESHOLD = 70  # 默认健康度阈值（%）
     REOPEN_COOLDOWN_SECONDS = 24 * 60 * 60
-    OI_CHEB_EXCLUDE_RECENT_COUNT = 10
+    LONG_OI_CHEB_EXCLUDE_RECENT_COUNT = 6
     MIN_CHEB_SAMPLE_SIZE = 2
 
     @classmethod
@@ -444,11 +444,11 @@ class AUTOBN:
         obj._exchange_info_cache_timestamp = 0.0
         obj._http_session = None
         obj.is_early_morning = False
-        # 四个行情缓存统一口径: {symbol: [bars]}，末根时间戳就是缓存的新旧标记。
+        # 四个行情缓存统一口径，末根时间戳就是缓存的新旧标记。
         # 末根已是"当前时刻能拿到的最新"就不拉；否则拉回来比末根时间戳，新的那份才替换。
         # 取用时一律读缓存，不因为末根滞后就把数据判掉。
-        obj._lsr_1d_cache = {}
-        obj._oi_1d_cache = {}
+        obj._lsr_1h_cache = {}
+        obj._oi_history_cache = {}
         obj._oi_5m_cache = {}
         obj._lsr_5m_cache = {}
         # 初始化基差率缓存: {symbol: {"data": float, "timestamp": float}}
@@ -1030,49 +1030,55 @@ class AUTOBN:
         return self._oi_5m_cache.get(symbol)
 
     @staticmethod
-    def _utc_day_start_ms(dtn: datetime) -> int:
-        """当天UTC零点的毫秒时间戳：1d数据的可得边界，同时用作缓存键"""
-        utc_day = datetime.datetime.fromtimestamp(
+    def _utc_history_boundary_ms(dtn: datetime, period: str) -> int:
+        """返回历史序列当前可用的UTC周期边界，仅支持1d和1h。"""
+        utc_boundary = datetime.datetime.fromtimestamp(
             dtn.timestamp(), datetime.timezone.utc
-        ).replace(hour=0, minute=0, second=0, microsecond=0)
-        return int(utc_day.timestamp() * 1000)
+        ).replace(minute=0, second=0, microsecond=0)
+        if period == "1d":
+            utc_boundary = utc_boundary.replace(hour=0)
+        elif period != "1h":
+            raise ValueError(f"不支持的历史数据周期: {period}")
+        return int(utc_boundary.timestamp() * 1000)
 
-    async def _get_oi_1d_data(self, symbol, dtn: datetime):
-        """缓存末根已是当天UTC零点就不拉；否则拉回来比时间戳，新的才换缓存，最后都用缓存。"""
-        available_before_ts = self._utc_day_start_ms(dtn)
-
-        cached = self._oi_1d_cache.get(symbol)
+    async def _get_oi_history_data(
+        self, symbol: str, dtn: datetime, period: str
+    ):
+        """按1d/1h周期隔离缓存历史OI，新的完整序列才替换对应缓存。"""
+        available_before_ts = self._utc_history_boundary_ms(dtn, period)
+        cache_key = (symbol, period)
+        cached = self._oi_history_cache.get(cache_key)
         if cached and self._bar_timestamp_ms(cached[-1]) == available_before_ts:
             return cached
 
         try:
-            oi_1d = await self._call_api(
+            oi_history = await self._call_api(
                 self.market_client.rest_api.open_interest_statistics,
                 symbol=symbol,
-                period="1d",
+                period=period,
                 limit=self.OI_QUERY_LIMIT,
             )
         except Exception as e:
             self.logger.error(
-                f"{symbol}获取1d持仓量数据失败: {type(e).__name__}: {e!r}"
+                f"{symbol}获取{period}持仓量数据失败: {type(e).__name__}: {e!r}"
             )
-            return self._oi_1d_cache.get(symbol)
+            return self._oi_history_cache.get(cache_key)
 
         available_oi = [
             item
-            for item in (oi_1d or [])
+            for item in (oi_history or [])
             if item.get("timestamp") is not None
             and int(item["timestamp"]) <= available_before_ts
         ]
         if len(available_oi) >= self.OI_QUERY_LIMIT and self._is_newer_bar(
             available_oi[-1], cached
         ):
-            self._oi_1d_cache[symbol] = available_oi
-        return self._oi_1d_cache.get(symbol)
+            self._oi_history_cache[cache_key] = available_oi
+        return self._oi_history_cache.get(cache_key)
 
     async def _get_bd_oi_windows(self, symbol, dtn: datetime):
         """返回BD入池实时窗口和开仓使用的已完成日线OI窗口。"""
-        oi_1d = await self._get_oi_1d_data(symbol, dtn)
+        oi_1d = await self._get_oi_history_data(symbol, dtn, "1d")
         if not oi_1d or len(oi_1d) < self.OI_QUERY_LIMIT:
             return None, None
 
@@ -1111,10 +1117,10 @@ class AUTOBN:
                     passed = oi_5m_last <= oi_peak * (1 - self.BD_OI_DRAWDOWN_RATIO)
                     return (True, None, None) if passed else (False, None, None)
 
-                # 多空人数比：1d序列按UTC日缓存，5m那根每次实拉
-                lsr_1d = await self._get_lsr_1d_data(symbol, dtn)
+                # 多空人数比：1h序列按UTC小时缓存，5m那根按当前周期缓存
+                lsr_1h = await self._get_lsr_1h_data(symbol, dtn)
                 lsr_5m = await self._get_lsr_5m_data(symbol)
-                if not lsr_1d or not lsr_5m:
+                if not lsr_1h or not lsr_5m:
                     return False, None, None
 
                 lsrd = float(lsr_5m[0]["longShortRatio"])  # 当前值
@@ -1133,13 +1139,15 @@ class AUTOBN:
                     return False, None, None
                 oi_5m_last = float(oi_5m[-1]["sumOpenInterest"])
                 if positionSide == PositionSide.LONG.value:
-                    oi_1d = await self._get_oi_1d_data(symbol, dtn)
+                    oi_1h = await self._get_oi_history_data(symbol, dtn, "1h")
 
-                    if not oi_1d:
+                    if not oi_1h:
                         return False, None, None
-                    sumOpenInterest_1d = [float(i["sumOpenInterest"]) for i in oi_1d]
-                    oi_hist_for_cheb = sumOpenInterest_1d[
-                        : -self.OI_CHEB_EXCLUDE_RECENT_COUNT
+                    sum_open_interest_1h = [
+                        float(item["sumOpenInterest"]) for item in oi_1h
+                    ]
+                    oi_hist_for_cheb = sum_open_interest_1h[
+                        : -self.LONG_OI_CHEB_EXCLUDE_RECENT_COUNT
                     ]
                     if len(oi_hist_for_cheb) < self.MIN_CHEB_SAMPLE_SIZE:
                         return False, None, None
@@ -1149,13 +1157,15 @@ class AUTOBN:
                         return False, None, None
 
                     # blend 基准：切比雪夫区间最后一根的OI和多仓比例（同一根）
-                    # 两条1d序列各自独立更新缓存，末根可能不同日，按时间戳配对才对得上
+                    # 两条1h序列独立更新缓存，末根可能错位，按时间戳配对
                     window_end_oi = oi_hist_for_cheb[-1]
                     window_end_ts = int(
-                        oi_1d[-self.OI_CHEB_EXCLUDE_RECENT_COUNT - 1]["timestamp"]
+                        oi_1h[-self.LONG_OI_CHEB_EXCLUDE_RECENT_COUNT - 1][
+                            "timestamp"
+                        ]
                     )
-                    lsr_1d_by_ts = {int(i["timestamp"]): i for i in lsr_1d}
-                    window_end_lsr = lsr_1d_by_ts.get(window_end_ts)
+                    lsr_1h_by_ts = {int(item["timestamp"]): item for item in lsr_1h}
+                    window_end_lsr = lsr_1h_by_ts.get(window_end_ts)
                     if window_end_lsr is None:
                         return False, None, None
 
@@ -1172,7 +1182,7 @@ class AUTOBN:
                         return False, None, None
 
                     passed = (
-                        oi_5m_last >= max(sumOpenInterest_1d)
+                        oi_5m_last >= max(sum_open_interest_1h)
                         and self.calculate_chebyshev_probability(
                             oi_hist_for_cheb,
                             oi_5m_last,
@@ -1226,11 +1236,11 @@ class AUTOBN:
                 # 获取失败时返回空列表
                 return []
 
-    async def _get_lsr_1d_data(self, symbol: str, dtn: datetime):
-        """1d多空人数比，与1d OI同一套缓存协议（末根对上当天UTC零点就不拉）。"""
-        available_before_ts = self._utc_day_start_ms(dtn)
+    async def _get_lsr_1h_data(self, symbol: str, dtn: datetime):
+        """缓存BZ做多所需的1h多空人数比，末根对上UTC小时边界就不拉。"""
+        available_before_ts = self._utc_history_boundary_ms(dtn, "1h")
 
-        cached = self._lsr_1d_cache.get(symbol)
+        cached = self._lsr_1h_cache.get(symbol)
         if cached and self._bar_timestamp_ms(cached[-1]) == available_before_ts:
             return cached
 
@@ -1238,14 +1248,14 @@ class AUTOBN:
             data = await self._call_api(
                 self.market_client.rest_api.long_short_ratio,
                 symbol=symbol,
-                period="1d",
+                period="1h",
                 limit=self.LONG_SHORT_RATIO_LIMIT,
             )
         except Exception as e:
             self.logger.error(
-                f"{symbol}获取1d多空比数据失败: {type(e).__name__}: {e!r}"
+                f"{symbol}获取1h多空比数据失败: {type(e).__name__}: {e!r}"
             )
-            return self._lsr_1d_cache.get(symbol)
+            return self._lsr_1h_cache.get(symbol)
 
         available_lsr = [
             item
@@ -1258,8 +1268,8 @@ class AUTOBN:
         ) >= self.LONG_SHORT_RATIO_LIMIT and self._is_newer_bar(
             available_lsr[-1], cached
         ):
-            self._lsr_1d_cache[symbol] = available_lsr
-        return self._lsr_1d_cache.get(symbol)
+            self._lsr_1h_cache[symbol] = available_lsr
+        return self._lsr_1h_cache.get(symbol)
 
     async def _get_lsr_5m_data(self, symbol: str):
         """缓存已是当期那根就不拉；否则拉回来比时间戳，更新才换缓存，最后都用缓存。"""
@@ -2431,7 +2441,7 @@ class AUTOBN:
 
 class AUTOA:
     # ==================== ATR风控常量 ====================
-    ATR_PERIOD = 10  # ATR计算周期
+    ATR_PERIOD = 5  # ATR计算周期：A股一周
     TAKE_PROFIT_ATR_FACTOR = 3.0  # AUTOA止盈价与止盈轨ATR倍数
     STOP_LOSS_ATR_FACTOR = 1.0  # AUTOA止损价与止损轨ATR倍数
     ATR_TRIGGER_CAP_RATIO = 0.05
@@ -2446,7 +2456,7 @@ class AUTOA:
     OBSERVATION_TIMEOUT_SECONDS = 30 * 24 * 60 * 60  # 观察记录超时时间（30天）
 
     # ==================== Trading Configuration ====================
-    TRADING_DAYS_LOOKBACK = 60
+    TRADING_DAYS_LOOKBACK = 20
     STOP_LOSS_DECAY = 0.001  # 止损衰减系数 (1‰)
     MARKET_OPEN_HOUR = 9  # A股开盘小时
     MARKET_OPEN_MINUTE = 30  # A股开盘分钟
@@ -2462,9 +2472,9 @@ class AUTOA:
 
     # ==================== 筛选常量 ====================
     DEFAULT_POSITION_SHARES = 100  # 单次开仓固定股数
-    VOLUME_CHEB_SAMPLE_START_OFFSET = -30  # 成交量切比雪夫样本窗口起点（含）
-    VOLUME_CHEB_SAMPLE_END_OFFSET = -10  # 成交量切比雪夫样本窗口终点（不含）
-    VOLUME_CHEB_REQUIRED_HISTORY = 30  # 切片[-30:-10]所需最少历史K线数
+    VOLUME_CHEB_SAMPLE_START_OFFSET = -20  # 成交量切比雪夫样本窗口起点（含）
+    VOLUME_CHEB_SAMPLE_END_OFFSET = -5  # 成交量切比雪夫样本窗口终点（不含）
+    VOLUME_CHEB_REQUIRED_HISTORY = 20  # 切片[-20:-5]所需最少历史K线数
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
     alert_all_file = os.path.join(
