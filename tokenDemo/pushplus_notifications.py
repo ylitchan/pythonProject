@@ -67,6 +67,16 @@ def format_trade_notification(
     return TradeNotification(title=title, content="\n".join(content_parts))
 
 
+def format_daily_positions_notification(
+    market: str, message: str
+) -> TradeNotification:
+    """格式化每日持仓汇总通知。"""
+    return TradeNotification(
+        title=f"{market} 每日持仓",
+        content=f"# 📊 {market} · 每日持仓\n\n{message}",
+    )
+
+
 def classify_autobn_message(message: str) -> Optional[TradeNotification]:
     first_line = message.splitlines()[0].strip() if message.strip() else ""
     if "开仓" in first_line:

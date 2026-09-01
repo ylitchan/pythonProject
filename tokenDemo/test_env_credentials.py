@@ -23,7 +23,7 @@ class AutoBNCredentialsTest(unittest.TestCase):
             ):
                 market.return_value.rest_api._session = MagicMock()
                 obj = AUTOBN.from_cfg(
-                    alert_all_file=str(alert_file), qy_key="test-qy-key", **kwargs
+                    alert_all_file=str(alert_file), **kwargs
                 )
                 return obj, config.call_args_list, portfolio.call_args
 
@@ -57,7 +57,7 @@ class AutoBNCredentialsTest(unittest.TestCase):
             patch("builtins.open", side_effect=AssertionError("不应读取 bn.json")),
         ):
             with self.assertRaisesRegex(ValueError, "BINANCE_API_KEY"):
-                AUTOBN.from_cfg(qy_key="test-qy-key")
+                AUTOBN.from_cfg()
 
 
 if __name__ == "__main__":

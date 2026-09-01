@@ -1,4 +1,5 @@
 ﻿import asyncio
+import os
 import tempfile
 import unittest
 from decimal import Decimal
@@ -16,6 +17,7 @@ from tokenDemo.autoTrade_pm import (
     OrderSide,
     Position,
     PositionSide,
+    TradeNotification,
 )
 
 
@@ -152,6 +154,73 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
             )
 
         stock_hist.assert_not_awaited()
+
+    async def test_bz_only_open_uses_wecom_without_pushplus(self):
+        observation = Observation(
+            price=10,
+            timestamp=pd.Timestamp("2026-07-01").timestamp(),
+            side=OrderSide.BUY,
+            strategy=[],
+            name="测试股票",
+        )
+        hist = pd.DataFrame([
+            {
+                "open": 10,
+                "high": 11,
+                "low": 9,
+                "close": 10.5,
+                "volume": 100,
+            }
+            for _ in range(29)
+        ] + [{
+            "open": 12,
+            "high": 13,
+            "low": 11,
+            "close": 12.5,
+            "volume": 200,
+        }])
+        response = MagicMock(status=200)
+        request = MagicMock()
+        request.__aenter__ = AsyncMock(return_value=response)
+        request.__aexit__ = AsyncMock(return_value=None)
+        session = MagicMock()
+        session.post.return_value = request
+
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {},
+                "OBSERVATIONS": {"000001": observation.model_dump()},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(
+                AUTOA,
+                "calculate_chebyshev_probability",
+                return_value={"chebyshev_upper_bound": 0.001},
+            ),
+            patch.object(AUTOA, "calculate_atr", return_value=1),
+            patch.object(AUTOA, "_get_http_session", new=AsyncMock(return_value=session)),
+            patch.dict(os.environ, {"AUTOA_WECOM_KEY": "test-wecom-key"}, clear=False),
+            patch("tokenDemo.autoTrade_pm.send_pushplus", new=AsyncMock()) as send_pushplus,
+        ):
+            await AUTOA.on_observations(
+                "000001",
+                ["2026-07-02", "2026-07-01"],
+                observation.model_dump(),
+                pd.Timestamp("2026-07-02 10:00").to_pydatetime(),
+            )
+
+        send_pushplus.assert_not_awaited()
+        session.post.assert_called_once_with(
+            url=(
+                "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
+                "test-wecom-key"
+            ),
+            json={
+                "msgtype": "text",
+                "text": {"content": "===测试股票**BZ**===\n价格:12.50\n止盈:15.00\n止损:11.00\n收益率:20.00%\n"},
+            },
+        )
+
     async def test_bz_n_open_preserves_shared_observation_timestamp(self):
         timestamp = pd.Timestamp("2026-07-01").timestamp()
         observation = Observation(
@@ -186,7 +255,7 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
             patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
             patch.object(AUTOA, "check_gap_up_after_bz_reference", return_value=True),
             patch.object(AUTOA, "calculate_atr", return_value=1),
-            patch.object(AUTOA, "send_msg", new=AsyncMock()),
+            patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
         ):
             await AUTOA.on_observations(
                 "000001",
@@ -201,6 +270,10 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
                 AUTOA.alert_all["POSITIONS"]["000001"]
             )
             has_position = "000001" in AUTOA.alert_all["POSITIONS"]
+            notification = send_msg.await_args.args[0]
+            self.assertEqual(notification.title, "测试股票 开仓成功")
+            self.assertIsInstance(notification, TradeNotification)
+            self.assertEqual(send_msg.await_args.kwargs["channel"], "pushplus")
 
         self.assertEqual(stored.strategy, [PositionSide.BZ, PositionSide.N])
         self.assertEqual(stored.timestamp, timestamp)
@@ -310,7 +383,12 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertNotIn("000001", AUTOA.alert_all["POSITIONS"])
-        self.assertIn("平仓依据:首次止盈", send_msg.await_args.args[0])
+        send_msg.assert_awaited_once()
+        notification = send_msg.await_args.args[0]
+        self.assertIsInstance(notification, TradeNotification)
+        self.assertEqual(notification.title, "测试股票 平仓成功")
+        self.assertIn("平仓依据：** 首次止盈", notification.content)
+        self.assertEqual(send_msg.await_args.kwargs["channel"], "pushplus")
         self.assertEqual(record_close.await_args.kwargs["close_ratio"], 1.0)
         self.assertEqual(record_close.await_args.kwargs["close_reason"], "首次止盈")
         self.assertEqual(record_close.await_args.kwargs["close_amount"], 100)
@@ -436,9 +514,13 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         ):
             await AUTOA.push_daily_positions()
 
-        send_msg.assert_awaited_once_with(
-            "总持仓金额:\n0.00 CNY\n持仓信息:\n暂无持仓"
-        )
+        send_msg.assert_awaited_once()
+        notification = send_msg.await_args.args[0]
+        self.assertEqual(notification.title, "AUTOA 每日持仓")
+        self.assertIsInstance(notification, TradeNotification)
+        self.assertEqual(send_msg.await_args.kwargs["channel"], "pushplus")
+        self.assertIn("总持仓金额:\n0.00 CNY\n持仓信息:\n暂无持仓", notification.content)
+        self.assertIn("# 📊 AUTOA · 每日持仓", notification.content)
 
     async def test_sums_successful_positions_and_marks_failed_quote(self):
         positions = {
@@ -456,16 +538,19 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         ):
             await AUTOA.push_daily_positions()
 
-        message = send_msg.await_args.args[0]
-        self.assertIn("总持仓金额:\n2100.00 CNY", message)
-        self.assertIn("策略持仓股数:200", message)
-        self.assertIn("名义价值:2100.00 CNY", message)
-        self.assertIn("持仓盈亏:100.00 CNY", message)
-        self.assertIn("持仓收益:5.00%", message)
-        self.assertIn("失败股票(000002)", message)
-        self.assertIn("行情获取失败，暂不可估值（未计入总持仓金额）", message)
-        self.assertNotIn("账户余额", message)
-        self.assertNotIn("N/A", message)
+        notification = send_msg.await_args.args[0]
+        self.assertIsInstance(notification, TradeNotification)
+        self.assertEqual(send_msg.await_args.kwargs["channel"], "pushplus")
+        self.assertIn("总持仓金额:\n2100.00 CNY", notification.content)
+        self.assertIn("策略持仓股数:200", notification.content)
+        self.assertIn("名义价值:2100.00 CNY", notification.content)
+        self.assertIn("持仓盈亏:100.00 CNY", notification.content)
+        self.assertIn("持仓收益:5.00%", notification.content)
+        self.assertIn("失败股票(000002)", notification.content)
+        self.assertIn("行情获取失败，暂不可估值（未计入总持仓金额）", notification.content)
+        self.assertNotIn("账户余额", notification.content)
+        self.assertNotIn("N/A", notification.content)
+        self.assertEqual(notification.title, "AUTOA 每日持仓")
 
     async def test_pushes_failed_details_when_all_quotes_fail(self):
         positions = {"000001": self.make_position().model_dump()}
@@ -476,12 +561,15 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         ):
             await AUTOA.push_daily_positions()
 
-        message = send_msg.await_args.args[0]
-        self.assertIn("总持仓金额:\n0.00 CNY", message)
-        self.assertIn("行情获取失败", message)
-        self.assertNotIn("名义价值:0.00", message)
-        self.assertNotIn("持仓盈亏:0.00", message)
-        self.assertNotIn("持仓收益:0.00%", message)
+        notification = send_msg.await_args.args[0]
+        self.assertIsInstance(notification, TradeNotification)
+        self.assertEqual(send_msg.await_args.kwargs["channel"], "pushplus")
+        self.assertIn("总持仓金额:\n0.00 CNY", notification.content)
+        self.assertIn("行情获取失败", notification.content)
+        self.assertNotIn("名义价值:0.00", notification.content)
+        self.assertNotIn("持仓盈亏:0.00", notification.content)
+        self.assertNotIn("持仓收益:0.00%", notification.content)
+        self.assertEqual(notification.title, "AUTOA 每日持仓")
 
     async def test_daily_positions_reuses_one_trading_calendar_snapshot(self):
         positions = {
@@ -759,6 +847,76 @@ class ChebyshevCharacterizationTest(unittest.TestCase):
         self.assertLessEqual(AUTOBN.BD_OI_LOOKBACK_COUNT, AUTOBN.OI_QUERY_LIMIT)
 
 
+class AutoBNNotificationRoutingTest(unittest.IsolatedAsyncioTestCase):
+    def make_autobn(self):
+        obj = AUTOBN.__new__(AUTOBN)
+        obj.logger = MagicMock()
+        obj._http_session = None
+        return obj
+
+    async def test_send_msg_pushplus_sends_notification_without_http_session(self):
+        notification = TradeNotification("BTCUSDT 开仓成功", "# 开仓")
+        obj = self.make_autobn()
+        obj._get_http_session = AsyncMock()
+
+        with patch(
+            "tokenDemo.autoTrade_pm.send_pushplus", new=AsyncMock()
+        ) as send_pushplus:
+            await obj.send_msg(notification, channel="pushplus")
+
+        send_pushplus.assert_awaited_once_with(notification)
+        obj._get_http_session.assert_not_awaited()
+
+    async def test_send_msg_pushplus_rejects_plain_text_payload(self):
+        obj = self.make_autobn()
+        obj._get_http_session = AsyncMock()
+
+        with patch(
+            "tokenDemo.autoTrade_pm.send_pushplus", new=AsyncMock()
+        ) as send_pushplus:
+            await obj.send_msg("BTCUSDT 开仓", channel="pushplus")
+
+        send_pushplus.assert_not_awaited()
+        obj._get_http_session.assert_not_awaited()
+
+    async def test_send_msg_feishu_signal_does_not_send_pushplus(self):
+        response = MagicMock(status=200)
+        request = MagicMock()
+        request.__aenter__ = AsyncMock(return_value=response)
+        request.__aexit__ = AsyncMock(return_value=None)
+        session = MagicMock()
+        session.post.return_value = request
+        obj = self.make_autobn()
+        obj._get_http_session = AsyncMock(return_value=session)
+
+        with (
+            patch.dict(
+                os.environ,
+                {"FEISHU_WEBHOOK_URL": "https://open.feishu.cn/open-apis/bot/v2/hook/test"},
+                clear=False,
+            ),
+            patch("tokenDemo.autoTrade_pm.send_pushplus", new=AsyncMock()) as send_pushplus,
+        ):
+            await obj.send_msg("BTCUSDT 分析信号", channel="feishu")
+
+        send_pushplus.assert_not_awaited()
+        session.post.assert_called_once()
+        self.assertIn("open.feishu.cn", session.post.call_args.kwargs["url"])
+        self.assertEqual(
+            session.post.call_args.kwargs["json"],
+            {"msg_type": "text", "content": {"text": "BTCUSDT 分析信号"}},
+        )
+
+    async def test_send_msg_without_route_does_not_send_external_channel(self):
+        obj = self.make_autobn()
+        obj._get_http_session = AsyncMock()
+        with patch("tokenDemo.autoTrade_pm.send_pushplus", new=AsyncMock()) as send_pushplus:
+            await obj.send_msg("BTCUSDT 开仓失败：余额不足")
+
+        send_pushplus.assert_not_awaited()
+        obj._get_http_session.assert_not_awaited()
+
+
 class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
     UTC_DAY_TS = 1_700_006_400_000  # 2023-11-15 00:00 UTC
     DTN_IN_DAY = pd.Timestamp("2023-11-15 12:00:00", tz="UTC").to_pydatetime()
@@ -824,6 +982,52 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             [0, 10, 11, 9, previous_close, 100],
             [0, 10, 11, 9, current_close, 100],
         ]
+
+    def make_open_position_fixture(self, health=100, feishu_error=False):
+        obj = self.make_autobn()
+        obj.leverage = 5
+        obj.health4open = 70
+        obj.symbols_info = {
+            "BTCUSDT": {"quantityPrecision": Decimal("0.001")}
+        }
+        account_information = MagicMock()
+        mark_price = MagicMock()
+        change_leverage = MagicMock()
+        new_order = MagicMock()
+        obj.papi_client.rest_api.account_information = account_information
+        obj.papi_client.rest_api.change_um_initial_leverage = change_leverage
+        obj.papi_client.rest_api.new_um_order = new_order
+        obj.market_client.rest_api.mark_price = mark_price
+        events = []
+
+        async def call_api(method, *args, **kwargs):
+            if method is account_information:
+                events.append("account")
+                return {
+                    "totalAvailableBalance": "1000",
+                    "accountEquity": "1000",
+                    "accountMaintMargin": "0",
+                }
+            if method is mark_price:
+                events.append("mark_price")
+                return {"markPrice": "10"}
+            if method is change_leverage:
+                events.append("leverage")
+                return {"leverage": 5}
+            if method is new_order:
+                events.append("order")
+                return {"origQty": "10"}
+            raise AssertionError(f"unexpected API method: {method!r}")
+
+        async def send_msg(msg, *, channel=None):
+            events.append(("message", channel))
+            if feishu_error and channel == "feishu":
+                raise RuntimeError("feishu unavailable")
+
+        obj._call_api = AsyncMock(side_effect=call_api)
+        obj.calculate_health_bn = AsyncMock(return_value=health)
+        obj.send_msg = AsyncMock(side_effect=send_msg)
+        return obj, events
 
     async def run_position(self, obj, position, kline):
         obj.alert_all = {
@@ -959,6 +1163,45 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(triggered)
         obj.close_bn_position.assert_not_awaited()
+
+    async def test_second_take_profit_notification_uses_regular_take_profit_reason(self):
+        obj = self.make_autobn()
+        position = self.make_position(take_profit=20, stop_loss=5)
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.symbols_info = {"BTCUSDT": {"quantityPrecision": Decimal("0.001")}}
+        obj.papi_client = MagicMock()
+        obj._call_api = AsyncMock(return_value={"origQty": "7"})
+        obj.get_amount_close = AsyncMock(
+            side_effect=[(10, 10), (3, 10), (3, 10), (0, 10)]
+        )
+        obj.send_msg = AsyncMock()
+        obj.calc_stop_profit_loss = MagicMock(return_value=(11.025, 10.35))
+        obj.close_bn_position = AUTOBN.close_bn_position.__get__(obj, AUTOBN)
+
+        with patch.object(
+            CloseRecordManager, "record_close_async", new=AsyncMock()
+        ):
+            first_triggered = await obj._close_triggered_position(
+                "BTCUSDT", position, 1, 10.5
+            )
+            first_state = Position.model_validate(
+                obj.alert_all["POSITIONS"]["BTCUSDT"]
+            )
+            second_triggered = await obj._close_triggered_position(
+                "BTCUSDT", first_state, 1, first_state.take_profit
+            )
+
+        self.assertTrue(first_triggered)
+        self.assertTrue(second_triggered)
+        notifications = [call.args[0] for call in obj.send_msg.await_args_list]
+        self.assertEqual(len(notifications), 2)
+        self.assertIn("平仓依据：** 首次止盈", notifications[0].content)
+        self.assertIn("平仓依据：** 止盈", notifications[1].content)
+        self.assertNotIn("平仓依据：** 首次止盈", notifications[1].content)
+        self.assertEqual(first_state.tp_count, 2)
 
     async def test_first_take_profit_failure_does_not_advance_stage(self):
         obj = self.make_autobn()
@@ -1407,6 +1650,63 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                     "BTCUSDT" in obj.alert_all["OBSERVATIONS"], should_remain
                 )
 
+    async def test_reopen_cooldown_is_checked_before_market_data(self):
+        current = pd.Timestamp("2026-07-11 10:00:00").to_pydatetime()
+        observation = Observation(
+            price=10,
+            timestamp=current.timestamp() - 3600,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+            earliest_open_timestamp=current.timestamp() + 3600,
+        )
+        obj = self.make_autobn()
+        obj.alert_all = {
+            "POSITIONS": {},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.get_kline = AsyncMock()
+        obj.open_bn_position = AsyncMock()
+        obj.send_msg = AsyncMock()
+
+        await obj.rzq_token(asyncio.Semaphore(1), "BTCUSDT", set(), current)
+
+        obj.get_kline.assert_not_awaited()
+        obj.open_bn_position.assert_not_awaited()
+        obj.send_msg.assert_not_awaited()
+        self.assertIn("BTCUSDT", obj.alert_all["OBSERVATIONS"])
+
+    async def test_reopen_cooldown_precedes_observation_expiration(self):
+        current = pd.Timestamp("2026-07-11 10:00:00").to_pydatetime()
+        obj = self.make_autobn()
+        observation = Observation(
+            price=10,
+            timestamp=current.timestamp()
+            - obj.BZ_OBSERVATION_TIMEOUT_SECONDS
+            - 1,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+            earliest_open_timestamp=current.timestamp() + 3600,
+        )
+        obj.alert_all = {
+            "POSITIONS": {},
+            "OBSERVATIONS": {"BTCUSDT": observation.model_dump()},
+        }
+        obj.get_kline = AsyncMock()
+
+        await obj.rzq_token(asyncio.Semaphore(1), "BTCUSDT", set(), current)
+
+        obj.get_kline.assert_not_awaited()
+        stored = Observation.model_validate(
+            obj.alert_all["OBSERVATIONS"]["BTCUSDT"]
+        )
+        self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(
+            stored.earliest_open_timestamp,
+            observation.earliest_open_timestamp,
+        )
+
     async def test_successful_initial_open_preserves_observation_timestamp(self):
         for side, strategy, current_close in (
             (OrderSide.BUY, PositionSide.BZ, 11),
@@ -1434,7 +1734,6 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                     return_value=(12, 8) if side == OrderSide.BUY else (8, 12)
                 )
                 obj.get_basis_rate = AsyncMock(return_value=0)
-                obj.signal_qy_key = "test-key"
                 obj.send_msg = AsyncMock()
                 obj.open_bn_position = AsyncMock(return_value=True)
 
@@ -1450,6 +1749,97 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(stored.timestamp, observation.timestamp)
                 self.assertIn("BTCUSDT", obj.alert_all["POSITIONS"])
+
+    async def test_initial_open_sends_feishu_after_prechecks_before_order(self):
+        obj, events = self.make_open_position_fixture()
+        open_info = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+        )
+
+        result = await obj.open_bn_position(
+            "BTCUSDT",
+            OrderSide.BUY.value,
+            PositionSide.LONG.value,
+            12,
+            8,
+            open_info,
+            "BTCUSDT 分析信号",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertLess(events.index(("message", "feishu")), events.index("order"))
+        self.assertLess(events.index("leverage"), events.index(("message", "feishu")))
+        self.assertEqual(events.count(("message", "feishu")), 1)
+        self.assertEqual(events.count(("message", "pushplus")), 1)
+
+    async def test_precheck_failure_does_not_send_initial_feishu_signal(self):
+        obj, events = self.make_open_position_fixture(health=0)
+        open_info = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+        )
+
+        result = await obj.open_bn_position(
+            "BTCUSDT",
+            OrderSide.BUY.value,
+            PositionSide.LONG.value,
+            12,
+            8,
+            open_info,
+            "BTCUSDT 分析信号",
+        )
+
+        self.assertIsNone(result)
+        self.assertNotIn(("message", "feishu"), events)
+        self.assertNotIn("order", events)
+
+    async def test_feishu_failure_does_not_block_initial_order(self):
+        obj, events = self.make_open_position_fixture(feishu_error=True)
+        open_info = Observation(
+            price=10,
+            timestamp=1,
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ],
+            name="BTCUSDT",
+        )
+
+        result = await obj.open_bn_position(
+            "BTCUSDT",
+            OrderSide.BUY.value,
+            PositionSide.LONG.value,
+            12,
+            8,
+            open_info,
+            "BTCUSDT 分析信号",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIn("order", events)
+        self.assertEqual(events.count(("message", "pushplus")), 1)
+
+    async def test_dca_open_does_not_send_initial_feishu_signal(self):
+        obj, events = self.make_open_position_fixture()
+        open_info = self.make_position()
+
+        result = await obj.open_bn_position(
+            "BTCUSDT",
+            OrderSide.BUY.value,
+            PositionSide.LONG.value,
+            12,
+            8,
+            open_info,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertNotIn(("message", "feishu"), events)
+        self.assertEqual(events.count(("message", "pushplus")), 1)
 
     def test_calc_stop_profit_loss_uses_independent_atr_factors(self):
         obj = self.make_autobn()
@@ -1552,7 +1942,6 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj.calculate_atr = MagicMock(return_value=1)
         obj.calc_stop_profit_loss = MagicMock(return_value=(8, 10))
         obj.get_basis_rate = AsyncMock(return_value=0)
-        obj.signal_qy_key = "test-key"
         obj.send_msg = AsyncMock()
         obj.open_bn_position = AsyncMock(return_value=None)
 
@@ -2575,6 +2964,68 @@ class AutoBNShortSignalTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(AUTOA.OBSERVATION_TIMEOUT_SECONDS, 30 * 24 * 60 * 60)
 
 
+class AutoANotificationRoutingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_send_msg_only_sends_pushplus_when_given_notification(self):
+        notification = TradeNotification("标题", "内容")
+        with patch(
+            "tokenDemo.autoTrade_pm.send_pushplus", new=AsyncMock()
+        ) as send_pushplus:
+            await AUTOA.send_msg("N 开仓", channel="pushplus")
+            await AUTOA.send_msg(notification, channel="pushplus")
+
+        send_pushplus.assert_awaited_once_with(notification)
+
+    async def test_send_msg_without_notification_does_not_send_external_channel(self):
+        with (
+            patch("tokenDemo.autoTrade_pm.send_pushplus", new=AsyncMock()) as send_pushplus,
+            patch.object(AUTOA, "_get_http_session", new=AsyncMock()) as get_session,
+        ):
+            await AUTOA.send_msg("普通筛选消息")
+
+        send_pushplus.assert_not_awaited()
+        get_session.assert_not_awaited()
+
+    async def test_dca_is_routed_as_successful_open(self):
+        position = Position(
+            take_profit=12,
+            stop_loss=8,
+            close_side=OrderSide.SELL,
+            position_side=PositionSide.LONG,
+            entry_price=10,
+            name="测试股票",
+            date=20260701,
+            strategy=[PositionSide.BZ],
+        )
+        hist = pd.DataFrame([
+            *[
+                {"high": 11, "low": 9, "close": 10, "volume": 100}
+                for _ in range(29)
+            ],
+            {"high": 11, "low": 9, "close": 8.5, "volume": 100},
+        ])
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {"000001": position.model_dump()},
+                "OBSERVATIONS": {},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(AUTOA, "calculate_atr", return_value=1),
+            patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
+        ):
+            await AUTOA.on_positions(
+                "000001",
+                ["20260711", "20260710"],
+                position.model_dump(),
+                pd.Timestamp("2026-07-11").to_pydatetime(),
+            )
+
+        notification = send_msg.await_args.args[0]
+        self.assertIsInstance(notification, TradeNotification)
+        self.assertEqual(notification.title, "测试股票 开仓成功")
+        self.assertEqual(send_msg.await_args.kwargs["channel"], "pushplus")
+        self.assertIn("- **策略：** BZ,DCA", notification.content)
+
+
 class AutoAHttpSessionCharacterizationTest(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         if AUTOA._http_session is not None and not AUTOA._http_session.closed:
@@ -2632,7 +3083,7 @@ class StrategyStateWindowConsistencyTest(unittest.IsolatedAsyncioTestCase):
         obj = AutoBNCharacterizationTest.make_autobn()
         old = self.make_observation(PositionSide.BZ)
         old.earliest_open_timestamp = pd.Timestamp(
-            "2026-07-11 11:00:00"
+            "2026-07-10 09:00:00"
         ).timestamp()
         obj.alert_all = {
             "POSITIONS": {},

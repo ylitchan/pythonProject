@@ -12,7 +12,7 @@ import threading
 import time
 from decimal import ROUND_DOWN, Decimal
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 # ==================== 第三方库导入 ====================
 import aiofiles
@@ -38,13 +38,15 @@ from requests.adapters import HTTPAdapter
 
 try:
     from tokenDemo.pushplus_notifications import (
-        classify_autobn_message,
+        TradeNotification,
+        format_daily_positions_notification,
         format_trade_notification,
         send_pushplus,
     )
 except ModuleNotFoundError:
     from pushplus_notifications import (
-        classify_autobn_message,
+        TradeNotification,
+        format_daily_positions_notification,
         format_trade_notification,
         send_pushplus,
     )
@@ -362,7 +364,6 @@ class AUTOBN:
     BATCH_WINDOW_MINUTES = 5  # 分批窗口时长（分钟）
     BATCH_SLOT_COUNT = 5  # 窗口内批次数（每分钟一批）
     MESSAGE_TIMEOUT_SECONDS = 10  # 消息发送超时时间（秒）
-    ENABLE_MESSAGES = False  # AUTOBN消息发送开关（临时关闭，后续需要时改回True）
     FILE_IO_TIMEOUT_SECONDS = 10  # 文件IO超时时间（秒）
 
     # ==================== 交易配置常量 ====================
@@ -392,14 +393,10 @@ class AUTOBN:
             obj.logger.addHandler(handler)
 
         # 基本配置：优先使用 kwargs，其次使用默认/环境
-        # 支持键：qy_key, leverage, health4open,
+        # 支持键：leverage, health4open,
         #        session/session_verify/session_headers,
         #        alert_all_file/allert_all_file, api_key, api_secret
-        obj.qy_key = kwargs.get("qy_key") or kwargs.get("qyWechatKey")
-        if not obj.qy_key:
-            raise ValueError("from_cfg 需要提供 qy_key")
-        obj.signal_qy_key = kwargs.get("signal_qy_key") or obj.qy_key
-
+        # AUTOBN 不使用企业微信，消息渠道由 send_msg 的事件参数决定。
         # 交易参数配置（可覆盖）
         obj.leverage = kwargs.get("leverage", cls.DEFAULT_LEVERAGE)
         obj.health4open = kwargs.get("health4open", cls.DEFAULT_HEALTH_THRESHOLD)
@@ -568,44 +565,53 @@ class AUTOBN:
         self._http_session = None
 
     async def send_msg(
-        self, msg: str, *, qy_key: Optional[str] = None
+        self,
+        msg: str | TradeNotification,
+        *,
+        channel: Literal["feishu", "pushplus"] | None = None,
     ) -> None:
-        """
-        发送消息通知函数
-
-        功能：通过企业微信发送交易通知消息
-
-        参数：
-            msg: 要发送的消息内容
-            qy_key: 可选的企业微信机器人key，未提供时默认使用 self.qy_key
-
-        返回：
-            None
-        """
+        """按指定渠道发送 AUTOBN 通知。"""
         try:
-            self.logger.info(f"发送消息: {msg}")
-            target_qy_key = qy_key or self.qy_key
-            pushplus_notification = classify_autobn_message(msg)
-            if pushplus_notification:
+            log_message = msg.content if isinstance(msg, TradeNotification) else msg
+            self.logger.info(f"发送消息: {log_message}")
+            if channel == "pushplus":
+                if not isinstance(msg, TradeNotification):
+                    self.logger.warning("PushPlus 渠道需要 TradeNotification，跳过消息发送")
+                    return
                 try:
-                    await send_pushplus(pushplus_notification)
+                    await send_pushplus(msg)
                 except Exception as e:
                     self.logger.error(f"PushPlus 消息发送异常: {str(e)}")
-            if not self.ENABLE_MESSAGES and target_qy_key != self.signal_qy_key:
                 return
-            json_msg = {"msgtype": "text", "text": {"content": msg}}
-            url = (
-                "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
-                f"{target_qy_key}"
-            )
 
-            http_session = await self._get_http_session()
-            async with http_session.post(url=url, json=json_msg) as response:
-                if response.status != 200:
-                    response_text = await response.text()
-                    self.logger.error(
-                        f"消息发送失败，状态码: {response.status}，响应: {response_text}"
-                    )
+            if channel == "feishu":
+                if not isinstance(msg, str):
+                    self.logger.warning("飞书渠道需要文本消息，跳过消息发送")
+                    return
+                webhook_url = os.getenv("FEISHU_WEBHOOK_URL", "")
+                if not webhook_url:
+                    self.logger.warning("未配置飞书机器人 webhook，跳过飞书消息")
+                    return
+                http_session = await self._get_http_session()
+                try:
+                    async with http_session.post(
+                        url=webhook_url,
+                        json={
+                            "msg_type": "text",
+                            "content": {"text": msg},
+                        },
+                    ) as response:
+                        if response.status != 200:
+                            response_text = await response.text()
+                            self.logger.error(
+                                f"飞书消息发送失败，状态码: {response.status}，响应: {response_text}"
+                            )
+                except Exception as e:
+                    self.logger.error(f"飞书消息发送异常: {str(e)}")
+                return
+
+            if channel is not None:
+                self.logger.warning(f"未识别的消息渠道: {channel}")
         except Exception as e:
             self.logger.error(f"消息发送异常: {str(e)}")
 
@@ -680,6 +686,7 @@ class AUTOBN:
         take_profit_price=None,
         stop_loss_price=None,
         open_info=None,
+        open_signal=None,
     ):
         """
         在币安期货市场开仓 (风险定仓位模型) - 异步版本
@@ -780,6 +787,12 @@ class AUTOBN:
             )
             actual_leverage = leverage_result.get("leverage", self.leverage)
 
+            if open_signal is not None:
+                try:
+                    await self.send_msg(open_signal, channel="feishu")
+                except Exception as e:
+                    self.logger.error(f"{symbol} 开仓信号发送异常，不阻断下单: {str(e)}")
+
             tx = await self._call_api(
                 self.papi_client.rest_api.new_um_order,
                 symbol=symbol,
@@ -792,7 +805,10 @@ class AUTOBN:
             rate_show = abs(take_profit_price - markPrice) / markPrice
             strategy_tag = format_strategy_tags(open_info.strategy)
             msg = f"{symbol} 开仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n账户余额:{total_balance:.2f}\n仓位比例:{notional / total_balance:.2%}\n收益率:{rate_show:.2%}"
-            await self.send_msg(msg)
+            await self.send_msg(
+                format_trade_notification("AUTOBN", "开仓", symbol, msg),
+                channel="pushplus",
+            )
             return account_data
         except Exception as e:
             error_msg = f"{symbol} 开仓失败：{str(e)}"
@@ -889,7 +905,10 @@ class AUTOBN:
                 long_short_ratio_show = close_info.long_short_ratio
                 basis_rate_show = close_info.basis_rate
                 msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}\n平仓依据:{close_info.close_reason}"
-                await self.send_msg(msg)
+                await self.send_msg(
+                    format_trade_notification("AUTOBN", "平仓", symbol, msg),
+                    channel="pushplus",
+                )
 
                 await CloseRecordManager.record_close_async(
                     source="AUTOBN",
@@ -1944,9 +1963,7 @@ class AUTOBN:
             f"止损:{stop_loss}\n"
             f"收益率:{rate_show:.2%}"
         )
-        await self.send_msg(msg, qy_key=self.signal_qy_key)
-        await self.send_msg(msg)
-        return take_profit, stop_loss, basis_rate
+        return take_profit, stop_loss, basis_rate, msg
 
     async def rzq_token(self, semaphore, symbol, success, dtn):
         """
@@ -1964,6 +1981,23 @@ class AUTOBN:
                 Observation.model_validate(open_info_dict) if open_info_dict else None
             )
 
+            current_timestamp = dtn.timestamp()
+
+            # 观察记录的冷却和超时只依赖本地状态，优先于行情请求处理
+            if close_info is None and open_info:
+                if open_info.is_reopen_cooldown_active(current_timestamp):
+                    self.logger.info(f"{symbol} 仍在平仓冷却期，跳过开仓分析")
+                    return
+
+                observation_timeout = (
+                    self.BZ_OBSERVATION_TIMEOUT_SECONDS
+                    if PositionSide.BZ in open_info.strategy
+                    else self.BD_OBSERVATION_TIMEOUT_SECONDS
+                )
+                if current_timestamp - open_info.timestamp > observation_timeout:
+                    self.alert_all["OBSERVATIONS"].pop(symbol, None)
+                    open_info = None
+
             # 获取日K线数据（30天）
             kline = await self.get_kline(semaphore, symbol, "1Dutc")
             # 数据量检查
@@ -1975,7 +2009,6 @@ class AUTOBN:
 
             # 预计算常用值
             current_price = kline_close[-1]
-            current_timestamp = dtn.timestamp()
 
             # 检查现有持仓是否需要平仓
             if close_info:
@@ -1988,19 +2021,12 @@ class AUTOBN:
                     current_timestamp,
                 )
             elif open_info:
-                observation_timeout = (
-                    self.BZ_OBSERVATION_TIMEOUT_SECONDS
-                    if PositionSide.BZ in open_info.strategy
-                    else self.BD_OBSERVATION_TIMEOUT_SECONDS
-                )
-                if current_timestamp - open_info.timestamp > observation_timeout:
-                    self.alert_all["OBSERVATIONS"].pop(symbol)
-                    open_info = None
-                else:
+                if open_info is not None:
                     should_open = False
                     take_profit = None
                     stop_loss = None
                     basis_rate = None
+                    open_signal = None
 
                     long_ok, long_lsr, long_stop_guard_threshold = False, None, None
                     if (
@@ -2028,7 +2054,7 @@ class AUTOBN:
                             long_short_ratio=long_lsr,
                         )
                         if signal is not None:
-                            take_profit, stop_loss, basis_rate = signal
+                            take_profit, stop_loss, basis_rate, open_signal = signal
                             open_info.side = OrderSide.BUY
                             should_open = True
                     short_ok, short_lsr, _ = False, None, None
@@ -2054,13 +2080,10 @@ class AUTOBN:
                             long_short_ratio=short_lsr,
                         )
                         if signal is not None:
-                            take_profit, stop_loss, basis_rate = signal
+                            take_profit, stop_loss, basis_rate, open_signal = signal
                             open_info.side = OrderSide.SELL
                             should_open = True
                     if should_open:
-                        if open_info.is_reopen_cooldown_active(current_timestamp):
-                            self.logger.info(f"{symbol} 仍在平仓冷却期，跳过开仓信号")
-                            return
                         is_long = open_info.side.value == OrderSide.BUY.value
                         position_side = (
                             PositionSide.LONG if is_long else PositionSide.SHORT
@@ -2072,6 +2095,7 @@ class AUTOBN:
                             take_profit,
                             stop_loss,  # 止损价用于计算风险仓位
                             open_info,
+                            open_signal,
                         )
                         if not order_result:
                             return
@@ -2345,7 +2369,11 @@ class AUTOBN:
             )
             balance_info = self._normalize_account_info(balance_info)
             balance = balance_info["totalWalletBalance"]
-            await self.send_msg(f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}")
+            msg = f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}"
+            await self.send_msg(
+                format_daily_positions_notification("AUTOBN", msg),
+                channel="pushplus",
+            )
             self.logger.info("账户信息推送任务执行完成")
 
             def _write_alert_all_sync():
@@ -2439,7 +2467,6 @@ class AUTOA:
     VOLUME_CHEB_REQUIRED_HISTORY = 30  # 切片[-30:-10]所需最少历史K线数
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
-    qy_key = "6f2ec864-c474-4c8f-b069-1e3c35eb7d73"
     alert_all_file = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "alert_all_A.json"
     )
@@ -2633,30 +2660,55 @@ class AUTOA:
         cls._http_session = None
 
     @classmethod
-    async def send_msg(cls, msg, *, pushplus_notification=None):
-        """
-        发送消息通知函数
-
-        功能：通过企业微信发送交易通知消息
-        参数：
-            msg: 要发送的消息内容
-            pushplus_notification: 可选的 PushPlus 交易通知
-        """
+    async def send_msg(
+        cls,
+        msg: str | TradeNotification,
+        *,
+        channel: Literal["pushplus", "wecom"] | None = None,
+    ):
+        """按指定渠道发送 AUTOA 通知。"""
         try:
-            cls.logger.info(f"发送消息: {msg}")
-            json_msg = {"msgtype": "text", "text": {"content": msg}}
-            http_session = await cls._get_http_session()
-            if pushplus_notification:
+            log_message = msg.content if isinstance(msg, TradeNotification) else msg
+            cls.logger.info(f"发送消息: {log_message}")
+            if channel == "pushplus":
+                if not isinstance(msg, TradeNotification):
+                    cls.logger.warning("PushPlus 渠道需要 TradeNotification，跳过消息发送")
+                    return
                 try:
-                    await send_pushplus(pushplus_notification)
+                    await send_pushplus(msg)
                 except Exception as e:
                     cls.logger.error(f"PushPlus 消息发送异常: {str(e)}")
-            async with http_session.post(
-                url=f"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key={cls.qy_key}",
-                json=json_msg,
-            ) as response:
-                if response.status != 200:
-                    cls.logger.error(f"消息发送失败，状态码: {response.status}")
+                return
+
+            if channel == "wecom":
+                if not isinstance(msg, str):
+                    cls.logger.warning("企业微信渠道需要文本消息，跳过消息发送")
+                    return
+                webhook_key = os.getenv("AUTOA_WECOM_KEY", "")
+                if not webhook_key:
+                    cls.logger.warning("未配置 AUTOA_WECOM_KEY，跳过企业微信消息")
+                    return
+                json_msg = {"msgtype": "text", "text": {"content": msg}}
+                http_session = await cls._get_http_session()
+                try:
+                    async with http_session.post(
+                        url=(
+                            "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key="
+                            f"{webhook_key}"
+                        ),
+                        json=json_msg,
+                    ) as response:
+                        if response.status != 200:
+                            response_text = await response.text()
+                            cls.logger.error(
+                                f"企业微信消息发送失败，状态码: {response.status}，响应: {response_text}"
+                            )
+                except Exception as e:
+                    cls.logger.error(f"企业微信消息发送异常: {str(e)}")
+                return
+
+            if channel is not None:
+                cls.logger.warning(f"未识别的消息渠道: {channel}")
         except Exception as e:
             cls.logger.error(f"消息发送异常: {str(e)}")
 
@@ -2749,7 +2801,11 @@ class AUTOA:
         try:
             positions = cls.alert_all.get("POSITIONS", {})
             if not positions:
-                await cls.send_msg("总持仓金额:\n0.00 CNY\n持仓信息:\n暂无持仓")
+                msg = "总持仓金额:\n0.00 CNY\n持仓信息:\n暂无持仓"
+                await cls.send_msg(
+                    format_daily_positions_notification("AUTOA", msg),
+                    channel="pushplus",
+                )
                 return
 
             positions_data = []
@@ -2792,9 +2848,13 @@ class AUTOA:
                     + f"开仓日期:{close_info.date}"
                 )
 
-            await cls.send_msg(
+            msg = (
                 f"总持仓金额:\n{total_notional:.2f} CNY\n持仓信息:\n"
                 + "\n\n".join(positions_data)
+            )
+            await cls.send_msg(
+                format_daily_positions_notification("AUTOA", msg),
+                channel="pushplus",
             )
         except Exception:
             cls.logger.exception("A股每日持仓推送失败")
@@ -3079,7 +3139,10 @@ class AUTOA:
                     f"止盈:{close_info.take_profit:.2f}\n"
                     f"止损:{close_info.stop_loss:.2f}"
                 )
-                await cls.send_msg(msg)
+                await cls.send_msg(
+                    format_trade_notification("AUTOA", "开仓", close_info.name, msg),
+                    channel="pushplus",
+                )
                 close_info.entry_price = cls._calculate_weighted_entry_price(
                     close_info.entry_price,
                     price_close,
@@ -3169,12 +3232,10 @@ class AUTOA:
             f"平仓收益:{profit_rate:.2%}\n"
             f"平仓依据:{close_info.close_reason}"
         )
-        pushplus_notification = None
-        if PositionSide.N in close_info.strategy:
-            pushplus_notification = format_trade_notification(
-                "AUTOA", "平仓", close_info.name, msg
-            )
-        await cls.send_msg(msg, pushplus_notification=pushplus_notification)
+        await cls.send_msg(
+            format_trade_notification("AUTOA", "平仓", close_info.name, msg),
+            channel="pushplus",
+        )
 
         await CloseRecordManager.record_close_async(
             source="AUTOA",
@@ -3309,14 +3370,15 @@ class AUTOA:
                 f"止损:{stop_loss:.2f}\n"
                 f"收益率:{atr_percent:.2%}\n"
             )
-            pushplus_notification = None
             if PositionSide.N in open_info.strategy:
-                pushplus_notification = format_trade_notification(
-                    "AUTOA", "开仓", open_info.name, msg
+                await cls.send_msg(
+                    format_trade_notification("AUTOA", "开仓", open_info.name, msg),
+                    channel="pushplus",
                 )
-            await cls.send_msg(msg, pushplus_notification=pushplus_notification)
+            else:
+                await cls.send_msg(msg, channel="wecom")
 
-            # 6. 从观察列表移除
+            # 6. 保留观察记录及冷却状态，供后续状态处理使用
             cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
     @classmethod
     async def filter_stocks(cls):
@@ -3550,20 +3612,8 @@ async def main():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     load_dotenv(os.path.join(os.path.dirname(current_dir), ".env"))
 
-    # 从环境变量加载密钥
-    qy_key = os.getenv("QY_WECHAT_KEY", "095984b1-5bc0-43ac-8037-d65a9608d120")
-    if not qy_key:
-        logger = logging.getLogger("AUTOA")
-        logger.warning("未设置环境变量 QY_WECHAT_KEY，消息通知功能将不可用")
-        # 可以选择：1) 抛出异常退出  2) 使用空密钥继续运行
-        # 这里选择继续运行但禁用通知
-        qy_key = ""
-    autobn_qy_key = AUTOA.qy_key
-
     autobn = AUTOBN.from_cfg(
         alert_all_file=os.path.join(current_dir, "alert_all.json"),
-        qy_key=autobn_qy_key,
-        signal_qy_key=qy_key,
     )
     # 初始化任务调度器，配置全局日志级别
     scheduler = AsyncIOScheduler()

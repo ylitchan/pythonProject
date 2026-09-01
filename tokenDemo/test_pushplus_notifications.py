@@ -8,6 +8,7 @@ from perk_pushplus import Template
 from tokenDemo.pushplus_notifications import (
     _get_pushplus_client,
     classify_autobn_message,
+    format_daily_positions_notification,
     format_trade_notification,
     send_pushplus,
 )
@@ -31,6 +32,15 @@ class PushPlusNotificationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("- **策略：** N,DCA", notification.content)
         self.assertIn("- **杠杆：** 5x", notification.content)
         self.assertNotIn("<", notification.content)
+
+    def test_formats_daily_positions_notification(self):
+        notification = format_daily_positions_notification(
+            "AUTOA", "总持仓金额:\n100.00 CNY"
+        )
+
+        self.assertEqual(notification.title, "AUTOA 每日持仓")
+        self.assertIn("# 📊 AUTOA · 每日持仓", notification.content)
+        self.assertIn("总持仓金额:", notification.content)
 
     def test_formats_failure_with_reason_and_time(self):
         notification = classify_autobn_message("BTCUSDT 开仓失败：可用余额为零")
