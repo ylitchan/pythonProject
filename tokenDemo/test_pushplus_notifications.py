@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from perk_pushplus import Template
 
 from tokenDemo.pushplus_notifications import (
+    DailyPosition,
     _get_pushplus_client,
     classify_autobn_message,
     format_daily_positions_notification,
@@ -35,12 +36,57 @@ class PushPlusNotificationTest(unittest.IsolatedAsyncioTestCase):
 
     def test_formats_daily_positions_notification(self):
         notification = format_daily_positions_notification(
-            "AUTOA", "总持仓金额:\n100.00 CNY"
+            "AUTOBN",
+            "账户余额",
+            2406.50073781,
+            "USDT",
+            [
+                DailyPosition(
+                    name="IOSTUSDT",
+                    strategy="BZ",
+                    direction="LONG",
+                    entry_price=0.0006219507703120751,
+                    notional=234.59522,
+                    unrealized_pnl=-7.86731186,
+                    profit_rate=-0.0335,
+                    take_profit=0.0007028113366718827,
+                    stop_loss=0.0005691567398320147,
+                    open_date=20260901,
+                    currency="USDT",
+                )
+            ],
         )
 
-        self.assertEqual(notification.title, "AUTOA 每日持仓")
-        self.assertIn("# 📊 AUTOA · 每日持仓", notification.content)
-        self.assertIn("总持仓金额:", notification.content)
+        self.assertEqual(notification.title, "AUTOBN 每日持仓")
+        self.assertIn("# 📊 AUTOBN · 每日持仓", notification.content)
+        self.assertIn("## 账户概览", notification.content)
+        self.assertIn("- **账户余额：** `2,406.50 USDT`", notification.content)
+        self.assertIn("- **持仓数量：** `1`", notification.content)
+        self.assertIn("## 1. IOSTUSDT · 🟢 LONG", notification.content)
+        self.assertIn("**策略：** `BZ`", notification.content)
+        self.assertIn(
+            "- **开仓价格：** `0.00062195 USDT`", notification.content
+        )
+        self.assertIn("- **名义价值：** `234.60 USDT`", notification.content)
+        self.assertIn(
+            "- **持仓盈亏：** 🔴 **-7.87 USDT**", notification.content
+        )
+        self.assertIn("- **持仓收益：** 🔴 **-3.35%**", notification.content)
+        self.assertIn(
+            "- **止盈 / 止损：** `0.00070281` / `0.00056916`",
+            notification.content,
+        )
+        self.assertIn("- **开仓日期：** `2026-09-01`", notification.content)
+        self.assertNotIn("===", notification.content)
+
+    def test_formats_empty_daily_positions_notification(self):
+        notification = format_daily_positions_notification(
+            "AUTOA", "总持仓金额", 0, "CNY", []
+        )
+
+        self.assertIn("- **总持仓金额：** `0.00 CNY`", notification.content)
+        self.assertIn("- **持仓数量：** `0`", notification.content)
+        self.assertIn("> 当前暂无持仓。", notification.content)
 
     def test_formats_failure_with_reason_and_time(self):
         notification = classify_autobn_message("BTCUSDT 开仓失败：可用余额为零")

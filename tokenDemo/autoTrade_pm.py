@@ -38,6 +38,7 @@ from requests.adapters import HTTPAdapter
 
 try:
     from tokenDemo.pushplus_notifications import (
+        DailyPosition,
         TradeNotification,
         format_daily_positions_notification,
         format_trade_notification,
@@ -45,6 +46,7 @@ try:
     )
 except ModuleNotFoundError:
     from pushplus_notifications import (
+        DailyPosition,
         TradeNotification,
         format_daily_positions_notification,
         format_trade_notification,
@@ -2262,10 +2264,10 @@ class AUTOBN:
                     f"跳过名义价值为0的持仓记录: symbol={p.get('symbol')} side={p.get('positionSide')}"
                 )
                 continue
-            strategy_tag = ""
+            strategy_tag = PositionSide.N.value
             take_profit = 0.0
             stop_loss = 0.0
-            open_date = "N/A"
+            open_date = int(datetime.datetime.now().strftime("%Y%m%d"))
             if p["symbol"] in self.alert_all["POSITIONS"]:
                 pos_data = self.alert_all["POSITIONS"][p["symbol"]]
                 pos_obj = Position.model_validate(pos_data)
@@ -2274,16 +2276,19 @@ class AUTOBN:
                 stop_loss = pos_obj.stop_loss
                 open_date = pos_obj.date
             positions_data.append(
-                f"==={p['symbol']}===\n"
-                f"策略:{strategy_tag}\n"
-                f"开仓价格:{entryPrice} USDT\n"
-                f"持仓方向:{p['positionSide']}\n"
-                f"名义价值:{p['notional']} USDT\n"
-                f"持仓盈亏:{p['unRealizedProfit']} USDT\n"
-                f"持仓收益:{unrealized_profit / notional:.2%}\n"
-                f"止盈:{take_profit}\n"
-                f"止损:{stop_loss}\n"
-                f"开仓日期:{open_date}"
+                DailyPosition(
+                    name=p["symbol"],
+                    strategy=strategy_tag,
+                    direction=p["positionSide"],
+                    entry_price=entryPrice,
+                    notional=notional,
+                    unrealized_pnl=unrealized_profit,
+                    profit_rate=unrealized_profit / notional,
+                    take_profit=take_profit,
+                    stop_loss=stop_loss,
+                    open_date=open_date,
+                    currency="USDT",
+                )
             )
 
             if p["symbol"] not in self.alert_all["POSITIONS"]:
@@ -2317,7 +2322,7 @@ class AUTOBN:
                 pos_obj.entry_price = entryPrice
                 self.alert_all["POSITIONS"][p["symbol"]] = pos_obj.model_dump()
 
-        return "\n\n".join(positions_data) if positions_data else "暂无持仓"
+        return positions_data
 
     async def rzq_market(self, market):
         """
@@ -2379,9 +2384,14 @@ class AUTOBN:
             )
             balance_info = self._normalize_account_info(balance_info)
             balance = balance_info["totalWalletBalance"]
-            msg = f"账户余额:\n{balance} USDT\n持仓信息:\n{positions_data}"
             await self.send_msg(
-                format_daily_positions_notification("AUTOBN", msg),
+                format_daily_positions_notification(
+                    "AUTOBN",
+                    "账户余额",
+                    float(balance),
+                    "USDT",
+                    positions_data,
+                ),
                 channel="pushplus",
             )
             self.logger.info("账户信息推送任务执行完成")
@@ -2811,9 +2821,10 @@ class AUTOA:
         try:
             positions = cls.alert_all.get("POSITIONS", {})
             if not positions:
-                msg = "总持仓金额:\n0.00 CNY\n持仓信息:\n暂无持仓"
                 await cls.send_msg(
-                    format_daily_positions_notification("AUTOA", msg),
+                    format_daily_positions_notification(
+                        "AUTOA", "总持仓金额", 0, "CNY", []
+                    ),
                     channel="pushplus",
                 )
                 return
@@ -2826,19 +2837,20 @@ class AUTOA:
                 close_info = Position.model_validate(close_info_dict)
                 strategy_tag = format_strategy_tags(close_info.strategy)
                 current_price = await cls._get_auction_price(code, trading_days)
-                position_header = (
-                    f"==={close_info.name}({code})===\n"
-                    f"策略:{strategy_tag}\n"
-                    f"开仓价格:{close_info.entry_price:.2f} CNY\n"
-                    f"持仓方向:{close_info.position_side.value}\n"
-                )
                 if current_price is None:
                     positions_data.append(
-                        position_header
-                        + "行情获取失败，暂不可估值（未计入总持仓金额）\n"
-                        + f"止盈:{close_info.take_profit:.2f}\n"
-                        + f"止损:{close_info.stop_loss:.2f}\n"
-                        + f"开仓日期:{close_info.date}"
+                        DailyPosition(
+                            name=f"{close_info.name}({code})",
+                            strategy=strategy_tag,
+                            direction=close_info.position_side.value,
+                            entry_price=close_info.entry_price,
+                            take_profit=close_info.take_profit,
+                            stop_loss=close_info.stop_loss,
+                            open_date=close_info.date,
+                            currency="CNY",
+                            price_decimals=2,
+                            note="行情获取失败，暂不可估值（未计入总持仓金额）。",
+                        )
                     )
                     continue
 
@@ -2847,23 +2859,32 @@ class AUTOA:
                 )
                 total_notional += notional
                 positions_data.append(
-                    position_header
-                    + f"策略持仓股数:{position_shares}\n"
-                    + f"竞价行情价:{current_price:.2f} CNY\n"
-                    + f"名义价值:{notional:.2f} CNY\n"
-                    + f"持仓盈亏:{unrealized_pnl:.2f} CNY\n"
-                    + f"持仓收益:{profit_rate:.2%}\n"
-                    + f"止盈:{close_info.take_profit:.2f}\n"
-                    + f"止损:{close_info.stop_loss:.2f}\n"
-                    + f"开仓日期:{close_info.date}"
+                    DailyPosition(
+                        name=f"{close_info.name}({code})",
+                        strategy=strategy_tag,
+                        direction=close_info.position_side.value,
+                        entry_price=close_info.entry_price,
+                        quantity=position_shares,
+                        current_price=current_price,
+                        notional=notional,
+                        unrealized_pnl=unrealized_pnl,
+                        profit_rate=profit_rate,
+                        take_profit=close_info.take_profit,
+                        stop_loss=close_info.stop_loss,
+                        open_date=close_info.date,
+                        currency="CNY",
+                        price_decimals=2,
+                    )
                 )
 
-            msg = (
-                f"总持仓金额:\n{total_notional:.2f} CNY\n持仓信息:\n"
-                + "\n\n".join(positions_data)
-            )
             await cls.send_msg(
-                format_daily_positions_notification("AUTOA", msg),
+                format_daily_positions_notification(
+                    "AUTOA",
+                    "总持仓金额",
+                    total_notional,
+                    "CNY",
+                    positions_data,
+                ),
                 channel="pushplus",
             )
         except Exception:
@@ -3070,7 +3091,8 @@ class AUTOA:
         核心逻辑：
             - 止盈触发：当前价 >= 止盈价
             - 止损触发：当前价 <= 止损价
-            - 触发后将股票移至观察列表（非BZ策略会发送通知）
+            - 触发后将股票移至观察列表
+            - 仅包含 N 策略的交易动作发送 PushPlus 通知
 
         参数：
             code: 股票代码（如'000001'）
@@ -3149,10 +3171,11 @@ class AUTOA:
                     f"止盈:{close_info.take_profit:.2f}\n"
                     f"止损:{close_info.stop_loss:.2f}"
                 )
-                await cls.send_msg(
-                    format_trade_notification("AUTOA", "开仓", close_info.name, msg),
-                    channel="pushplus",
-                )
+                if PositionSide.N in close_info.strategy:
+                    await cls.send_msg(
+                        format_trade_notification("AUTOA", "开仓", close_info.name, msg),
+                        channel="pushplus",
+                    )
                 close_info.entry_price = cls._calculate_weighted_entry_price(
                     close_info.entry_price,
                     price_close,
@@ -3242,10 +3265,11 @@ class AUTOA:
             f"平仓收益:{profit_rate:.2%}\n"
             f"平仓依据:{close_info.close_reason}"
         )
-        await cls.send_msg(
-            format_trade_notification("AUTOA", "平仓", close_info.name, msg),
-            channel="pushplus",
-        )
+        if PositionSide.N in close_info.strategy:
+            await cls.send_msg(
+                format_trade_notification("AUTOA", "平仓", close_info.name, msg),
+                channel="pushplus",
+            )
 
         await CloseRecordManager.record_close_async(
             source="AUTOA",
@@ -3385,8 +3409,6 @@ class AUTOA:
                     format_trade_notification("AUTOA", "开仓", open_info.name, msg),
                     channel="pushplus",
                 )
-            else:
-                await cls.send_msg(msg, channel="wecom")
 
             # 6. 保留观察记录及冷却状态，供后续状态处理使用
             cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
@@ -3579,11 +3601,6 @@ class AUTOA:
         # 筛选符合量能条件的股票
         filtered = await cls.filter_stocks()
         cls.logger.info(f"符合量能条件的股票：{filtered}")
-
-        # 如果有符合条件的股票，发送通知
-        if filtered:
-            content = f"===A{len(filtered)} 首板===\n" + "\n-------\n".join(filtered)
-            await cls.send_msg(content)
 
 
 # 注册AUTOA的退出处理函数,在脚本退出时保存A股数据

@@ -4,7 +4,7 @@ import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Optional
+from typing import Optional, Sequence
 
 from perk_pushplus import PushPlusClient, SendRequest, Template
 
@@ -13,6 +13,27 @@ from perk_pushplus import PushPlusClient, SendRequest, Template
 class TradeNotification:
     title: str
     content: str
+
+
+@dataclass(frozen=True)
+class DailyPosition:
+    """每日持仓通知中的单个持仓。"""
+
+    name: str
+    strategy: str
+    direction: str
+    entry_price: float
+    take_profit: float
+    stop_loss: float
+    open_date: int | str
+    currency: str
+    notional: Optional[float] = None
+    unrealized_pnl: Optional[float] = None
+    profit_rate: Optional[float] = None
+    quantity: Optional[float] = None
+    current_price: Optional[float] = None
+    price_decimals: int = 8
+    note: Optional[str] = None
 
 
 def format_trade_notification(
@@ -67,13 +88,112 @@ def format_trade_notification(
     return TradeNotification(title=title, content="\n".join(content_parts))
 
 
+def _format_money(value: float, currency: str) -> str:
+    return f"{value:,.2f} {currency}"
+
+
+def _format_price(value: float, decimals: int) -> str:
+    formatted = f"{value:,.{decimals}f}"
+    if decimals > 2:
+        formatted = formatted.rstrip("0").rstrip(".")
+    return formatted
+
+
+def _format_open_date(value: int | str) -> str:
+    date_text = str(value)
+    if len(date_text) == 8 and date_text.isdigit():
+        return f"{date_text[:4]}-{date_text[4:6]}-{date_text[6:]}"
+    return date_text
+
+
+def _change_icon(value: float) -> str:
+    if value > 0:
+        return "🟢"
+    if value < 0:
+        return "🔴"
+    return "⚪"
+
+
+def _direction_label(direction: str) -> str:
+    normalized = direction.upper()
+    if normalized == "LONG":
+        return "🟢 LONG"
+    if normalized == "SHORT":
+        return "🔴 SHORT"
+    return direction or "方向未知"
+
+
 def format_daily_positions_notification(
-    market: str, message: str
+    market: str,
+    summary_label: str,
+    summary_value: float,
+    currency: str,
+    positions: Sequence[DailyPosition],
 ) -> TradeNotification:
-    """格式化每日持仓汇总通知。"""
+    """将每日持仓排成适合 PushPlus Markdown 阅读的分节卡片。"""
+    content_parts = [
+        f"# 📊 {market} · 每日持仓",
+        "",
+        "## 账户概览",
+        "",
+        f"- **{summary_label}：** `{_format_money(summary_value, currency)}`",
+        f"- **持仓数量：** `{len(positions)}`",
+    ]
+
+    if not positions:
+        content_parts.extend(["", "> 当前暂无持仓。"])
+
+    for index, position in enumerate(positions, start=1):
+        content_parts.extend(
+            [
+                "",
+                "---",
+                "",
+                f"## {index}. {position.name} · {_direction_label(position.direction)}",
+                "",
+                f"**策略：** `{position.strategy or 'N/A'}`",
+                "",
+                "- **开仓价格：** "
+                f"`{_format_price(position.entry_price, position.price_decimals)} "
+                f"{position.currency}`",
+            ]
+        )
+        if position.quantity is not None:
+            content_parts.append(f"- **策略持仓股数：** `{position.quantity:,.0f}`")
+        if position.current_price is not None:
+            content_parts.append(
+                "- **竞价行情价：** "
+                f"`{_format_price(position.current_price, position.price_decimals)} "
+                f"{position.currency}`"
+            )
+        if position.notional is not None:
+            content_parts.append(
+                f"- **名义价值：** `{_format_money(position.notional, position.currency)}`"
+            )
+        if position.unrealized_pnl is not None:
+            content_parts.append(
+                f"- **持仓盈亏：** {_change_icon(position.unrealized_pnl)} "
+                f"**{_format_money(position.unrealized_pnl, position.currency)}**"
+            )
+        if position.profit_rate is not None:
+            content_parts.append(
+                f"- **持仓收益：** {_change_icon(position.profit_rate)} "
+                f"**{position.profit_rate:.2%}**"
+            )
+        content_parts.extend(
+            [
+                "- **止盈 / 止损：** "
+                f"`{_format_price(position.take_profit, position.price_decimals)}` / "
+                f"`{_format_price(position.stop_loss, position.price_decimals)}`",
+                f"- **开仓日期：** `{_format_open_date(position.open_date)}`",
+            ]
+        )
+        if position.note:
+            content_parts.extend(["", f"> ⚠️ {position.note}"])
+
     return TradeNotification(
         title=f"{market} 每日持仓",
-        content=f"# 📊 {market} · 每日持仓\n\n{message}",
+        content="\n".join(content_parts),
     )
 
 
