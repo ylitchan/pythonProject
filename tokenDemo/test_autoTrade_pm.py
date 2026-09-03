@@ -170,7 +170,7 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
 
         stock_hist.assert_not_awaited()
 
-    async def test_bz_only_open_is_silent_without_pushplus(self):
+    async def test_bz_only_signal_uses_wecom_without_pushplus(self):
         observation = Observation(
             price=10,
             timestamp=pd.Timestamp("2026-07-01").timestamp(),
@@ -217,7 +217,11 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
             )
 
         send_pushplus.assert_not_awaited()
-        send_msg.assert_not_awaited()
+        send_msg.assert_awaited_once()
+        signal = send_msg.await_args.args[0]
+        self.assertIsInstance(signal, str)
+        self.assertIn("**BZ**", signal)
+        self.assertEqual(send_msg.await_args.kwargs["channel"], "wecom")
         self.assertEqual(
             list(calculate_chebyshev.call_args.args[0]),
             [100] * 15,
@@ -272,10 +276,17 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
                 AUTOA.alert_all["POSITIONS"]["000001"]
             )
             has_position = "000001" in AUTOA.alert_all["POSITIONS"]
-            notification = send_msg.await_args.args[0]
+            self.assertEqual(send_msg.await_count, 2)
+            signal_call, trade_call = send_msg.await_args_list
+            signal = signal_call.args[0]
+            self.assertIsInstance(signal, str)
+            self.assertIn("**BZ,N**", signal)
+            self.assertEqual(signal_call.kwargs["channel"], "wecom")
+
+            notification = trade_call.args[0]
             self.assertEqual(notification.title, "测试股票 开仓成功")
             self.assertIsInstance(notification, TradeNotification)
-            self.assertEqual(send_msg.await_args.kwargs["channel"], "pushplus")
+            self.assertEqual(trade_call.kwargs["channel"], "pushplus")
 
         self.assertEqual(stored.strategy, [PositionSide.BZ, PositionSide.N])
         self.assertEqual(stored.timestamp, timestamp)

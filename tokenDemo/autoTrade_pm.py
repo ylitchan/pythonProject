@@ -3404,6 +3404,8 @@ class AUTOA:
                 f"止损:{stop_loss:.2f}\n"
                 f"收益率:{atr_percent:.2%}\n"
             )
+            # 信号通知与交易动作分流：信号走企业微信，N策略实际开仓走PushPlus
+            await cls.send_msg(msg, channel="wecom")
             if PositionSide.N in open_info.strategy:
                 await cls.send_msg(
                     format_trade_notification("AUTOA", "开仓", open_info.name, msg),
