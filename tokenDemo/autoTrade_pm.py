@@ -1183,22 +1183,29 @@ class AUTOBN:
                     if blend < long_ratio_5m:
                         return False, None, None
 
+                    chebyshev = self.calculate_chebyshev_probability(
+                        oi_hist_for_cheb,
+                        oi_5m_last,
+                    )
                     passed = (
                         oi_5m_last >= max(sum_open_interest_1h)
-                        and self.calculate_chebyshev_probability(
-                            oi_hist_for_cheb,
-                            oi_5m_last,
-                        )["chebyshev_upper_bound"]
+                        and chebyshev["chebyshev_upper_bound"]
                         < self.CHEBYSHEV_EXTREME_THRESHOLD
                     )
-                    stop_guard_threshold = oi_5m_last * (
+                    if not passed:
+                        return False, None, None
+
+                    oi_drawdown_threshold = oi_5m_last * (
                         1 - self.BZ_LONG_OI_DRAWDOWN_RATIO
                     )
-                    return (
-                        (True, lsrd, stop_guard_threshold)
-                        if passed
-                        else (False, None, None)
+                    chebyshev_one_percent_oi = chebyshev["mean"] + chebyshev[
+                        "std"
+                    ] / (self.CHEBYSHEV_EXTREME_THRESHOLD**0.5)
+                    stop_guard_threshold = min(
+                        oi_drawdown_threshold,
+                        chebyshev_one_percent_oi,
                     )
+                    return True, lsrd, stop_guard_threshold
 
             except Exception:
                 self.logger.exception("检查增仓信号时发生错误")

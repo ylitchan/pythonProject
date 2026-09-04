@@ -2569,7 +2569,11 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
             for v, t in zip(cls.OI_1H_VALUES, oi_ts)
         ])
         obj.calculate_chebyshev_probability = MagicMock(
-            return_value={"chebyshev_upper_bound": 0.001}
+            return_value={
+                "mean": 100.0,
+                "std": 5.0,
+                "chebyshev_upper_bound": 0.001,
+            }
         )
         return obj, dtn
 
@@ -2586,13 +2590,29 @@ class AutoBNLongSignalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(passed)
         self.assertEqual(lsrd, 1.5)
-        # 开仓最新5m OI为120，独立10%回撤线为108
+        # 10%回撤线108低于切比雪夫1%边界150，因此仍取108
         self.assertAlmostEqual(stop_guard, 108.0)
         obj._get_oi_history_data.assert_awaited_once_with("BTCUSDT", dtn, "1h")
         self.assertEqual(
             obj.calculate_chebyshev_probability.call_args.args[0],
             [float(value) for value in self.OI_1H_VALUES[:24]],
         )
+
+    async def test_long_signal_oi_stop_uses_lower_chebyshev_one_percent_boundary(self):
+        obj, dtn = self.make_autobn(window_end_long_ratio=0.9, long_ratio_5m=0.5)
+        obj._get_oi_5m_data.return_value = [{"sumOpenInterest": "200"}]
+
+        passed, lsrd, stop_guard = await obj.check_side(
+            asyncio.Semaphore(1),
+            "BTCUSDT",
+            PositionSide.LONG.value,
+            dtn=dtn,
+        )
+
+        self.assertTrue(passed)
+        self.assertEqual(lsrd, 1.5)
+        # 10%回撤线为180，切比雪夫达到1%的最低OI为100 + 10*5 = 150
+        self.assertAlmostEqual(stop_guard, 150.0)
 
     async def test_long_signal_still_rejects_when_blend_fails(self):
         # blend = (105*0.5 + (120-105)*0.4) / 120 ≈ 0.4875 < 0.6
