@@ -110,7 +110,7 @@ class Observation(BaseModel):
 
     用途：记录待观察的交易机会
     字段：
-        price: 触发价格
+        price: 触发价格（AUTOA中未出现BZ前为入池价格，出现BZ后为观察期最低价）
         timestamp: 触发时间（Unix时间戳）
         side: 信号方向 (BUY/SELL)
         strategy: 策略标签列表 (LONG/SHORT/BZ/BD/Supertrend)
@@ -3227,12 +3227,12 @@ class AUTOA:
                         close_info.entry_price,
                     )
 
-                # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
-                # 取当前下轨和原止损的较大值
-                new_stop_loss = max(close_info.stop_loss, current_lower)
-                if new_stop_loss != close_info.stop_loss:
-                    close_info.stop_loss = new_stop_loss
-                    close_info.close_reason = "移动止损(轨道)"
+                # N 策略的止损固定为观察期最低价，不使用 ATR 止损轨道覆盖。
+                if PositionSide.N not in close_info.strategy:
+                    new_stop_loss = max(close_info.stop_loss, current_lower)
+                    if new_stop_loss != close_info.stop_loss:
+                        close_info.stop_loss = new_stop_loss
+                        close_info.close_reason = "移动止损(轨道)"
 
             if not first_take_profit_triggered:
                 cls.alert_all["POSITIONS"][code] = close_info.model_dump()
@@ -3334,6 +3334,14 @@ class AUTOA:
             frequency="d",
             adjustflag="3",  # 前复权
         )
+        # BZ 出现前保留入池时的价格；BZ 出现后才开始累计观察期最低价。
+        current_low = None
+        had_bz_strategy = PositionSide.BZ in open_info.strategy
+        if not hist.empty:
+            current_low = float(hist.iloc[-1]["low"])
+            if had_bz_strategy and current_low > 0:
+                open_info.price = min(open_info.price, current_low)
+                cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
         if len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY:
             return
         # 获取开盘价、收盘价、最高价序列用于高开判断
@@ -3366,6 +3374,9 @@ class AUTOA:
             open_info.bz_reference_high = float(hist_high[-2])
             if PositionSide.BZ not in open_info.strategy:
                 open_info.strategy.append(PositionSide.BZ)
+            if current_low is not None and current_low > 0:
+                # 每次重新出现 BZ 都以本次 BZ 日最低价重置基准。
+                open_info.price = current_low
             cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
             should_open = True
         elif (
@@ -3383,7 +3394,11 @@ class AUTOA:
             # 初始化止盈止损与AUTOBN一致：基于hl2和ATR倍数计算
             hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
             take_profit = hl2 + current_atr * cls.TAKE_PROFIT_ATR_FACTOR
-            stop_loss = hl2 - current_atr * cls.STOP_LOSS_ATR_FACTOR
+            stop_loss = (
+                open_info.price
+                if PositionSide.N in open_info.strategy
+                else hl2 - current_atr * cls.STOP_LOSS_ATR_FACTOR
+            )
             atr_percent = (
                 abs(take_profit - price_close) / price_close
                 if price_close > 0
@@ -3482,21 +3497,26 @@ class AUTOA:
                         )
                         if hist.empty:
                             return
-                        price_close = hist.iloc[-1]["close"]
+                        price_close = float(hist.iloc[-1]["close"])
+                        current_low = float(hist.iloc[-1]["low"])
 
                         # 已在观察列表且当日再次涨停：刷新观察时间（即使在持仓也允许更新）
                         if code[0] in cls.alert_all["OBSERVATIONS"]:
                             open_info = Observation.model_validate(
                                 cls.alert_all["OBSERVATIONS"][code[0]]
                             )
-                            open_info.price = float(price_close)
+                            if (
+                                PositionSide.BZ in open_info.strategy
+                                and current_low > 0
+                            ):
+                                open_info.price = min(open_info.price, current_low)
                             open_info.timestamp = today.timestamp()
                             cls.alert_all["OBSERVATIONS"][code[0]] = open_info.model_dump()
                             return
 
                         selected.add(f"{code[1]}")
                         cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
-                            price=float(price_close),
+                            price=price_close,
                             timestamp=today.timestamp(),
                             side=OrderSide.BUY,
                             strategy=[],
