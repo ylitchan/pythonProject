@@ -478,6 +478,206 @@ class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(has_position)
 
 
+class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def make_hist(last_bar, previous_bar=None):
+        rows = [
+            {"open": 10, "high": 11, "low": 9.5, "close": 10.5, "volume": 100}
+            for _ in range(19)
+        ]
+        if previous_bar is not None:
+            rows[-1] = previous_bar
+        return pd.DataFrame(rows + [last_bar])
+
+    @staticmethod
+    def make_observation(price=10, strategies=None):
+        return Observation(
+            price=price,
+            timestamp=pd.Timestamp("2026-06-30").timestamp(),
+            side=OrderSide.BUY,
+            strategy=strategies if strategies is not None else [PositionSide.BZ],
+            name="测试股票",
+            bz_reference_high=10,
+            earliest_open_timestamp=pd.Timestamp("2026-07-01").timestamp(),
+        )
+
+    @staticmethod
+    def make_position(strategies=None):
+        return Position(
+            take_profit=30,
+            stop_loss=5,
+            close_side=OrderSide.SELL,
+            position_side=PositionSide.LONG,
+            entry_price=12.5,
+            name="测试股票",
+            date=20260701,
+            strategy=strategies if strategies is not None else [PositionSide.BZ],
+        )
+
+    async def test_n_open_uses_low_seen_while_bz_position_was_held(self):
+        observation = self.make_observation(price=5, strategies=[])
+        state = {
+            "POSITIONS": {},
+            "OBSERVATIONS": {"000001": observation.model_dump()},
+        }
+        bz_bar = {"open": 12, "high": 13, "low": 10, "close": 12.5, "volume": 200}
+        dip_bar = {"open": 12.4, "high": 12.6, "low": 9, "close": 12.3, "volume": 190}
+        close_bar = {"open": 12, "high": 12, "low": 10, "close": 10.2, "volume": 190}
+        n_bar = {"open": 12.2, "high": 13, "low": 11.5, "close": 12.5, "volume": 90}
+        reopen_timestamp = pd.Timestamp("2026-07-07").timestamp()
+        with (
+            patch.object(AUTOA, "alert_all", state),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(side_effect=[
+                self.make_hist(bz_bar),
+                self.make_hist(dip_bar, bz_bar),
+                self.make_hist(close_bar, dip_bar),
+                self.make_hist(n_bar, close_bar),
+            ])),
+            patch.object(AUTOA, "calculate_atr", return_value=1),
+            patch.object(AUTOA, "calculate_chebyshev_probability",
+                         return_value={"chebyshev_upper_bound": 0.001}),
+            patch.object(AUTOA, "_get_reopen_timestamp_after_close",
+                         new=AsyncMock(return_value=reopen_timestamp)),
+            patch.object(AUTOA, "send_msg", new=AsyncMock()),
+            patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()) as record_close,
+        ):
+            await AUTOA.on_observations(
+                "000001", ["2026-07-01", "2026-06-01"],
+                state["OBSERVATIONS"]["000001"],
+                pd.Timestamp("2026-07-01 10:00").to_pydatetime(),
+            )
+            await AUTOA.on_positions(
+                "000001", ["2026-07-02", "2026-06-01"],
+                state["POSITIONS"]["000001"],
+                pd.Timestamp("2026-07-02 10:00").to_pydatetime(),
+            )
+            held_low = state["OBSERVATIONS"]["000001"]["price"]
+            await AUTOA.on_positions(
+                "000001", ["2026-07-03", "2026-06-01"],
+                state["POSITIONS"]["000001"],
+                pd.Timestamp("2026-07-03 10:00").to_pydatetime(),
+            )
+            self.assertNotIn("000001", state["POSITIONS"])
+            await AUTOA.on_observations(
+                "000001", ["2026-07-07", "2026-06-01"],
+                state["OBSERVATIONS"]["000001"],
+                pd.Timestamp("2026-07-07 10:00").to_pydatetime(),
+            )
+
+        stored = Observation.model_validate(state["OBSERVATIONS"]["000001"])
+        position = Position.model_validate(state["POSITIONS"]["000001"])
+        self.assertEqual(position.strategy, [PositionSide.BZ, PositionSide.N])
+        self.assertEqual(position.stop_loss, 9)
+        self.assertEqual(held_low, 9)
+        self.assertEqual(stored.price, 9)
+        self.assertEqual(stored.timestamp, observation.timestamp)
+        self.assertEqual(stored.earliest_open_timestamp, reopen_timestamp)
+        record_close.assert_awaited_once()
+
+    async def test_entry_day_tracks_low_without_trading(self):
+        observation = self.make_observation()
+        position = self.make_position()
+        state = {
+            "POSITIONS": {"000001": position.model_dump()},
+            "OBSERVATIONS": {"000001": observation.model_dump()},
+        }
+        hist = self.make_hist(
+            {"open": 12.5, "high": 13, "low": 4, "close": 4.5, "volume": 100}
+        )
+        with (
+            patch.object(AUTOA, "alert_all", state),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)) as fetch,
+            patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
+            patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()) as record_close,
+        ):
+            await AUTOA.on_positions(
+                "000001", ["2026-07-01", "2026-06-01"], position.model_dump(),
+                pd.Timestamp("2026-07-01 14:00").to_pydatetime(),
+            )
+        self.assertEqual(state["OBSERVATIONS"]["000001"]["price"], 4)
+        self.assertEqual(state["POSITIONS"]["000001"], position.model_dump())
+        fetch.assert_awaited_once()
+        send_msg.assert_not_awaited()
+        record_close.assert_not_awaited()
+
+    async def test_held_n_keeps_stop_while_observation_tracks_lows_and_new_bz(self):
+        for price, bar, expected_price, expected_reference in [
+            (10, {"open": 13, "high": 14, "low": 7, "close": 12.5, "volume": 90}, 7, 10),
+            (5, {"open": 12, "high": 14, "low": 7, "close": 12.5, "volume": 200}, 7, 11),
+        ]:
+            with self.subTest(old_price=price):
+                observation = self.make_observation(price, [PositionSide.BZ, PositionSide.N])
+                position = self.make_position([PositionSide.BZ, PositionSide.N])
+                state = {
+                    "POSITIONS": {"000001": position.model_dump()},
+                    "OBSERVATIONS": {"000001": observation.model_dump()},
+                }
+                with (
+                    patch.object(AUTOA, "alert_all", state),
+                    patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=self.make_hist(bar))),
+                    patch.object(AUTOA, "calculate_atr", return_value=1),
+                    patch.object(AUTOA, "calculate_chebyshev_probability",
+                                 return_value={"chebyshev_upper_bound": 0.001}),
+                    patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
+                    patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()) as record_close,
+                ):
+                    await AUTOA.on_positions(
+                        "000001", ["2026-07-02", "2026-06-01"], position.model_dump(),
+                        pd.Timestamp("2026-07-02 10:00").to_pydatetime(),
+                    )
+                stored = Observation.model_validate(state["OBSERVATIONS"]["000001"])
+                held = Position.model_validate(state["POSITIONS"]["000001"])
+                self.assertEqual(stored.price, expected_price)
+                self.assertEqual(stored.bz_reference_high, expected_reference)
+                self.assertEqual(stored.timestamp, observation.timestamp)
+                self.assertEqual(stored.earliest_open_timestamp, observation.earliest_open_timestamp)
+                self.assertEqual(held.stop_loss, position.stop_loss)
+                self.assertEqual(held.entry_price, position.entry_price)
+                self.assertEqual(held.strategy, position.strategy)
+                send_msg.assert_not_awaited()
+                record_close.assert_not_awaited()
+
+    async def test_close_screening_resets_existing_bz_without_changing_n_stop(self):
+        observation = self.make_observation(price=5, strategies=[PositionSide.BZ, PositionSide.N])
+        position = self.make_position([PositionSide.BZ, PositionSide.N])
+        state = {
+            "POSITIONS": {"000001": position.model_dump()},
+            "OBSERVATIONS": {"000001": observation.model_dump()},
+        }
+        hist = self.make_hist(
+            {"open": 12, "high": 14, "low": 7, "close": 12.5, "volume": 200}
+        )
+        now = pd.Timestamp("2026-07-02 15:00").to_pydatetime()
+
+        class FixedDateTime:
+            @classmethod
+            def today(cls):
+                return now
+
+        with (
+            patch.object(AUTOA, "alert_all", state),
+            patch.object(AUTOA, "zt_dates", ["2026-07-02", "2026-06-01"]),
+            patch.object(AUTOA, "hist_cache", {}),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(AUTOA, "calculate_chebyshev_probability",
+                         return_value={"chebyshev_upper_bound": 0.001}),
+            patch("tokenDemo.autoTrade_pm.ak.stock_zt_pool_em", return_value=pd.DataFrame({
+                "代码": ["000001"], "名称": ["测试股票"], "连板数": [1],
+            })),
+            patch("tokenDemo.autoTrade_pm.datetime.datetime", FixedDateTime),
+            patch("tokenDemo.autoTrade_pm.aiofiles.open") as open_file,
+        ):
+            open_file.return_value.__aenter__.return_value = AsyncMock()
+            await AUTOA.filter_stocks()
+
+        stored = Observation.model_validate(state["OBSERVATIONS"]["000001"])
+        self.assertEqual(stored.price, 7)
+        self.assertEqual(stored.bz_reference_high, 11)
+        self.assertEqual(stored.timestamp, now.timestamp())
+        self.assertEqual(stored.earliest_open_timestamp, observation.earliest_open_timestamp)
+        self.assertEqual(state["POSITIONS"]["000001"], position.model_dump())
+
+
 class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
     @staticmethod
     def make_position(name="测试股票", strategies=None):

@@ -2530,6 +2530,48 @@ class AUTOA:
         return yesterday_low < bz_reference_high and today_open > yesterday_high
 
     @classmethod
+    def _update_bz_observation(cls, open_info: Observation, hist: pd.DataFrame) -> bool:
+        """更新最近一次 BZ 以来的最低价，返回本轮是否触发 BZ，不改变持仓。"""
+        if hist.empty:
+            return False
+        current_low = float(hist.iloc[-1]["low"])
+        if current_low <= 0 or pd.isna(current_low):
+            return False
+        if PositionSide.BZ in open_info.strategy:
+            open_info.price = min(open_info.price, current_low)
+
+        required_columns = {"open", "high", "close", "volume"}
+        if (
+            len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY
+            or not required_columns.issubset(hist.columns)
+        ):
+            return False
+        if not (
+            float(hist.iloc[-1]["close"]) > float(hist.iloc[-1]["open"])
+            and float(hist.iloc[-1]["open"]) > float(hist.iloc[-2]["high"])
+        ):
+            return False
+        hist_volume = hist["volume"].values
+        current_volume = hist_volume[-1]
+        volume_sample = hist_volume[
+            cls.VOLUME_CHEB_SAMPLE_START_OFFSET : cls.VOLUME_CHEB_SAMPLE_END_OFFSET
+        ]
+        if not (
+            current_volume >= max(hist_volume[cls.VOLUME_CHEB_SAMPLE_END_OFFSET :])
+            and cls.calculate_chebyshev_probability(volume_sample, current_volume)[
+                "chebyshev_upper_bound"
+            ] < cls.CHEBYSHEV_EXTREME_THRESHOLD
+        ):
+            return False
+
+        # 每次 BZ 都硬重置基准，即使旧的累计最低价更低。
+        open_info.price = current_low
+        open_info.bz_reference_high = float(hist.iloc[-2]["high"])
+        if PositionSide.BZ not in open_info.strategy:
+            open_info.strategy.append(PositionSide.BZ)
+        return True
+
+    @classmethod
     def calculate_chebyshev_probability(cls, data, value):
         """
         计算给定数值对应的切比雪夫概率 (支持 pandas Series/DataFrame 和 list)
@@ -3062,8 +3104,6 @@ class AUTOA:
             today: 当前日期时间
         """
         close_info = Position.model_validate(close_info_dict)
-        if int(today.strftime("%Y%m%d")) <= close_info.date:
-            return
         # 获取股票历史数据（前复权）
         hist = await cls.stock_zh_a_hist(
             code,
@@ -3072,6 +3112,16 @@ class AUTOA:
             frequency="d",  # 日K
             adjustflag="3",  # 前复权
         )
+
+        # 持仓期间也维护观察基准；只更新观察记录，不改已开仓 N 的止损。
+        open_info_dict = cls.alert_all["OBSERVATIONS"].get(code)
+        if open_info_dict:
+            open_info = Observation.model_validate(open_info_dict)
+            cls._update_bz_observation(open_info, hist)
+            cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+        # 开仓当天可刷新观察最低价，仍不执行平仓或加仓。
+        if int(today.strftime("%Y%m%d")) <= close_info.date:
+            return
 
         # 数据校验
         if len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY:
@@ -3288,50 +3338,26 @@ class AUTOA:
             frequency="d",
             adjustflag="3",  # 前复权
         )
-        # BZ 出现前保留入池时的价格；BZ 出现后才开始累计观察期最低价。
-        current_low = None
-        had_bz_strategy = PositionSide.BZ in open_info.strategy
-        if not hist.empty:
-            current_low = float(hist.iloc[-1]["low"])
-            if had_bz_strategy and current_low > 0:
-                open_info.price = min(open_info.price, current_low)
-                cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+        bz_triggered = cls._update_bz_observation(open_info, hist)
+        cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
         if len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY:
             return
-        # 获取开盘价、收盘价、最高价序列用于高开判断
+        # 非阳线仅刷新观察状态，不考虑开仓。
         hist_open = hist["open"].values
         hist_close = hist["close"].values
-        hist_high = hist["high"].values
-        # 数据校验：无历史数据则跳过，或当前价格不高于昨日最高价则跳过
         if hist_close[-1] <= hist_open[-1]:
             return
 
-        # 切比雪夫概率判断：检查最近成交量是否为极端异常值（显著放量）
+        # 两种开仓路径使用相同的成交量止损辅助阈值。
         hist_volume = hist["volume"].values
         should_open = False
         volume_sample = hist_volume[
             cls.VOLUME_CHEB_SAMPLE_START_OFFSET : cls.VOLUME_CHEB_SAMPLE_END_OFFSET
         ]
-        current_volume = hist_volume[-1]
         volume_guard_threshold = float(sum(volume_sample) / len(volume_sample))
-        # 先计算 supertrend 和 ATR（两种策略都需要）
+        # 两种策略的止盈都需要 ATR。
         current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
-        if (
-            hist_open[-1] > hist_high[-2]
-            and current_volume >= max(hist_volume[cls.VOLUME_CHEB_SAMPLE_END_OFFSET :])
-            and cls.calculate_chebyshev_probability(
-                volume_sample,
-                current_volume,
-            )["chebyshev_upper_bound"]
-            < cls.CHEBYSHEV_EXTREME_THRESHOLD
-        ):
-            open_info.bz_reference_high = float(hist_high[-2])
-            if PositionSide.BZ not in open_info.strategy:
-                open_info.strategy.append(PositionSide.BZ)
-            if current_low is not None and current_low > 0:
-                # 每次重新出现 BZ 都以本次 BZ 日最低价重置基准。
-                open_info.price = current_low
-            cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+        if bz_triggered:
             should_open = True
         elif (
             PositionSide.BZ in open_info.strategy
@@ -3452,18 +3478,14 @@ class AUTOA:
                         if hist.empty:
                             return
                         price_close = float(hist.iloc[-1]["close"])
-                        current_low = float(hist.iloc[-1]["low"])
 
                         # 已在观察列表且当日再次涨停：刷新观察时间（即使在持仓也允许更新）
                         if code[0] in cls.alert_all["OBSERVATIONS"]:
                             open_info = Observation.model_validate(
                                 cls.alert_all["OBSERVATIONS"][code[0]]
                             )
-                            if (
-                                PositionSide.BZ in open_info.strategy
-                                and current_low > 0
-                            ):
-                                open_info.price = min(open_info.price, current_low)
+                            if PositionSide.BZ in open_info.strategy:
+                                cls._update_bz_observation(open_info, hist)
                             open_info.timestamp = today.timestamp()
                             cls.alert_all["OBSERVATIONS"][code[0]] = open_info.model_dump()
                             return
