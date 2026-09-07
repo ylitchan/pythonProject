@@ -355,7 +355,7 @@ class AUTOBN:
 
     # ==================== 平仓相关常量 ====================
     PARTIAL_CLOSE_RATIO = 0.7  # 部分平仓比例 (止盈时使用)
-    TRAILING_STOP_PROFIT_RATIO = 0.7  # 追踪止损盈利保护比例 (保护70%盈利，允许30%回撤)
+    TRAILING_STOP_PROFIT_RATIO = 0.7  # 空头追踪止损盈利保护比例 (保护70%盈利，允许30%回撤)
     MIN_NOTIONAL = 10  # 最小交易金额 (USDT)
 
     # ==================== 任务控制常量 ====================
@@ -946,6 +946,7 @@ class AUTOBN:
                     )
                     if new_tp > 0 and new_sl > 0:
                         close_info.take_profit = new_tp
+                        # 多头仅保留ATR参考价用于仓位计算，不参与价格止损。
                         close_info.stop_loss = new_sl
 
                     self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
@@ -1518,21 +1519,20 @@ class AUTOBN:
             take_profit_gap / self.TARGET_PROFIT_DIVISOR,
             atr_trigger,
         )
-        # 多头首次止盈前不使用价格止损；首次止盈后，stop_loss表示保护盈利止损。
-        sl_triggered = (
-            is_long
-            and close_info.tp_count > 0
-            and current_price <= close_info.stop_loss
-        ) or (not is_long and current_price >= close_info.stop_loss)
-        first_tp_triggered = (
-            not sl_triggered
-            and close_info.tp_count < 1
-            and first_tp_target > 0
-            and profit >= first_tp_target
-        )
+        # 多头所有止盈阶段都只使用OI止损，价格止损仅对空头生效。
+        sl_triggered = not is_long and current_price >= close_info.stop_loss
         tp_triggered = (
             is_long and current_price >= close_info.take_profit
         ) or (not is_long and current_price <= close_info.take_profit)
+        first_tp_triggered = (
+            not sl_triggered
+            and close_info.tp_count < 1
+            and (
+                (first_tp_target > 0 and profit >= first_tp_target)
+                # 多头正式止盈也进入首次止盈状态，覆盖止盈价降至成本价的情况。
+                or (is_long and tp_triggered)
+            )
+        )
         oi_stop_triggered = False
         if (
             not first_tp_triggered
@@ -1565,18 +1565,14 @@ class AUTOBN:
             )
             if close_result and symbol in self.alert_all["POSITIONS"]:
                 close_info.tp_count += 1
-                protected_profit = profit * self.TRAILING_STOP_PROFIT_RATIO
                 next_tp_distance = min(
                     atr_value,
                     current_price * self.ATR_TRIGGER_CAP_RATIO,
                 )
                 if is_long:
-                    close_info.stop_loss = max(
-                        close_info.stop_loss,
-                        close_info.entry_price + protected_profit,
-                    )
                     close_info.take_profit = current_price + next_tp_distance
                 else:
+                    protected_profit = profit * self.TRAILING_STOP_PROFIT_RATIO
                     close_info.stop_loss = min(
                         close_info.stop_loss,
                         close_info.entry_price - protected_profit,
@@ -1669,21 +1665,6 @@ class AUTOBN:
                     min(decayed_tp, current_upper),
                     close_info.entry_price,
                 )
-
-            # 首次止盈前只调整止盈价，保护盈利止损从首次止盈成功后开始。
-            if close_info.tp_count > 0:
-                profit = current_price - close_info.entry_price
-                trailing_stop = (
-                    close_info.entry_price
-                    + profit * self.TRAILING_STOP_PROFIT_RATIO
-                )
-                new_stop_loss = max(
-                    close_info.stop_loss,
-                    trailing_stop,
-                )
-                if new_stop_loss != close_info.stop_loss:
-                    close_info.stop_loss = new_stop_loss
-                    close_info.close_reason = "止盈后追踪止损"
 
 
     async def _manage_short_position(
