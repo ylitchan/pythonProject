@@ -1518,9 +1518,12 @@ class AUTOBN:
             take_profit_gap / self.TARGET_PROFIT_DIVISOR,
             atr_trigger,
         )
-        sl_triggered = (is_long and current_price <= close_info.stop_loss) or (
-            not is_long and current_price >= close_info.stop_loss
-        )
+        # 多头首次止盈前不使用价格止损；首次止盈后，stop_loss表示保护盈利止损。
+        sl_triggered = (
+            is_long
+            and close_info.tp_count > 0
+            and current_price <= close_info.stop_loss
+        ) or (not is_long and current_price >= close_info.stop_loss)
         first_tp_triggered = (
             not sl_triggered
             and close_info.tp_count < 1
@@ -1667,6 +1670,7 @@ class AUTOBN:
                     close_info.entry_price,
                 )
 
+            # 首次止盈前只调整止盈价，保护盈利止损从首次止盈成功后开始。
             if close_info.tp_count > 0:
                 profit = current_price - close_info.entry_price
                 trailing_stop = (
@@ -1680,37 +1684,6 @@ class AUTOBN:
                 if new_stop_loss != close_info.stop_loss:
                     close_info.stop_loss = new_stop_loss
                     close_info.close_reason = "止盈后追踪止损"
-            else:
-                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
-                profit = current_price - close_info.entry_price
-                target_profit = min(
-                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR,
-                    atr_trigger,
-                )  # 预期收益的1/3 与 ATR触发阈值取较小值
-                if profit >= target_profit:
-                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                    # 止损 = 入场价 + 盈利 * TRAILING_STOP_PROFIT_RATIO
-                    trailing_stop = (
-                        close_info.entry_price
-                        + profit * self.TRAILING_STOP_PROFIT_RATIO
-                    )
-                    new_stop_loss = max(
-                        close_info.stop_loss,
-                        trailing_stop,
-                    )
-                    if new_stop_loss != close_info.stop_loss:
-                        close_info.stop_loss = new_stop_loss
-                        close_info.close_reason = "追踪止损(保护盈利)"
-                else:
-                    # 止损上移: 使用当前下轨作为参考，止损只能上移（保护利润）
-                    # 取当前下轨和原止损的较大值
-                    new_stop_loss = max(
-                        close_info.stop_loss,
-                        current_lower,
-                    )
-                    if new_stop_loss != close_info.stop_loss:
-                        close_info.stop_loss = new_stop_loss
-                        close_info.close_reason = "移动止损(轨道)"
 
 
     async def _manage_short_position(

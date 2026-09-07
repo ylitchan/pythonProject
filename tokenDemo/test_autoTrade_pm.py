@@ -535,6 +535,44 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(stored.stop_loss, 8)
 
+    async def test_n_stop_loss_is_not_overwritten_by_atr_rail(self):
+        position = self.make_position(strategies=[PositionSide.BZ, PositionSide.N])
+        position.take_profit = 20
+        position.stop_loss = 5
+        hist = pd.DataFrame([
+            *[
+                {"high": 11, "low": 9, "close": 10, "volume": 100}
+                for _ in range(29)
+            ],
+            {"high": 11, "low": 9, "close": 10, "volume": 100},
+        ])
+        observation = Observation(
+            price=5,
+            timestamp=pd.Timestamp("2026-07-01").timestamp(),
+            side=OrderSide.BUY,
+            strategy=[PositionSide.BZ, PositionSide.N],
+            name="测试股票",
+        )
+        with (
+            patch.object(AUTOA, "alert_all", {
+                "POSITIONS": {"000001": position.model_dump()},
+                "OBSERVATIONS": {"000001": observation.model_dump()},
+            }),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
+            patch.object(AUTOA, "calculate_atr", return_value=2),
+        ):
+            await AUTOA.on_positions(
+                "000001",
+                ["20260711", "20260710"],
+                position.model_dump(),
+                pd.Timestamp("2026-07-11").to_pydatetime(),
+            )
+            stored = Position.model_validate(
+                AUTOA.alert_all["POSITIONS"]["000001"]
+            )
+
+        self.assertEqual(stored.stop_loss, 5)
+
     async def test_early_profit_threshold_closes_full_position(self):
         position = self.make_position(strategies=[PositionSide.BZ])
         position.take_profit = 13
@@ -1243,14 +1281,14 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             pd.Timestamp("2026-07-11 10:00:00").to_pydatetime(),
         )
 
-    async def test_long_stop_loss_uses_current_price_directly(self):
+    async def test_long_initial_stop_loss_is_disabled_before_first_take_profit(self):
         obj = self.make_autobn()
         position = self.make_position(stop_loss=10)
 
         await self.run_position(obj, position, self.make_kline(11, 9))
 
-        obj.close_bn_position.assert_awaited_once()
-        self.assertEqual(obj.close_bn_position.await_args.args[-1], 1)
+        obj.close_bn_position.assert_not_awaited()
+        obj._get_oi_5m_data.assert_not_awaited()
         obj._get_lsr_5m_data.assert_not_awaited()
 
     async def test_short_stop_loss_uses_current_price_directly(self):
@@ -1312,6 +1350,88 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj._get_oi_5m_data.assert_awaited_once_with("BTCUSDT")
         obj.close_bn_position.assert_not_awaited()
 
+    async def test_long_oi_stop_remains_after_first_take_profit(self):
+        obj = self.make_autobn()
+        position = self.make_position(stop_guard_threshold=100)
+        position.tp_count = 1
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.close_bn_position = AsyncMock()
+        obj._get_oi_5m_data = AsyncMock(
+            return_value=[{"sumOpenInterest": "90"}]
+        )
+
+        triggered = await obj._close_triggered_position(
+            "BTCUSDT", position, 1, 10
+        )
+
+        self.assertTrue(triggered)
+        obj.close_bn_position.assert_awaited_once()
+        self.assertEqual(obj.close_bn_position.await_args.args[-1], 1)
+        self.assertEqual(
+            obj.close_bn_position.await_args.args[1].close_reason, "OI止损"
+        )
+
+    async def test_long_protected_stop_remains_after_first_take_profit(self):
+        obj = self.make_autobn()
+        position = self.make_position(stop_loss=10.35)
+        position.tp_count = 1
+        position.close_reason = "止盈后追踪止损"
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.close_bn_position = AsyncMock()
+
+        triggered = await obj._close_triggered_position(
+            "BTCUSDT", position, 1, 10.3
+        )
+
+        self.assertTrue(triggered)
+        obj.close_bn_position.assert_awaited_once()
+        self.assertEqual(obj.close_bn_position.await_args.args[-1], 1)
+        self.assertEqual(
+            obj.close_bn_position.await_args.args[1].close_reason,
+            "止盈后追踪止损",
+        )
+
+    async def test_long_moving_stop_does_not_update_before_first_take_profit(self):
+        obj = self.make_autobn()
+        position = self.make_position(stop_loss=5)
+
+        await obj._manage_long_position(
+            position.name,
+            position,
+            1,
+            10,
+            30,
+            20,
+            1,
+        )
+
+        self.assertEqual(position.stop_loss, 5)
+        self.assertEqual(position.close_reason, "")
+
+    async def test_long_protected_stop_updates_after_first_take_profit(self):
+        obj = self.make_autobn()
+        position = self.make_position(stop_loss=10.35)
+        position.tp_count = 1
+
+        await obj._manage_long_position(
+            position.name,
+            position,
+            1,
+            11,
+            30,
+            20,
+            1,
+        )
+
+        self.assertAlmostEqual(position.stop_loss, 10.7)
+        self.assertEqual(position.close_reason, "止盈后追踪止损")
+
     async def test_first_take_profit_closes_seventy_percent_and_sets_next_stage(self):
         for position_side, current_price, expected_stop, expected_take_profit in (
             (PositionSide.LONG, 10.5, 10.35, 11.025),
@@ -1342,6 +1462,27 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(position.tp_count, 1)
                 self.assertAlmostEqual(position.stop_loss, expected_stop)
                 self.assertAlmostEqual(position.take_profit, expected_take_profit)
+
+    async def test_first_formal_take_profit_enters_protected_state(self):
+        obj = self.make_autobn()
+        position = self.make_position(take_profit=11, stop_loss=5)
+        obj.alert_all = {
+            "POSITIONS": {"BTCUSDT": position.model_dump()},
+            "OBSERVATIONS": {},
+        }
+        obj.close_bn_position = AsyncMock(return_value="BTCUSDT")
+
+        triggered = await obj._close_triggered_position(
+            "BTCUSDT", position, 1, 11
+        )
+
+        self.assertTrue(triggered)
+        self.assertEqual(position.tp_count, 1)
+        self.assertAlmostEqual(position.stop_loss, 10.7)
+        self.assertGreater(position.take_profit, 11)
+        self.assertEqual(
+            obj.close_bn_position.await_args.args[-1], obj.PARTIAL_CLOSE_RATIO
+        )
 
     async def test_first_take_profit_is_once_only(self):
         obj = self.make_autobn()
