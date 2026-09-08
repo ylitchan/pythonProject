@@ -10,6 +10,7 @@ import signal
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
 from enum import Enum
 from typing import List, Literal, Optional
@@ -69,6 +70,14 @@ class PositionSide(str, Enum):
 class OrderSide(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
+
+
+@dataclass(frozen=True)
+class CloseExecution:
+    order: dict
+    entry_price: float
+    amount: float
+    ratio: float
 
 
 class Position(BaseModel):
@@ -223,7 +232,7 @@ class CloseRecordManager:
                     data.to_excel(writer, sheet_name=name, index=False)
 
     @classmethod
-    async def record_close_async(
+    def enqueue_close(
         cls,
         source: str,
         symbol: str,
@@ -256,23 +265,14 @@ class CloseRecordManager:
             "基差率": basis_rate,
         }
         cls._pending_records.append(record)
+        return record
+
+    @classmethod
+    async def record_close_async(cls, *args, **kwargs):
+        """兼容现有异步调用；先同步入队，再批量写入。"""
+        cls.enqueue_close(*args, **kwargs)
         await asyncio.sleep(0)
-        current_loop = asyncio.get_running_loop()
-        if cls._batch_lock is None or cls._batch_lock_loop is not current_loop:
-            cls._batch_lock = asyncio.Lock()
-            cls._batch_lock_loop = current_loop
-        async with cls._batch_lock:
-            if record not in cls._pending_records:
-                return
-            records = cls._pending_records[:]
-            try:
-                await asyncio.to_thread(cls._record_close_batch, records)
-            except Exception:
-                cls._logger.exception("批量保存平仓记录失败，记录保留待后续重试")
-                return
-            else:
-                del cls._pending_records[: len(records)]
-                cls._logger.info(f"平仓记录批量保存完成，共{len(records)}条")
+        await cls.flush_pending_records()
 
     @classmethod
     async def flush_pending_records(cls):
@@ -286,13 +286,23 @@ class CloseRecordManager:
             records = cls._pending_records[:]
             if not records:
                 return
+            # 线程写入无法被 asyncio 取消；保持锁直到写入结果确定，避免重试重复记账。
+            write_task = asyncio.create_task(asyncio.to_thread(cls._record_close_batch, records))
             try:
-                await asyncio.to_thread(cls._record_close_batch, records)
+                await asyncio.shield(write_task)
+            except asyncio.CancelledError:
+                try:
+                    await write_task
+                except Exception:
+                    cls._logger.exception("平仓记录写入失败，保留待重试")
+                else:
+                    del cls._pending_records[: len(records)]
+                raise
             except Exception:
-                cls._logger.exception("退出前刷新平仓记录失败")
+                cls._logger.exception("平仓记录写入失败，保留待重试")
                 return
             del cls._pending_records[: len(records)]
-            cls._logger.info(f"退出前刷新平仓记录完成，共{len(records)}条")
+            cls._logger.info(f"平仓记录保存完成，共{len(records)}条")
 
 
 class AUTOBN:
@@ -704,6 +714,16 @@ class AUTOBN:
             成功返回account_data，失败返回None
         """
         try:
+            if symbol not in self.symbols_info:
+                await self.send_msg(f"{symbol} 开仓失败：找不到交易对信息")
+                return None
+            if stop_loss_price is None or stop_loss_price <= 0:
+                await self.send_msg(f"{symbol} 开仓失败：未提供有效止损价格")
+                return None
+            if take_profit_price is None or take_profit_price <= 0:
+                await self.send_msg(f"{symbol} 开仓失败：未提供有效止盈价格")
+                return None
+
             account_data_raw, mark_price_data = await asyncio.gather(
                 self._call_api(
                     self.papi_client.rest_api.account_information,
@@ -726,17 +746,6 @@ class AUTOBN:
                 return None
 
             markPrice = float(mark_price_data["markPrice"])
-
-            if symbol not in self.symbols_info:
-                await self.send_msg(f"{symbol} 开仓失败：找不到交易对信息")
-                return None
-
-            if stop_loss_price is None or stop_loss_price <= 0:
-                await self.send_msg(f"{symbol} 开仓失败：未提供有效止损价格")
-                return None
-            if take_profit_price is None or take_profit_price <= 0:
-                await self.send_msg(f"{symbol} 开仓失败：未提供有效止盈价格")
-                return None
 
             stop_loss_gap = abs(markPrice - stop_loss_price)
             take_profit_gap = abs(take_profit_price - markPrice)
@@ -804,7 +813,7 @@ class AUTOBN:
                 position_side=self._to_papi_position_side(positionSide),
                 recv_window=60000,
             )
-            rate_show = abs(take_profit_price - markPrice) / markPrice
+            rate_show = take_profit_gap / markPrice
             strategy_tag = format_strategy_tags(open_info.strategy)
             msg = f"{symbol} 开仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n杠杆:{actual_leverage}x\n委托数量:{tx.get('origQty', 0)}\n委托价格:{markPrice}\n名义价值:{notional} USDT\n账户余额:{total_balance:.2f}\n仓位比例:{notional / total_balance:.2%}\n收益率:{rate_show:.2%}"
             await self.send_msg(
@@ -837,27 +846,8 @@ class AUTOBN:
         if symbol in self.alert_all["POSITIONS"]:
             self.alert_all["POSITIONS"].pop(symbol)
 
-    async def close_bn_position(
-        self,
-        symbol,
-        close_info,
-        atr_value,
-        price_close,
-        close_ratio=1.0,
-    ):
-        """
-        在币安期货市场平仓 (异步版本)
-
-        功能：执行平仓操作，支持重试机制确保成功，成功后记录到Excel
-        参数：
-            symbol: 交易对符号，如'BTCUSDT'
-            close_info: Position对象，包含止盈止损、平仓方向、持仓方向、策略标签等信息
-            atr_value: ATR值，用于部分平仓后重新计算止盈止损，为0时不更新
-            price_close: 当前价格（用于通知和盈亏计算）
-            close_ratio: 平仓比例，1.0表示全部平仓，0.5表示平仓50%
-        返回：
-            成功返回symbol，失败返回None
-        """
+    async def _execute_close_order(self, symbol, close_info, price_close, close_ratio):
+        """执行平仓并返回确认成功的结果；保留现有请求异常重试策略。"""
         amount_price = await self.get_amount_close(symbol)
         if amount_price is None:
             await self.send_msg(f"{symbol} 平仓跳过：查询持仓数量失败")
@@ -892,65 +882,6 @@ class AUTOBN:
                     position_side=self._to_papi_position_side(positionSide),
                     recv_window=60000,
                 )
-                entryPrice = (
-                    amount_price[1] if amount_price[1] > 0 else close_info.entry_price
-                )
-
-                price_diff = (
-                    price_close - entryPrice
-                    if positionSide == PositionSide.LONG.value
-                    else entryPrice - price_close
-                )
-                realized_pnl = price_diff * close_amount
-                pnl_percent = price_diff / entryPrice if entryPrice != 0 else 0
-                strategy_tag = format_strategy_tags(close_info.strategy)
-                long_short_ratio_show = close_info.long_short_ratio
-                basis_rate_show = close_info.basis_rate
-                msg = f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{positionSide}\n委托价格:{price_close}\n委托数量:{tx.get('origQty', 0)}\n平仓比例:{close_ratio:.2%}\n平仓盈亏:{realized_pnl} USDT\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}\n平仓依据:{close_info.close_reason}"
-                await self.send_msg(
-                    format_trade_notification("AUTOBN", "平仓", symbol, msg),
-                    channel="pushplus",
-                )
-
-                await CloseRecordManager.record_close_async(
-                    source="AUTOBN",
-                    symbol=symbol,
-                    position_side=positionSide,
-                    entry_price=entryPrice,
-                    close_price=price_close,
-                    close_amount=close_amount,
-                    realized_pnl=realized_pnl,
-                    pnl_percent=pnl_percent,
-                    close_ratio=close_ratio,
-                    strategy_tag=strategy_tag,
-                    close_reason=close_info.close_reason,
-                    long_short_ratio=long_short_ratio_show,
-                    basis_rate=basis_rate_show,
-                )
-
-                remaining_amount_price = await self.get_amount_close(symbol)
-                if remaining_amount_price is None:
-                    await self.send_msg(
-                        f"{symbol} 平仓后查询剩余持仓失败，暂不清理本地仓位"
-                    )
-                    return symbol
-                remaining_amount = remaining_amount_price[0]
-                if remaining_amount == 0:
-                    self._clear_closed_position(symbol, close_info)
-                elif atr_value > 0:
-                    is_long = positionSide == PositionSide.LONG.value
-                    new_tp, new_sl = self.calc_stop_profit_loss(
-                        price_close,
-                        is_long=is_long,
-                        atr=atr_value,
-                    )
-                    if new_tp > 0 and new_sl > 0:
-                        close_info.take_profit = new_tp
-                        # 多头仅保留ATR参考价用于仓位计算，不参与价格止损。
-                        close_info.stop_loss = new_sl
-
-                    self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
-                return symbol
             except Exception:
                 await asyncio.sleep(self.CLOSE_RETRY_DELAY)
                 self.logger.exception(f"平仓 {symbol} 失败，当前价格: {price_close}")
@@ -976,7 +907,104 @@ class AUTOBN:
                         rounding=ROUND_DOWN,
                     )
                 )
+                continue
+
+            return CloseExecution(
+                order=tx,
+                entry_price=amount_price[1] if amount_price[1] > 0 else close_info.entry_price,
+                amount=close_amount,
+                ratio=close_ratio,
+            )
         return None
+
+    def _apply_close_state(self, symbol, close_info, atr_value, price_close, take_profit_stage):
+        """仅处理确认成交后的策略状态，先写回，再进行后续查询和通知。"""
+        is_long = close_info.position_side == PositionSide.LONG
+        if take_profit_stage is not None:
+            close_info.tp_count += 1
+        take_profit = close_info.take_profit
+        stop_loss = close_info.stop_loss
+        if atr_value > 0:
+            atr_take_profit, atr_stop_loss = self.calc_stop_profit_loss(
+                price_close, is_long=is_long, atr=atr_value
+            )
+            if atr_take_profit > 0 and atr_stop_loss > 0:
+                take_profit, stop_loss = atr_take_profit, atr_stop_loss
+
+        if take_profit_stage == "first":
+            next_tp_distance = min(atr_value, price_close * self.ATR_TRIGGER_CAP_RATIO)
+            if is_long:
+                take_profit = price_close + next_tp_distance
+            else:
+                profit = close_info.entry_price - price_close
+                stop_loss = min(
+                    stop_loss,
+                    close_info.entry_price - profit * self.TRAILING_STOP_PROFIT_RATIO,
+                )
+                take_profit = price_close - next_tp_distance
+
+        close_info.take_profit = take_profit
+        # 多头只保留仓位计算参考价，价格止损仅对空头生效。
+        close_info.stop_loss = stop_loss
+        if symbol in self.alert_all["POSITIONS"]:
+            self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
+
+    async def close_bn_position(
+        self, symbol, close_info, atr_value, price_close, close_ratio=1.0,
+        *, take_profit_stage: Literal["first", "regular"] | None = None,
+    ):
+        """确认成交后统一更新策略状态、记录并通知；成功返回symbol，失败返回None。"""
+        execution = await self._execute_close_order(symbol, close_info, price_close, close_ratio)
+        if execution is None:
+            return None
+
+        partial_close = execution.ratio < 1
+        if partial_close:
+            self._apply_close_state(symbol, close_info, atr_value, price_close, take_profit_stage)
+        is_long = close_info.position_side == PositionSide.LONG
+        price_diff = (
+            price_close - execution.entry_price
+            if is_long else execution.entry_price - price_close
+        )
+        realized_pnl = price_diff * execution.amount
+        pnl_percent = price_diff / execution.entry_price if execution.entry_price else 0
+        strategy_tag = format_strategy_tags(close_info.strategy)
+        CloseRecordManager.enqueue_close(
+            source="AUTOBN",
+            symbol=symbol,
+            position_side=close_info.position_side.value,
+            entry_price=execution.entry_price,
+            close_price=price_close,
+            close_amount=execution.amount,
+            realized_pnl=realized_pnl,
+            pnl_percent=pnl_percent,
+            close_ratio=execution.ratio,
+            strategy_tag=strategy_tag,
+            close_reason=close_info.close_reason,
+            long_short_ratio=close_info.long_short_ratio,
+            basis_rate=close_info.basis_rate,
+        )
+
+        remaining_amount_price = await self.get_amount_close(symbol)
+        if remaining_amount_price is None:
+            self.logger.warning(f"{symbol} 平仓后查询剩余持仓失败，保留本地状态待核对")
+        elif remaining_amount_price[0] == 0:
+            self._clear_closed_position(symbol, close_info)
+        elif not partial_close:
+            # 全平可能因数量精度留有余仓；只有确认仍有持仓才调整下一阶段。
+            self._apply_close_state(symbol, close_info, atr_value, price_close, take_profit_stage)
+
+        msg = (
+            f"{symbol} 平仓\n策略:{strategy_tag}\n持仓方向:{close_info.position_side.value}"
+            f"\n委托价格:{price_close}\n委托数量:{execution.order.get('origQty', 0)}"
+            f"\n平仓比例:{execution.ratio:.2%}\n平仓盈亏:{realized_pnl} USDT"
+            f"\n平仓收益:{pnl_percent:.2%}\n止盈次数:{close_info.tp_count}"
+            f"\n平仓依据:{close_info.close_reason}"
+        )
+        await self.send_msg(
+            format_trade_notification("AUTOBN", "平仓", symbol, msg), channel="pushplus"
+        )
+        return symbol
 
     @staticmethod
     def _bar_timestamp_ms(item):
@@ -1010,27 +1038,33 @@ class AUTOBN:
         return cached_ms is None or fetched_ms > cached_ms
 
     async def _get_oi_5m_data(self, symbol):
+        return await self._get_5m_data(
+            symbol, self._oi_5m_cache,
+            self.market_client.rest_api.open_interest_statistics, "持仓量",
+        )
+
+    async def _get_5m_data(self, symbol, cache, api_method, data_name):
         """缓存已是当期那根就不拉；否则拉回来比时间戳，更新才换缓存，最后都用缓存。"""
-        cached = self._oi_5m_cache.get(symbol)
+        cached = cache.get(symbol)
         if cached and self._is_current_5m_bar(cached[-1]):
             return cached
 
         try:
-            oi_5m = await self._call_api(
-                self.market_client.rest_api.open_interest_statistics,
+            data = await self._call_api(
+                api_method,
                 symbol=symbol,
                 period="5m",
                 limit=1,
             )
         except Exception as e:
             self.logger.error(
-                f"{symbol}获取5m持仓量数据失败: {type(e).__name__}: {e!r}"
+                f"{symbol}获取5m{data_name}数据失败: {type(e).__name__}: {e!r}"
             )
-            return self._oi_5m_cache.get(symbol)
+            return cache.get(symbol)
 
-        if oi_5m and self._is_newer_bar(oi_5m[-1], cached):
-            self._oi_5m_cache[symbol] = oi_5m
-        return self._oi_5m_cache.get(symbol)
+        if data and self._is_newer_bar(data[-1], cached):
+            cache[symbol] = data
+        return cache.get(symbol)
 
     @staticmethod
     def _utc_history_boundary_ms(dtn: datetime, period: str) -> int:
@@ -1101,7 +1135,6 @@ class AUTOBN:
         semaphore,
         symbol,
         positionSide,
-        kline_close=None,
         dtn: datetime = None,
     ):
         """
@@ -1155,8 +1188,7 @@ class AUTOBN:
                     if len(oi_hist_for_cheb) < self.MIN_CHEB_SAMPLE_SIZE:
                         return False, None, None
 
-                    current_total_oi = oi_5m_last
-                    if current_total_oi <= 0:
+                    if oi_5m_last <= 0:
                         return False, None, None
 
                     # blend 基准：切比雪夫区间最后一根的OI和多仓比例（同一根）
@@ -1179,7 +1211,7 @@ class AUTOBN:
                         window_end_oi * window_end_long_ratio
                         + (oi_5m_last - window_end_oi)
                         * self.OI_DELTA_LONG_RATIO_WEIGHT
-                    ) / current_total_oi
+                    ) / oi_5m_last
 
                     if blend < long_ratio_5m:
                         return False, None, None
@@ -1282,27 +1314,10 @@ class AUTOBN:
         return self._lsr_1h_cache.get(symbol)
 
     async def _get_lsr_5m_data(self, symbol: str):
-        """缓存已是当期那根就不拉；否则拉回来比时间戳，更新才换缓存，最后都用缓存。"""
-        cached = self._lsr_5m_cache.get(symbol)
-        if cached and self._is_current_5m_bar(cached[-1]):
-            return cached
-
-        try:
-            data = await self._call_api(
-                self.market_client.rest_api.long_short_ratio,
-                symbol=symbol,
-                period="5m",
-                limit=1,
-            )
-        except Exception as e:
-            self.logger.error(
-                f"{symbol}获取5m多空比数据失败: {type(e).__name__}: {e!r}"
-            )
-            return self._lsr_5m_cache.get(symbol)
-
-        if data and self._is_newer_bar(data[-1], cached):
-            self._lsr_5m_cache[symbol] = data
-        return self._lsr_5m_cache.get(symbol)
+        return await self._get_5m_data(
+            symbol, self._lsr_5m_cache,
+            self.market_client.rest_api.long_short_ratio, "多空比",
+        )
 
     async def get_basis_rate(self, symbol: str) -> float:
         """
@@ -1494,369 +1509,180 @@ class AUTOBN:
 
         return result
 
+    def _first_take_profit_target(self, entry_price, take_profit_gap, atr_value):
+        atr_trigger = max(
+            min(atr_value, entry_price * self.ATR_TRIGGER_CAP_RATIO),
+            self.MIN_ATR_TRIGGER,
+        )
+        return min(take_profit_gap / self.TARGET_PROFIT_DIVISOR, atr_trigger)
+
     async def _close_triggered_position(
         self, symbol, close_info, atr_value, current_price
     ):
-        is_long = close_info.position_side.value == PositionSide.LONG.value
-        profit = (
-            current_price - close_info.entry_price
-            if is_long
-            else close_info.entry_price - current_price
-        )
-        atr_trigger = max(
-            min(
-                atr_value,
-                close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO,
-            ),
-            self.MIN_ATR_TRIGGER,
-        )
-        take_profit_gap = (
-            close_info.take_profit - close_info.entry_price
-            if is_long
-            else close_info.entry_price - close_info.take_profit
-        )
-        first_tp_target = min(
-            take_profit_gap / self.TARGET_PROFIT_DIVISOR,
-            atr_trigger,
-        )
+        is_long = close_info.position_side == PositionSide.LONG
         # 多头所有止盈阶段都只使用OI止损，价格止损仅对空头生效。
-        sl_triggered = not is_long and current_price >= close_info.stop_loss
-        tp_triggered = (
-            is_long and current_price >= close_info.take_profit
-        ) or (not is_long and current_price <= close_info.take_profit)
-        first_tp_triggered = (
-            not sl_triggered
-            and close_info.tp_count < 1
-            and (
-                (first_tp_target > 0 and profit >= first_tp_target)
-                # 多头正式止盈也进入首次止盈状态，覆盖止盈价降至成本价的情况。
-                or (is_long and tp_triggered)
-            )
-        )
-        oi_stop_triggered = False
-        if (
-            not first_tp_triggered
-            and not sl_triggered
-            and not tp_triggered
-            and is_long
-            and close_info.stop_guard_threshold > 0
-        ):
-            oi_5m = await self._get_oi_5m_data(symbol)
-            oi_stop_triggered = bool(
-                oi_5m
-                and float(oi_5m[-1]["sumOpenInterest"])
-                <= close_info.stop_guard_threshold
-            )
-
-        if sl_triggered:
+        if not is_long and current_price >= close_info.stop_loss:
             if not close_info.close_reason:
                 close_info.close_reason = "初始止损"
-            await self.close_bn_position(
-                symbol, close_info, atr_value, current_price, 1
+            await self.close_bn_position(symbol, close_info, atr_value, current_price, 1)
+            return True
+
+        tp_triggered = (
+            current_price >= close_info.take_profit
+            if is_long else current_price <= close_info.take_profit
+        )
+        first_tp_triggered = False
+        if close_info.tp_count < 1:
+            direction = 1 if is_long else -1
+            profit = (current_price - close_info.entry_price) * direction
+            take_profit_gap = (close_info.take_profit - close_info.entry_price) * direction
+            first_tp_target = self._first_take_profit_target(
+                close_info.entry_price, take_profit_gap, atr_value
             )
-        elif first_tp_triggered:
-            close_info.close_reason = "首次止盈"
-            close_result = await self.close_bn_position(
-                symbol,
-                close_info,
-                atr_value,
-                current_price,
-                self.PARTIAL_CLOSE_RATIO,
-            )
-            if close_result and symbol in self.alert_all["POSITIONS"]:
-                close_info.tp_count += 1
-                next_tp_distance = min(
-                    atr_value,
-                    current_price * self.ATR_TRIGGER_CAP_RATIO,
-                )
-                if is_long:
-                    close_info.take_profit = current_price + next_tp_distance
-                else:
-                    protected_profit = profit * self.TRAILING_STOP_PROFIT_RATIO
-                    close_info.stop_loss = min(
-                        close_info.stop_loss,
-                        close_info.entry_price - protected_profit,
-                    )
-                    close_info.take_profit = current_price - next_tp_distance
-                self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
-        elif oi_stop_triggered:
-            close_info.close_reason = "OI止损"
-            await self.close_bn_position(
-                symbol, close_info, atr_value, current_price, 1
-            )
-        elif tp_triggered:
-            close_info.tp_count += 1
-            close_info.close_reason = "止盈"
-            await self.close_bn_position(
-                symbol,
-                close_info,
-                atr_value,
-                current_price,
-                self.PARTIAL_CLOSE_RATIO,
+            first_tp_triggered = (
+                (first_tp_target > 0 and profit >= first_tp_target)
+                or (is_long and tp_triggered)
             )
 
-        return first_tp_triggered or oi_stop_triggered or sl_triggered or tp_triggered
+        if first_tp_triggered or tp_triggered:
+            close_info.close_reason = "首次止盈" if first_tp_triggered else "止盈"
+            await self.close_bn_position(
+                symbol,
+                close_info,
+                atr_value,
+                current_price,
+                self.PARTIAL_CLOSE_RATIO,
+                take_profit_stage="first" if first_tp_triggered else "regular",
+            )
+            return True
+
+        if is_long and close_info.stop_guard_threshold > 0:
+            oi_5m = await self._get_oi_5m_data(symbol)
+            if oi_5m and float(oi_5m[-1]["sumOpenInterest"]) <= close_info.stop_guard_threshold:
+                close_info.close_reason = "OI止损"
+                await self.close_bn_position(symbol, close_info, atr_value, current_price, 1)
+                return True
+        return False
+
+    async def _add_to_position(self, symbol, close_info, atr_value, is_long):
+        close_info.strategy.append(PositionSide.DCA)
+        opened = await self.open_bn_position(
+            symbol,
+            OrderSide.BUY.value if is_long else OrderSide.SELL.value,
+            close_info.position_side.value,
+            close_info.take_profit,
+            close_info.stop_loss,
+            close_info,
+        )
+        if not opened:
+            close_info.strategy.pop()
+            return
+
+        amount_price = await self.get_amount_close(symbol)
+        if amount_price is None:
+            await self.send_msg(f"{symbol} 加仓后查询持仓均价失败")
+        elif amount_price[1] > 0:
+            close_info.entry_price = amount_price[1]
+        # 加仓成功后再统计次数、使用新均价，不能复用开仓前的价格距离。
+        dca_count = close_info.strategy.count(PositionSide.DCA)
+        distance = atr_value * self.DCA_TP_ATR_RATIO**dca_count
+        if is_long:
+            close_info.take_profit = min(close_info.take_profit, close_info.entry_price + distance)
+        else:
+            close_info.take_profit = max(close_info.take_profit, close_info.entry_price - distance)
+
+    def _decay_take_profit(self, close_info, atr_value, take_profit_rail, is_long):
+        direction = 1 if is_long else -1
+        take_profit_gap = (close_info.take_profit - close_info.entry_price) * direction
+        decay_step = take_profit_gap * self.STOP_LOSS_DECAY_PER_MINUTE * (1 + close_info.tp_count)
+        candidates = [close_info.take_profit - direction * decay_step, take_profit_rail]
+        dca_count = close_info.strategy.count(PositionSide.DCA)
+        if dca_count > 0:
+            candidates.append(
+                close_info.entry_price + direction * atr_value * self.DCA_TP_ATR_RATIO**dca_count
+            )
+        close_info.take_profit = (
+            max(min(candidates), close_info.entry_price)
+            if is_long else min(max(candidates), close_info.entry_price)
+        )
 
     async def _manage_long_position(
-        self, symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
+        self, symbol, close_info, atr_value, current_price, take_profit_rail
     ):
         if current_price < close_info.entry_price - atr_value:
-            close_info.strategy.append(PositionSide.DCA)
-            if await self.open_bn_position(
-                symbol,
-                OrderSide.BUY.value,
-                PositionSide.LONG.value,
-                close_info.take_profit,
-                close_info.stop_loss,  # 止损价用于计算风险仓位
-                close_info,
-            ):
-                amount_price = await self.get_amount_close(symbol)
-                if amount_price is None:
-                    await self.send_msg(
-                        f"{symbol} 加仓后查询持仓均价失败"
-                    )
-                elif amount_price[1] > 0:
-                    close_info.entry_price = amount_price[1]
-                dca_count = sum(
-                    1
-                    for strategy in close_info.strategy
-                    if strategy == PositionSide.DCA
-                )
-                target_take_profit = (
-                    close_info.entry_price
-                    + atr_value * self.DCA_TP_ATR_RATIO**dca_count
-                )
-                close_info.take_profit = min(
-                    close_info.take_profit,
-                    target_take_profit,
-                )
-            else:
-                close_info.strategy.pop()
-        else:
-            # 做多: 基于入场价格计算初始距离，线性衰减
-            # 衰减系数 = 1 + tp_count (每次止盈后加速)
-            decay_multiplier = 1 + close_info.tp_count
-            initial_tp_gap = (
-                close_info.take_profit - close_info.entry_price
-            )  # 止盈到入场价的初始距离
-            tp_decay_step = (
-                initial_tp_gap
-                * self.STOP_LOSS_DECAY_PER_MINUTE
-                * decay_multiplier
-            )
-            # 止盈下移: 取衰减后的值和当前上轨的较小值，最多下移到成本价
-            decayed_tp = close_info.take_profit - tp_decay_step
-            dca_count = sum(
-                1
-                for strategy in close_info.strategy
-                if strategy == PositionSide.DCA
-            )
-            if dca_count > 0:
-                dca_tp = (
-                    close_info.entry_price
-                    + atr_value * self.DCA_TP_ATR_RATIO**dca_count
-                )
-                close_info.take_profit = max(
-                    min(decayed_tp, current_upper, dca_tp),
-                    close_info.entry_price,
-                )
-            else:
-                close_info.take_profit = max(
-                    min(decayed_tp, current_upper),
-                    close_info.entry_price,
-                )
-
+            await self._add_to_position(symbol, close_info, atr_value, is_long=True)
+            return
+        self._decay_take_profit(close_info, atr_value, take_profit_rail, is_long=True)
 
     async def _manage_short_position(
-        self, symbol, close_info, atr_value, current_price, current_upper, current_lower, atr_trigger
+        self, symbol, close_info, atr_value, current_price, stop_loss_rail, take_profit_rail
     ):
         if current_price > close_info.entry_price + atr_value:
-            close_info.strategy.append(PositionSide.DCA)
-            if await self.open_bn_position(
-                symbol,
-                OrderSide.SELL.value,
-                PositionSide.SHORT.value,
-                close_info.take_profit,
-                close_info.stop_loss,  # 止损价用于计算风险仓位
-                close_info,
-            ):
-                amount_price = await self.get_amount_close(symbol)
-                if amount_price is None:
-                    await self.send_msg(
-                        f"{symbol} 加仓后查询持仓均价失败"
-                    )
-                elif amount_price[1] > 0:
-                    close_info.entry_price = amount_price[1]
-                dca_count = sum(
-                    1
-                    for strategy in close_info.strategy
-                    if strategy == PositionSide.DCA
-                )
-                target_take_profit = (
-                    close_info.entry_price
-                    - atr_value * self.DCA_TP_ATR_RATIO**dca_count
-                )
-                close_info.take_profit = max(
-                    close_info.take_profit,
-                    target_take_profit,
-                )
-            else:
-                close_info.strategy.pop()
+            await self._add_to_position(symbol, close_info, atr_value, is_long=False)
+            return
+
+        # 止损保护阈值使用衰减前的目标距离，保持原有执行顺序。
+        take_profit_gap = close_info.entry_price - close_info.take_profit
+        self._decay_take_profit(close_info, atr_value, take_profit_rail, is_long=False)
+        profit = close_info.entry_price - current_price
+        protect_profit = close_info.tp_count > 0 or profit >= self._first_take_profit_target(
+            close_info.entry_price, take_profit_gap, atr_value
+        )
+        if protect_profit:
+            candidate_stop = close_info.entry_price - profit * self.TRAILING_STOP_PROFIT_RATIO
+            reason = "止盈后追踪止损" if close_info.tp_count > 0 else "追踪止损(保护盈利)"
         else:
-            # 做空: 止损在上界(stop_loss变量),止盈在下界(take_profit变量)
-            # 衰减系数 = 1 + tp_count (每次止盈后加速)
-            decay_multiplier = 1 + close_info.tp_count
-            initial_tp_gap = (
-                close_info.entry_price - close_info.take_profit
-            )  # 入场价到止盈的初始距离
-            tp_decay_step = (
-                initial_tp_gap
-                * self.STOP_LOSS_DECAY_PER_MINUTE
-                * decay_multiplier
-            )
-            # 止盈上移: 取衰减后的值和当前下轨的较大值，最多上移到成本价
-            decayed_tp = close_info.take_profit + tp_decay_step
-            dca_count = sum(
-                1
-                for strategy in close_info.strategy
-                if strategy == PositionSide.DCA
-            )
-            if dca_count > 0:
-                dca_tp = (
-                    close_info.entry_price
-                    - atr_value * self.DCA_TP_ATR_RATIO**dca_count
-                )
-                close_info.take_profit = min(
-                    max(decayed_tp, current_lower, dca_tp),
-                    close_info.entry_price,
-                )
-            else:
-                close_info.take_profit = min(
-                    max(decayed_tp, current_lower),
-                    close_info.entry_price,
-                )
+            candidate_stop = stop_loss_rail
+            reason = "移动止损(轨道)"
+        new_stop_loss = min(close_info.stop_loss, candidate_stop)
+        if new_stop_loss != close_info.stop_loss:
+            close_info.stop_loss = new_stop_loss
+            close_info.close_reason = reason
 
-            if close_info.tp_count > 0:
-                profit = close_info.entry_price - current_price
-                trailing_stop = (
-                    close_info.entry_price
-                    - profit * self.TRAILING_STOP_PROFIT_RATIO
-                )
-                new_stop_loss = min(
-                    close_info.stop_loss,
-                    trailing_stop,
-                )
-                if new_stop_loss != close_info.stop_loss:
-                    close_info.stop_loss = new_stop_loss
-                    close_info.close_reason = "止盈后追踪止损"
-            else:
-                # 检测是否达到预期收益的1/3，如果是则设置止损为保护70%盈利
-                profit = close_info.entry_price - current_price
-                target_profit = min(
-                    initial_tp_gap / self.TARGET_PROFIT_DIVISOR,
-                    atr_trigger,
-                )  # 预期收益的1/3 与 ATR触发阈值取较小值
-                if profit >= target_profit:
-                    # 达到目标盈利，止损设置为当前盈利回撤30%的位置
-                    # 止损 = 入场价 - 盈利 * TRAILING_STOP_PROFIT_RATIO
-                    trailing_stop = (
-                        close_info.entry_price
-                        - profit * self.TRAILING_STOP_PROFIT_RATIO
-                    )
-                    new_stop_loss = min(
-                        close_info.stop_loss,
-                        trailing_stop,
-                    )
-                    if new_stop_loss != close_info.stop_loss:
-                        close_info.stop_loss = new_stop_loss
-                        close_info.close_reason = "追踪止损(保护盈利)"
-                else:
-                    # 止损下移: 使用当前上轨作为参考，止损只能下移（保护利润）
-                    # 取当前上轨和原止损的较小值
-                    new_stop_loss = min(
-                        close_info.stop_loss,
-                        current_upper,
-                    )
-                    if new_stop_loss != close_info.stop_loss:
-                        close_info.stop_loss = new_stop_loss
-                        close_info.close_reason = "移动止损(轨道)"
-
-
-    async def _manage_position(
-        self, symbol, close_info, open_info, kline, current_price, current_timestamp
-    ):
-        # 获取15分钟K线数据用于ATR计算（与supertrend保持一致）
+    async def _manage_position(self, symbol, close_info, kline, current_price):
+        # 使用调用方提供的日K线，初始化和动态轨道共用同一份ATR计算。
+        is_long = close_info.position_side == PositionSide.LONG
         atr_value = self.calculate_atr(kline)
-        hl2 = (kline[-1][2] + kline[-1][3]) / 2  # (high + low) / 2
-        # 检测是否需要用ATR初始化止盈止损 (止盈或止损为0表示需要更新)
-        if (
-            close_info.take_profit == 0 or close_info.stop_loss == 0
-        ) and atr_value > 0:
-            is_long = close_info.position_side.value == PositionSide.LONG.value
-            # 使用hl2中间价计算止盈止损，与supertrend保持一致
-            tp, sl = self.calc_stop_profit_loss(
+        hl2 = (kline[-1][2] + kline[-1][3]) / 2
+        if atr_value > 0:
+            take_profit_rail, stop_loss_rail = self.calc_stop_profit_loss(
                 hl2, is_long=is_long, atr=atr_value
             )
-            close_info.take_profit = tp
-            close_info.stop_loss = sl
+        else:
+            # calc_stop_profit_loss在ATR无效时返回0；动态轨道原本落在中间价。
+            take_profit_rail = stop_loss_rail = hl2
+        if (close_info.take_profit == 0 or close_info.stop_loss == 0) and atr_value > 0:
+            close_info.take_profit = take_profit_rail
+            close_info.stop_loss = stop_loss_rail
             self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
             self.logger.info(
                 f"[ATR初始化] {symbol} 止盈:{close_info.take_profit:.2f} 止损:{close_info.stop_loss:.2f}"
             )
 
-        if await self._close_triggered_position(
-            symbol, close_info, atr_value, current_price
-        ):
-            return open_info
-
-        is_long = close_info.position_side.value == PositionSide.LONG.value
-        if is_long:
-            current_take_profit_rail = (
-                hl2 + atr_value * self.TAKE_PROFIT_ATR_FACTOR
-            )
-            current_stop_loss_rail = (
-                hl2 - atr_value * self.STOP_LOSS_ATR_FACTOR
-            )
-        else:
-            current_take_profit_rail = (
-                hl2 - atr_value * self.TAKE_PROFIT_ATR_FACTOR
-            )
-            current_stop_loss_rail = (
-                hl2 + atr_value * self.STOP_LOSS_ATR_FACTOR
-            )
-        # ATR触发阈值：用于收益阈值比较（与1/3预期收益取较小值）
-        atr_trigger = max(
-            min(
-                atr_value,
-                close_info.entry_price * self.ATR_TRIGGER_CAP_RATIO,
-            ),
-            self.MIN_ATR_TRIGGER,
-        )
+        if await self._close_triggered_position(symbol, close_info, atr_value, current_price):
+            return
 
         if is_long:
             await self._manage_long_position(
-                symbol,
-                close_info,
-                atr_value,
-                current_price,
-                current_take_profit_rail,
-                current_stop_loss_rail,
-                atr_trigger,
+                symbol, close_info, atr_value, current_price, take_profit_rail
             )
         else:
             await self._manage_short_position(
-                symbol,
-                close_info,
-                atr_value,
-                current_price,
-                current_stop_loss_rail,
-                current_take_profit_rail,
-                atr_trigger,
+                symbol, close_info, atr_value, current_price, stop_loss_rail, take_profit_rail
             )
-
-        # 更新回字典
         self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
-        return open_info
+
+
+    def _bd_market_matches(self, kline_close, kline_volume, *, refresh=False):
+        """先用已有价格和成交量淘汰，不为不合格标的请求OI。"""
+        if kline_close[-1] < max(kline_close[:-1]):
+            return False
+        volume_peak = max(kline_volume)
+        if max(kline_volume[-self.BD_VOLUME_RECENT_COUNT :]) >= volume_peak:
+            return False
+        return refresh or max(
+            kline_volume[-self.BD_VOLUME_LOOKBACK_COUNT : -self.BD_VOLUME_RECENT_COUNT]
+        ) == volume_peak
 
     async def _is_bd_observation(
         self,
@@ -1868,7 +1694,7 @@ class AUTOBN:
         refresh=False,
     ):
         """判断BD观察是否满足首次入池或刷新条件。"""
-        if kline_close[-1] < max(kline_close[:-1]):
+        if not self._bd_market_matches(kline_close, kline_volume, refresh=refresh):
             return False
 
         if oi_window is None:
@@ -1876,27 +1702,18 @@ class AUTOBN:
         if oi_window is None or len(oi_window) < self.OI_QUERY_LIMIT:
             return False
 
-        old_volume = kline_volume[
-            -self.BD_VOLUME_LOOKBACK_COUNT : -self.BD_VOLUME_RECENT_COUNT
-        ]
-        recent_volume = kline_volume[-self.BD_VOLUME_RECENT_COUNT :]
-        if max(recent_volume) >= max(kline_volume):
-            return False
-
         oi_baseline = oi_window[: -self.BD_OI_LOOKBACK_COUNT]
         oi_old = oi_window[
             -self.BD_OI_LOOKBACK_COUNT : -self.BD_OI_RECENT_COUNT
         ]
-        latest_oi_5m = oi_window[-1]
-        if latest_oi_5m <= max(oi_old):
+        oi_old_peak = max(oi_old)
+        if oi_window[-1] <= oi_old_peak:
             return False
         if refresh:
             return True
 
-        if max(old_volume) != max(kline_volume):
-            return False
         return (
-            self.calculate_chebyshev_probability(oi_baseline, max(oi_old))[
+            self.calculate_chebyshev_probability(oi_baseline, oi_old_peak)[
                 "chebyshev_upper_bound"
             ]
             < self.SHORT_OI_CHEB_THRESHOLD
@@ -1982,150 +1799,79 @@ class AUTOBN:
 
             # 预计算常用值
             current_price = kline_close[-1]
+            # 仅本轮复用：None尚未取数，空列表表示已取数但不可用；下轮重新获取。
+            bd_oi_window = None
 
             # 检查现有持仓是否需要平仓
             if close_info:
-                open_info = await self._manage_position(
+                await self._manage_position(
                     symbol,
                     close_info,
-                    open_info,
                     kline,
                     current_price,
-                    current_timestamp,
                 )
             elif open_info:
-                if open_info is not None:
-                    should_open = False
-                    take_profit = None
-                    stop_loss = None
-                    basis_rate = None
-                    open_signal = None
-
-                    long_ok, long_lsr, long_stop_guard_threshold = False, None, None
-                    if (
-                        PositionSide.BZ in open_info.strategy
-                        and kline_close[-2] < current_price
-                    ):
-                        (
-                            long_ok,
-                            long_lsr,
-                            long_stop_guard_threshold,
-                        ) = await self.check_side(
-                            semaphore,
-                            symbol,
-                            PositionSide.LONG.value,
-                            kline_close,
-                            dtn,
-                        )
-                    if long_ok:
+                price_delta = current_price - kline_close[-2]
+                is_long = price_delta > 0
+                open_strategy = PositionSide.BZ if is_long else PositionSide.BD
+                if price_delta != 0 and open_strategy in open_info.strategy:
+                    position_side = PositionSide.LONG if is_long else PositionSide.SHORT
+                    order_side = OrderSide.BUY if is_long else OrderSide.SELL
+                    passed, long_short_ratio, stop_guard_threshold = await self.check_side(
+                        semaphore, symbol, position_side.value, dtn
+                    )
+                    if passed:
                         signal = await self._build_open_signal(
-                            symbol,
-                            kline,
-                            current_price,
-                            open_info,
-                            is_long=True,
-                            long_short_ratio=long_lsr,
+                            symbol, kline, current_price, open_info,
+                            is_long=is_long, long_short_ratio=long_short_ratio,
                         )
                         if signal is not None:
                             take_profit, stop_loss, basis_rate, open_signal = signal
-                            open_info.side = OrderSide.BUY
-                            should_open = True
-                    short_ok, short_lsr, _ = False, None, None
-                    if (
-                        not long_ok
-                        and PositionSide.BD in open_info.strategy
-                        and current_price < kline_close[-2]
-                    ):
-                        short_ok, short_lsr, _ = await self.check_side(
-                            semaphore,
-                            symbol,
-                            PositionSide.SHORT.value,
-                            kline_close,
-                            dtn,
-                        )
-                    if short_ok:
-                        signal = await self._build_open_signal(
-                            symbol,
-                            kline,
-                            current_price,
-                            open_info,
-                            is_long=False,
-                            long_short_ratio=short_lsr,
-                        )
-                        if signal is not None:
-                            take_profit, stop_loss, basis_rate, open_signal = signal
-                            open_info.side = OrderSide.SELL
-                            should_open = True
-                    if should_open:
-                        is_long = open_info.side.value == OrderSide.BUY.value
-                        position_side = (
-                            PositionSide.LONG if is_long else PositionSide.SHORT
-                        )
-                        order_result = await self.open_bn_position(
-                            symbol,
-                            OrderSide.BUY.value if is_long else OrderSide.SELL.value,
-                            position_side.value,
-                            take_profit,
-                            stop_loss,  # 止损价用于计算风险仓位
-                            open_info,
-                            open_signal,
-                        )
-                        if not order_result:
-                            return
-                        # 多头: take_profit=高价, stop_loss=低价
-                        # 空头: take_profit=低价, stop_loss=高价
-                        close_info = Position(
-                            take_profit=take_profit,
-                            stop_loss=stop_loss,
-                            close_side=OrderSide.SELL if is_long else OrderSide.BUY,
-                            position_side=position_side,
-                            entry_price=current_price,
-                            name=symbol,
-                            date=int(dtn.strftime("%Y%m%d")),
-                            strategy=open_info.strategy,
-                            stop_guard_threshold=(
-                                long_stop_guard_threshold
-                                if is_long and long_stop_guard_threshold is not None
-                                else 0.0
-                            ),
-                            long_short_ratio=(
-                                f"{long_lsr:.4f}"
-                                if is_long and long_lsr is not None
-                                else (
-                                    f"{short_lsr:.4f}"
-                                    if (not is_long) and short_lsr is not None
-                                    else ""
-                                )
-                            ),
-                            basis_rate=f"{basis_rate:.4%}",
-                        )
-                        self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
-                        open_info.strategy = [open_info.strategy[0]]
-                        self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
+                            open_info.side = order_side
+                            order_result = await self.open_bn_position(
+                                symbol, order_side.value, position_side.value,
+                                take_profit, stop_loss, open_info, open_signal,
+                            )
+                            if not order_result:
+                                return
+                            close_info = Position(
+                                take_profit=take_profit,
+                                stop_loss=stop_loss,
+                                close_side=OrderSide.SELL if is_long else OrderSide.BUY,
+                                position_side=position_side,
+                                entry_price=current_price,
+                                name=symbol,
+                                date=int(dtn.strftime("%Y%m%d")),
+                                strategy=open_info.strategy,
+                                stop_guard_threshold=(
+                                    stop_guard_threshold
+                                    if is_long and stop_guard_threshold is not None else 0.0
+                                ),
+                                long_short_ratio=(
+                                    f"{long_short_ratio:.4f}" if long_short_ratio is not None else ""
+                                ),
+                                basis_rate=f"{basis_rate:.4%}",
+                            )
+                            self.alert_all["POSITIONS"][symbol] = close_info.model_dump()
+                            open_info.strategy = [open_info.strategy[0]]
+                            self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
 
-                    if (
-                        not close_info
-                        and open_info
-                        and PositionSide.BD in open_info.strategy
-                    ):
-                        if kline_volume[-1] >= max(kline_volume[:-1]):
-                            self.alert_all["OBSERVATIONS"].pop(symbol, None)
-                            open_info = None
-                        else:
-                            oi_window, _ = await self._get_bd_oi_windows(symbol, dtn)
-                            if await self._is_bd_observation(
-                                symbol,
-                                kline_close,
-                                kline_volume,
-                                dtn,
-                                oi_window=oi_window,
-                                refresh=True,
-                            ):
-                                open_info.price = current_price
-                                open_info.timestamp = current_timestamp
-                                self.alert_all["OBSERVATIONS"][symbol] = (
-                                    open_info.model_dump()
-                                )
+                if not close_info and PositionSide.BD in open_info.strategy:
+                    if kline_volume[-1] >= max(kline_volume[:-1]):
+                        self.alert_all["OBSERVATIONS"].pop(symbol, None)
+                        open_info = None
+                    elif self._bd_market_matches(kline_close, kline_volume, refresh=True):
+                        bd_oi_window, _ = await self._get_bd_oi_windows(symbol, dtn)
+                        if bd_oi_window is None:
+                            bd_oi_window = []
+                        if await self._is_bd_observation(
+                            symbol, kline_close, kline_volume, dtn,
+                            oi_window=bd_oi_window, refresh=True,
+                        ):
+                            open_info.price = current_price
+                            open_info.timestamp = current_timestamp
+                            self.alert_all["OBSERVATIONS"][symbol] = open_info.model_dump()
+
 
             # 无论是否有仓位，都执行“加入观察”判定逻辑；本轮新观察覆盖旧记录
             new_open_info = None
@@ -2144,7 +1890,7 @@ class AUTOBN:
 
             # 做空信号判断；同轮做多信号优先
             elif await self._is_bd_observation(
-                symbol, kline_close, kline_volume, dtn
+                symbol, kline_close, kline_volume, dtn, oi_window=bd_oi_window
             ):
                 new_open_info = Observation(
                     price=current_price,
@@ -2184,38 +1930,33 @@ class AUTOBN:
         return exchange_info
 
     def get_symbols_info(self, exchange_info):
-        # 获取交易所信息（公开合约元信息使用 USDS-M Futures 新 SDK）
-
-        # 计算数量精度：根据quantityPrecision生成对应的Decimal精度
-        sp = {
-            i["symbol"]: Decimal("1")
-            if i["quantityPrecision"] == 0
-            else Decimal(f"0.{'1' * i['quantityPrecision']}")
-            for i in exchange_info["symbols"]
-        }
-
-        # 筛选USDT交易对：只处理USDT计价且状态为TRADING的交易对
-        self.symbols_info = {
-            symbol["symbol"]: {
-                "quotePrecision": symbol["quotePrecision"],  # 价格精度
-                # 数量精度
-                "quantityPrecision": sp.get(symbol["symbol"], Decimal("1")),
+        # 先筛选交易对，再计算需要的精度；完成后一次更新元信息。
+        symbols_info = {}
+        for symbol in exchange_info["symbols"]:
+            if "USDT" not in symbol["quoteAsset"] or "TRADING" not in symbol["status"]:
+                continue
+            quantity_precision = symbol["quantityPrecision"]
+            symbols_info[symbol["symbol"]] = {
+                "quotePrecision": symbol["quotePrecision"],
+                "quantityPrecision": (
+                    Decimal("1") if quantity_precision == 0
+                    else Decimal(f"0.{'1' * quantity_precision}")
+                ),
             }
-            for symbol in exchange_info["symbols"]
-            if "USDT" in symbol["quoteAsset"] and "TRADING" in symbol["status"]
-        }
+        self.symbols_info = symbols_info
 
     def get_position_risk(self, position_risk=None):
         # 获取当前持仓信息，用于清理无效持仓
         position_risk = self._normalize_position_risk(position_risk)
-        position_risk_symbol = [i["symbol"] for i in position_risk]
+        active_symbols = {position["symbol"] for position in position_risk}
         # 只保留当前有持仓的交易对记录
         self.alert_all["POSITIONS"] = {
             k: v
             for k, v in self.alert_all["POSITIONS"].items()
-            if k in position_risk_symbol
+            if k in active_symbols
         }
         positions_data = []
+        today = int(datetime.datetime.now().strftime("%Y%m%d"))
         for p in position_risk:
             entryPrice = float(p["entryPrice"])
             notional = abs(float(p.get("notional", 0) or 0))
@@ -2225,63 +1966,38 @@ class AUTOBN:
                     f"跳过名义价值为0的持仓记录: symbol={p.get('symbol')} side={p.get('positionSide')}"
                 )
                 continue
-            strategy_tag = PositionSide.N.value
-            take_profit = 0.0
-            stop_loss = 0.0
-            open_date = int(datetime.datetime.now().strftime("%Y%m%d"))
-            if p["symbol"] in self.alert_all["POSITIONS"]:
-                pos_data = self.alert_all["POSITIONS"][p["symbol"]]
+            pos_data = self.alert_all["POSITIONS"].get(p["symbol"])
+            if pos_data is not None:
                 pos_obj = Position.model_validate(pos_data)
-                strategy_tag = format_strategy_tags(pos_obj.strategy)
-                take_profit = pos_obj.take_profit
-                stop_loss = pos_obj.stop_loss
-                open_date = pos_obj.date
+                pos_obj.entry_price = entryPrice
+            else:
+                is_long = p["positionSide"] == PositionSide.LONG.value
+                pos_obj = Position(
+                    take_profit=0,
+                    stop_loss=0,
+                    close_side=OrderSide.SELL if is_long else OrderSide.BUY,
+                    position_side=PositionSide.LONG if is_long else PositionSide.SHORT,
+                    entry_price=entryPrice,
+                    name=p["symbol"],
+                    date=today,
+                    strategy=[PositionSide.N],
+                )
+            self.alert_all["POSITIONS"][p["symbol"]] = pos_obj.model_dump()
             positions_data.append(
                 DailyPosition(
                     name=p["symbol"],
-                    strategy=strategy_tag,
+                    strategy=format_strategy_tags(pos_obj.strategy),
                     direction=p["positionSide"],
                     entry_price=entryPrice,
                     notional=notional,
                     unrealized_pnl=unrealized_profit,
                     profit_rate=unrealized_profit / notional,
-                    take_profit=take_profit,
-                    stop_loss=stop_loss,
-                    open_date=open_date,
+                    take_profit=pos_obj.take_profit,
+                    stop_loss=pos_obj.stop_loss,
+                    open_date=pos_obj.date,
                     currency="USDT",
                 )
             )
-
-            if p["symbol"] not in self.alert_all["POSITIONS"]:
-                if p["positionSide"] == PositionSide.LONG.value:
-                    close_info = Position(
-                        take_profit=0,
-                        stop_loss=0,
-                        close_side=OrderSide.SELL,
-                        position_side=PositionSide.LONG,
-                        entry_price=entryPrice,
-                        name=p["symbol"],
-                        date=int(datetime.datetime.now().strftime("%Y%m%d")),
-                        strategy=[PositionSide.N],
-                    )
-                    self.alert_all["POSITIONS"][p["symbol"]] = close_info.model_dump()
-                else:
-                    close_info = Position(
-                        take_profit=0,
-                        stop_loss=0,
-                        close_side=OrderSide.BUY,
-                        position_side=PositionSide.SHORT,
-                        entry_price=entryPrice,
-                        name=p["symbol"],
-                        date=int(datetime.datetime.now().strftime("%Y%m%d")),
-                        strategy=[PositionSide.N],
-                    )
-                    self.alert_all["POSITIONS"][p["symbol"]] = close_info.model_dump()
-            else:
-                current_pos_list = self.alert_all["POSITIONS"][p["symbol"]]
-                pos_obj = Position.model_validate(current_pos_list)
-                pos_obj.entry_price = entryPrice
-                self.alert_all["POSITIONS"][p["symbol"]] = pos_obj.model_dump()
 
         return positions_data
 
@@ -2318,6 +2034,9 @@ class AUTOBN:
             self.logger.error(error_msg)
             self.logger.exception("市场分析任务发生异常")
             await self.send_msg(error_msg)
+        finally:
+            # 成交链路只入队；扫描正常结束、异常或取消后统一刷盘。
+            await CloseRecordManager.flush_pending_records()
 
     async def _rzq_market_impl(self, market):
         """市场分析的实际实现"""

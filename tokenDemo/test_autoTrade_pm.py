@@ -1624,8 +1624,6 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             1,
             10,
             30,
-            20,
-            1,
         )
 
         self.assertEqual(position.stop_loss, 5)
@@ -1639,7 +1637,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 position.tp_count = tp_count
 
                 await obj._manage_long_position(
-                    position.name, position, 1, 11, 30, 20, 1
+                    position.name, position, 1, 11, 30
                 )
 
                 self.assertEqual(position.stop_loss, 10.35)
@@ -1647,29 +1645,28 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_first_take_profit_closes_seventy_percent_and_sets_next_stage(self):
         for position_side, current_price, expected_stop, expected_take_profit in (
-            (PositionSide.LONG, 10.5, 8, 11.025),
+            (PositionSide.LONG, 10.5, 9.5, 11.025),
             (PositionSide.SHORT, 9.5, 9.65, 9.025),
         ):
             with self.subTest(position_side=position_side):
-                obj = self.make_autobn()
                 position = self.make_position(
                     position_side=position_side,
                     take_profit=(11 if position_side == PositionSide.LONG else 9),
                     stop_loss=(8 if position_side == PositionSide.LONG else 12),
                 )
-                obj.alert_all = {
-                    "POSITIONS": {"BTCUSDT": position.model_dump()},
-                    "OBSERVATIONS": {},
-                }
-                obj.close_bn_position = AsyncMock(return_value="BTCUSDT")
-
-                triggered = await obj._close_triggered_position(
-                    "BTCUSDT", position, 1, current_price
+                obj = self.make_close_position_fixture(
+                    position, [(100, 10), (30, 10)]
                 )
+                with patch.object(
+                    CloseRecordManager, "enqueue_close", new=MagicMock()
+                ) as record:
+                    triggered = await obj._close_triggered_position(
+                        "BTCUSDT", position, 1, current_price
+                    )
 
                 self.assertTrue(triggered)
                 self.assertEqual(
-                    obj.close_bn_position.await_args.args[-1],
+                    record.call_args.kwargs["close_ratio"],
                     obj.PARTIAL_CLOSE_RATIO,
                 )
                 self.assertEqual(position.tp_count, 1)
@@ -1677,24 +1674,19 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 self.assertAlmostEqual(position.take_profit, expected_take_profit)
 
     async def test_first_formal_take_profit_advances_stage(self):
-        obj = self.make_autobn()
         position = self.make_position(take_profit=11, stop_loss=5)
-        obj.alert_all = {
-            "POSITIONS": {"BTCUSDT": position.model_dump()},
-            "OBSERVATIONS": {},
-        }
-        obj.close_bn_position = AsyncMock(return_value="BTCUSDT")
-
-        triggered = await obj._close_triggered_position(
-            "BTCUSDT", position, 1, 11
-        )
+        obj = self.make_close_position_fixture(position, [(100, 10), (30, 10)])
+        with patch.object(
+            CloseRecordManager, "enqueue_close", new=MagicMock()
+        ) as record:
+            triggered = await obj._close_triggered_position("BTCUSDT", position, 1, 11)
 
         self.assertTrue(triggered)
         self.assertEqual(position.tp_count, 1)
-        self.assertEqual(position.stop_loss, 5)
+        self.assertEqual(position.stop_loss, 10)
         self.assertGreater(position.take_profit, 11)
         self.assertEqual(
-            obj.close_bn_position.await_args.args[-1], obj.PARTIAL_CLOSE_RATIO
+            record.call_args.kwargs["close_ratio"], obj.PARTIAL_CLOSE_RATIO
         )
 
     async def test_first_long_formal_take_profit_at_entry_target_advances_stage(self):
@@ -1709,12 +1701,12 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 obj.calculate_atr = MagicMock(return_value=0.75)
                 kline = [[0, 10, 10, 5, 9.5, 100] for _ in range(30)]
                 await obj._manage_position(
-                    "BTCUSDT", position, None, kline, 9.5, 0
+                    "BTCUSDT", position, kline, 9.5
                 )
                 self.assertEqual(position.take_profit, position.entry_price)
 
                 with patch.object(
-                    CloseRecordManager, "record_close_async", new=AsyncMock()
+                    CloseRecordManager, "enqueue_close", new=MagicMock()
                 ) as record_close:
                     await obj._close_triggered_position(
                         "BTCUSDT", position, 0.75, current_price
@@ -1724,7 +1716,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(stored.tp_count, 1)
                 self.assertAlmostEqual(stored.stop_loss, expected_stop)
                 self.assertAlmostEqual(stored.take_profit, current_price * 1.05)
-                self.assertEqual(record_close.await_args.kwargs["close_reason"], "首次止盈")
+                self.assertEqual(record_close.call_args.kwargs["close_reason"], "首次止盈")
 
     async def test_long_second_take_profit_waits_for_oi_stop_through_pullback(self):
         position = self.make_position(
@@ -1735,7 +1727,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         )
         obj.calculate_atr = MagicMock(return_value=1)
         with patch.object(
-            CloseRecordManager, "record_close_async", new=AsyncMock()
+            CloseRecordManager, "enqueue_close", new=MagicMock()
         ) as record_close:
             await obj._close_triggered_position("BTCUSDT", position, 1, 10.5)
             first = Position.model_validate(obj.alert_all["POSITIONS"]["BTCUSDT"])
@@ -1746,22 +1738,22 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             self.assertAlmostEqual(second.stop_loss, 10.025)
 
             await obj._manage_position(
-                "BTCUSDT", second, None, self.make_kline(11.025, 9.8), 9.8, 0
+                "BTCUSDT", second, self.make_kline(11.025, 9.8), 9.8
             )
             self.assertIn("BTCUSDT", obj.alert_all["POSITIONS"])
             self.assertEqual(obj._call_api.await_count, 2)
-            self.assertEqual(record_close.await_count, 2)
+            self.assertEqual(record_close.call_count, 2)
             self.assertEqual(second.tp_count, 2)
 
             obj._get_oi_5m_data.return_value = [{"sumOpenInterest": "100"}]
             await obj._manage_position(
-                "BTCUSDT", second, None, self.make_kline(11.025, 9.8), 9.8, 0
+                "BTCUSDT", second, self.make_kline(11.025, 9.8), 9.8
             )
 
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
         self.assertEqual(obj._call_api.await_count, 3)
-        self.assertEqual(record_close.await_args.kwargs["close_ratio"], 1)
-        self.assertEqual(record_close.await_args.kwargs["close_reason"], "OI止损")
+        self.assertEqual(record_close.call_args.kwargs["close_ratio"], 1)
+        self.assertEqual(record_close.call_args.kwargs["close_reason"], "OI止损")
 
     async def test_long_later_take_profit_recalculates_atr_reference_without_protection(self):
         for atr, expected_stop in ((1, 10.025), (0.1, 10.925)):
@@ -1770,7 +1762,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 position.tp_count = 1
                 obj = self.make_close_position_fixture(position, [(30, 10), (9, 10)])
                 with patch.object(
-                    CloseRecordManager, "record_close_async", new=AsyncMock()
+                    CloseRecordManager, "enqueue_close", new=MagicMock()
                 ):
                     await obj._close_triggered_position("BTCUSDT", position, atr, 11.025)
 
@@ -1784,7 +1776,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             position, [(100, 10), (30, 10), (30, 10), (0, 10)]
         )
         with patch.object(
-            CloseRecordManager, "record_close_async", new=AsyncMock()
+            CloseRecordManager, "enqueue_close", new=MagicMock()
         ) as record_close:
             await obj._close_triggered_position("BTCUSDT", position, 1, 10.5)
             stored = Position.model_validate(obj.alert_all["POSITIONS"]["BTCUSDT"])
@@ -1792,9 +1784,9 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             await obj._close_triggered_position("BTCUSDT", stored, 1, 9.4)
 
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
-        self.assertEqual(record_close.await_args_list[0].kwargs["close_reason"], "首次止盈")
-        self.assertEqual(record_close.await_args.kwargs["close_ratio"], 1)
-        self.assertEqual(record_close.await_args.kwargs["close_reason"], "OI止损")
+        self.assertEqual(record_close.call_args_list[0].kwargs["close_reason"], "首次止盈")
+        self.assertEqual(record_close.call_args.kwargs["close_ratio"], 1)
+        self.assertEqual(record_close.call_args.kwargs["close_reason"], "OI止损")
         self.assertIn("平仓依据：** OI止损", obj.send_msg.await_args.args[0].content)
 
     async def test_first_long_formal_take_profit_failure_keeps_stage(self):
@@ -1814,13 +1806,13 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         position = self.make_position(take_profit=10, stop_loss=9)
         obj = self.make_close_position_fixture(position, [(1, 10), (0, 10)])
         with patch.object(
-            CloseRecordManager, "record_close_async", new=AsyncMock()
+            CloseRecordManager, "enqueue_close", new=MagicMock()
         ) as record_close:
             await obj._close_triggered_position("BTCUSDT", position, 0.75, 10.5)
 
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
-        self.assertEqual(record_close.await_args.kwargs["close_ratio"], 1)
-        self.assertEqual(record_close.await_args.kwargs["close_reason"], "首次止盈")
+        self.assertEqual(record_close.call_args.kwargs["close_ratio"], 1)
+        self.assertEqual(record_close.call_args.kwargs["close_reason"], "首次止盈")
 
     async def test_short_formal_take_profit_keeps_existing_atr_rules(self):
         for tp_count, target, price in ((0, 10, 9.5), (1, 9, 9)):
@@ -1833,7 +1825,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 position.tp_count = tp_count
                 obj = self.make_close_position_fixture(position, [(100, 10), (30, 10)])
                 with patch.object(
-                    CloseRecordManager, "record_close_async", new=AsyncMock()
+                    CloseRecordManager, "enqueue_close", new=MagicMock()
                 ) as record_close:
                     await obj._close_triggered_position("BTCUSDT", position, 1, price)
 
@@ -1841,7 +1833,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(stored.tp_count, tp_count + 1)
                 self.assertEqual(stored.stop_loss, price + 1)
                 self.assertEqual(stored.take_profit, price - 3)
-                self.assertEqual(record_close.await_args.kwargs["close_reason"], "止盈")
+                self.assertEqual(record_close.call_args.kwargs["close_reason"], "止盈")
 
     async def test_long_take_profit_ignores_old_stop_and_keeps_priority_over_oi(self):
         for tp_count in (0, 1, 2):
@@ -1851,15 +1843,15 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 obj = self.make_close_position_fixture(position, [(100, 10), (30, 10)])
                 obj._get_oi_5m_data.return_value = [{"sumOpenInterest": "90"}]
                 with patch.object(
-                    CloseRecordManager, "record_close_async", new=AsyncMock()
+                    CloseRecordManager, "enqueue_close", new=MagicMock()
                 ) as record_close:
                     await obj._close_triggered_position("BTCUSDT", position, 1, 11)
 
                 self.assertIn("BTCUSDT", obj.alert_all["POSITIONS"])
                 self.assertEqual(position.tp_count, tp_count + 1)
-                self.assertEqual(record_close.await_args.kwargs["close_ratio"], obj.PARTIAL_CLOSE_RATIO)
+                self.assertEqual(record_close.call_args.kwargs["close_ratio"], obj.PARTIAL_CLOSE_RATIO)
                 self.assertEqual(
-                    record_close.await_args.kwargs["close_reason"],
+                    record_close.call_args.kwargs["close_reason"],
                     "首次止盈" if tp_count == 0 else "止盈",
                 )
                 obj._get_oi_5m_data.assert_not_awaited()
@@ -1873,13 +1865,13 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         position.close_reason = "止盈后追踪止损"
         obj = self.make_close_position_fixture(position, [(100, 10), (0, 10)])
         with patch.object(
-            CloseRecordManager, "record_close_async", new=AsyncMock()
+            CloseRecordManager, "enqueue_close", new=MagicMock()
         ) as record_close:
             await obj._close_triggered_position("BTCUSDT", position, 1, 9.7)
 
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
-        self.assertEqual(record_close.await_args.kwargs["close_ratio"], 1)
-        self.assertEqual(record_close.await_args.kwargs["close_reason"], "止盈后追踪止损")
+        self.assertEqual(record_close.call_args.kwargs["close_ratio"], 1)
+        self.assertEqual(record_close.call_args.kwargs["close_reason"], "止盈后追踪止损")
         obj._get_oi_5m_data.assert_not_awaited()
 
     async def test_first_take_profit_is_once_only(self):
@@ -1917,7 +1909,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj.close_bn_position = AUTOBN.close_bn_position.__get__(obj, AUTOBN)
 
         with patch.object(
-            CloseRecordManager, "record_close_async", new=AsyncMock()
+            CloseRecordManager, "enqueue_close", new=MagicMock()
         ):
             first_triggered = await obj._close_triggered_position(
                 "BTCUSDT", position, 1, 10.5
@@ -2131,7 +2123,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj._call_api = AsyncMock(return_value={"origQty": "10"})
         obj.send_msg = AsyncMock()
         with (
-            patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()),
+            patch.object(CloseRecordManager, "enqueue_close", new=MagicMock()),
             patch("tokenDemo.autoTrade_pm.time.time", return_value=1000),
         ):
             await obj.close_bn_position("BTCUSDT", position, 0, 10)
@@ -2237,7 +2229,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj.papi_client.rest_api.new_um_order = MagicMock()
         obj._call_api = AsyncMock(return_value={"origQty": "10"})
         obj.send_msg = AsyncMock()
-        with patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()):
+        with patch.object(CloseRecordManager, "enqueue_close", new=MagicMock()):
             await obj.close_bn_position("BTCUSDT", position, 0, 10)
 
         self.assertNotIn("BTCUSDT", obj.alert_all["POSITIONS"])
@@ -2330,7 +2322,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj._call_api = AsyncMock(return_value={"origQty": "7"})
         obj.send_msg = AsyncMock()
         obj.calc_stop_profit_loss = MagicMock(return_value=(8, 12))
-        with patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()):
+        with patch.object(CloseRecordManager, "enqueue_close", new=MagicMock()):
             await obj.close_bn_position("BTCUSDT", position, 1, 10, 0.7)
 
         self.assertIn("BTCUSDT", obj.alert_all["POSITIONS"])
@@ -2586,7 +2578,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_manage_position_uses_directional_atr_rails(self):
         for position_side, expected_rails in (
-            (PositionSide.LONG, (16, 8)),
+            (PositionSide.LONG, (16,)),
             (PositionSide.SHORT, (12, 4)),
         ):
             with self.subTest(position_side=position_side):
@@ -2600,10 +2592,8 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
                 await obj._manage_position(
                     "BTCUSDT",
                     position,
-                    None,
                     self.make_kline(100, 100),
                     100,
-                    999,
                 )
 
                 manager = (
@@ -2639,10 +2629,8 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         await obj._manage_position(
             "BTCUSDT",
             position,
-            observation,
             self.make_kline(10, 10),
             10,
-            999,
         )
 
         self.assertEqual(
@@ -2726,7 +2714,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj.get_amount_close = AsyncMock(return_value=(1, 10))
         obj.send_msg = AsyncMock()
 
-        await obj._manage_long_position(position.name, position, 2, 8, 20, 5, 1)
+        await obj._manage_long_position(position.name, position, 2, 8, 20)
 
         self.assertEqual(position.entry_price, 10)
         self.assertEqual(position.take_profit, 10.5)
@@ -2744,7 +2732,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj.get_amount_close = AsyncMock(return_value=(1, 10))
         obj.send_msg = AsyncMock()
 
-        await obj._manage_short_position(position.name, position, 2, 12, 20, 5, 1)
+        await obj._manage_short_position(position.name, position, 2, 12, 20, 5)
 
         self.assertEqual(position.entry_price, 10)
         self.assertEqual(position.take_profit, 9.5)
@@ -2754,7 +2742,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         position = self.make_position(entry_price=10, take_profit=20, stop_loss=5)
         position.strategy.extend([PositionSide.DCA, PositionSide.DCA])
 
-        await obj._manage_long_position(position.name, position, 2, 10, 30, 5, 1)
+        await obj._manage_long_position(position.name, position, 2, 10, 30)
 
         self.assertEqual(position.take_profit, 10.5)
 
@@ -2768,7 +2756,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         )
         position.strategy.extend([PositionSide.DCA, PositionSide.DCA])
 
-        await obj._manage_short_position(position.name, position, 2, 10, 20, 0, 1)
+        await obj._manage_short_position(position.name, position, 2, 10, 20, 0)
 
         self.assertEqual(position.take_profit, 9.5)
 
@@ -2776,7 +2764,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
         obj = self.make_autobn()
         position = self.make_position(entry_price=10, take_profit=20, stop_loss=5)
 
-        await obj._manage_long_position(position.name, position, 2, 10, 30, 5, 1)
+        await obj._manage_long_position(position.name, position, 2, 10, 30)
 
         self.assertEqual(position.take_profit, 19.999)
 
@@ -2789,7 +2777,7 @@ class AutoBNCharacterizationTest(unittest.IsolatedAsyncioTestCase):
             stop_loss=15,
         )
 
-        await obj._manage_short_position(position.name, position, 2, 10, 20, 0, 1)
+        await obj._manage_short_position(position.name, position, 2, 10, 20, 0)
 
         self.assertEqual(position.take_profit, 1.0009)
 
