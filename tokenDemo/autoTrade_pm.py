@@ -2,12 +2,13 @@
 import asyncio
 import atexit
 import datetime
-import gc
 import json
 import logging
+import math
 import os
 import signal
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -16,7 +17,6 @@ from enum import Enum
 from typing import List, Literal, Optional
 
 # ==================== 第三方库导入 ====================
-import aiofiles
 import aiohttp
 import akshare as ak
 import pandas as pd
@@ -133,9 +133,10 @@ class Observation(BaseModel):
     name: str
     bz_reference_high: Optional[float] = None
     earliest_open_timestamp: Optional[float] = None
+    reopen_pending_date: Optional[str] = None  # 已平仓但尚未确认实际重开交易日
 
     def is_reopen_cooldown_active(self, current_timestamp: float) -> bool:
-        return (
+        return self.reopen_pending_date is not None or (
             self.earliest_open_timestamp is not None
             and current_timestamp < self.earliest_open_timestamp
         )
@@ -154,6 +155,25 @@ def format_strategy_tags(strategies: List[PositionSide | str]) -> str:
         f"{value}*{counts[value]}" if counts[value] > 1 else value
         for value in ordered_values
     )
+
+
+def _chebyshev_result(mean, std, value):
+    """两种市场共用的概率结果计算；保留现有零方差约定。"""
+    deviation = value - mean
+    if std == 0:
+        k = float("inf") if deviation != 0 else 0.0
+        upper_bound = 0.0
+    else:
+        k = abs(deviation) / std
+        upper_bound = 1.0 if k <= 1 else 1 / k**2
+    return {
+        "mean": mean,
+        "std": std,
+        "k": k,
+        "chebyshev_upper_bound": upper_bound,
+        "min_probability_in_range": 1 - upper_bound,
+        "deviation": deviation,
+    }
 
 
 # ==================== 平仓记录管理 ====================
@@ -1421,93 +1441,15 @@ class AUTOBN:
             )
 
     def calculate_chebyshev_probability(self, data_list, value):
-        """
-        计算给定数值对应的切比雪夫概率
-
-        功能：根据切比雪夫不等式计算给定数值在数据分布中的概率特征
-
-        切比雪夫不等式：P(|X - μ| >= kσ) <= 1/k²
-        换言之：至少有 (1 - 1/k²) 的数据落在 [μ - kσ, μ + kσ] 区间内
-
-        参数：
-            data_list: 数据列表（如价格列表、收益率列表等）
-            value: 给定的数值，用于计算其在分布中的位置
-
-        返回：
-            字典，包含以下信息：
-            - mean: 数据均值
-            - std: 数据标准差
-            - k: 给定数值距离均值的标准差倍数
-            - chebyshev_upper_bound: 切比雪夫不等式的上界概率 (1/k²)
-            - min_probability_in_range: 至少有该比例的数据在 k 个标准差范围内 (1 - 1/k²)
-            - deviation: 给定数值与均值的偏差
-
-        示例：
-            >>> prices = [100, 102, 98, 101, 99, 103, 97]
-            >>> result = calculate_chebyshev_probability(prices, 110)
-            >>> print(f"均值: {result['mean']}, 标准差: {result['std']}")
-            >>> print(f"数值 110 距离均值 {result['k']:.2f} 个标准差")
-            >>> print(f"根据切比雪夫不等式，至少有 {result['min_probability_in_range']:.2%} 的数据")
-            >>> print(f"落在均值 ± {result['k']:.2f} 个标准差范围内")
-        """
-        # 输入验证
-        if not data_list or len(data_list) == 0:
+        """保留 AUTOBN 的列表统计口径，复用概率计算。"""
+        if not data_list:
             raise ValueError("数据列表不能为空")
-
-        if len(data_list) == 1:
-            return {
-                "mean": data_list[0],
-                "std": 0.0,
-                "k": float("inf") if data_list[0] != value else 0.0,
-                "chebyshev_upper_bound": 0.0,
-                "min_probability_in_range": 1.0,
-                "deviation": value - data_list[0],
-            }
-
-        # 计算均值
         mean = sum(data_list) / len(data_list)
-
-        # 计算标准差（样本标准差，使用 n-1 作为分母）
-        variance = sum((x - mean) ** 2 for x in data_list) / (len(data_list) - 1)
-        std = variance**0.5
-
-        # 计算给定数值与均值的偏差
-        deviation = value - mean
-
-        # 如果标准差为0（所有数据相同）
-        if std == 0:
-            return {
-                "mean": mean,
-                "std": 0.0,
-                "k": float("inf") if deviation != 0 else 0.0,
-                "chebyshev_upper_bound": 0.0,
-                "min_probability_in_range": 1.0,
-                "deviation": deviation,
-            }
-
-        # 计算 k 值（给定数值距离均值有多少个标准差）
-        k = abs(deviation) / std
-
-        # 切比雪夫不等式的上界：P(|X - μ| >= kσ) <= 1/k²
-        # 只有当 k > 1 时，切比雪夫不等式才有意义
-        if k <= 1:
-            chebyshev_upper_bound = 1.0  # k <= 1 时，不等式给出的上界为 1（无信息）
-            min_probability_in_range = 0.0
-        else:
-            chebyshev_upper_bound = 1 / (k**2)
-            # 至少有 (1 - 1/k²) 的数据落在 [μ - kσ, μ + kσ] 区间内
-            min_probability_in_range = 1 - chebyshev_upper_bound
-
-        result = {
-            "mean": mean,
-            "std": std,
-            "k": k,
-            "chebyshev_upper_bound": chebyshev_upper_bound,
-            "min_probability_in_range": min_probability_in_range,
-            "deviation": deviation,
-        }
-
-        return result
+        std = (
+            (sum((item - mean) ** 2 for item in data_list) / (len(data_list) - 1)) ** 0.5
+            if len(data_list) > 1 else 0.0
+        )
+        return _chebyshev_result(mean, std, value)
 
     def _first_take_profit_target(self, entry_price, take_profit_gap, atr_value):
         atr_trigger = max(
@@ -2140,14 +2082,14 @@ class AUTOA:
     DCA_TP_ATR_RATIO = 0.5  # DCA触发后止盈收紧系数(按ATR与触发次数)
 
     # ==================== 切比雪夫概率阈值常量 ====================
-    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（5%），用于检测非常罕见的事件
+    CHEBYSHEV_EXTREME_THRESHOLD = 0.01  # 极端异常阈值（1%）
 
     # ==================== 时间常量 ====================
     OBSERVATION_TIMEOUT_SECONDS = 30 * 24 * 60 * 60  # 观察记录超时时间（30天）
 
     # ==================== Trading Configuration ====================
     TRADING_DAYS_LOOKBACK = 20
-    STOP_LOSS_DECAY = 0.001  # 止损衰减系数 (1‰)
+    TAKE_PROFIT_DECAY = 0.001  # 每轮止盈距离衰减系数 (1‰)
     MARKET_OPEN_HOUR = 9  # A股开盘小时
     MARKET_OPEN_MINUTE = 30  # A股开盘分钟
     MARKET_CLOSE_HOUR = 15  # A股收盘小时
@@ -2167,10 +2109,13 @@ class AUTOA:
     VOLUME_CHEB_REQUIRED_HISTORY = 20  # 切片[-20:-5]所需最少历史K线数
     TARGET_PROFIT_DIVISOR = 3.0  # 目标收益分割系数（用于计算1/3收益触发点）
 
-    alert_all_file = os.path.join(
+    DEFAULT_STATE_FILE = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "alert_all_A.json"
     )
-    alert_all = json.load(open(alert_all_file, "r", encoding="utf-8"))
+    alert_all_file = None  # 显式 load_state 后才允许保存，导入模块不接触业务文件
+    alert_all = {"POSITIONS": {}, "OBSERVATIONS": {}}
+    _trading_calendar = None
+    _calendar_loaded_on = None
     zt_dates = []
     hist_cache = {}
     _batch_window_id = None
@@ -2187,18 +2132,50 @@ class AUTOA:
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
-    # 退出处理函数,在脚本退出时保存A股数据
-    @staticmethod
-    def _save_alert_all_on_exit():
-        """脚本退出时保存AUTOA的alert_all数据到文件"""
+    # 状态显式加载与原子保存
+    @classmethod
+    def load_state(cls, filename=None):
+        """程序启动时显式加载状态；加载失败不覆盖原文件。"""
+        filename = os.fspath(filename or cls.DEFAULT_STATE_FILE)
+        with open(filename, "r", encoding="utf-8") as state_file:
+            state = json.load(state_file)
+        if not isinstance(state, dict) or any(
+            not isinstance(state.get(key, {}), dict)
+            for key in ("POSITIONS", "OBSERVATIONS")
+        ):
+            raise ValueError("AUTOA 状态文件格式错误")
+        state.setdefault("POSITIONS", {})
+        state.setdefault("OBSERVATIONS", {})
+        cls.alert_all = state
+        cls.alert_all_file = filename
+        cls.zt_dates = []
+        cls.hist_cache = {}
+        cls._batch_window_id = None
+        cls._batch_observations_snapshot = []
+        cls._trading_calendar = None
+        cls._calendar_loaded_on = None
+
+    @classmethod
+    def save_state(cls):
+        """先完整写临时文件，再原子替换，失败时保留原快照。"""
+        if cls.alert_all_file is None:
+            return
+        filename = os.path.abspath(cls.alert_all_file)
+        payload = json.dumps(cls.alert_all, ensure_ascii=False, indent=4)
+        temporary_name = None
         try:
-            AUTOA.logger.info(f"脚本退出,正在保存AUTOA数据到 {AUTOA.alert_all_file}...")
-            with open(AUTOA.alert_all_file, "w", encoding="utf-8") as f:
-                json.dump(AUTOA.alert_all, f, ensure_ascii=False, indent=4)
-            AUTOA.logger.info("AUTOA数据保存完成")
-        except Exception as e:
-            AUTOA.logger.error(f"保存AUTOA数据失败: {str(e)}")
-            AUTOA.logger.exception("保存AUTOA数据时发生异常")
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=os.path.dirname(filename),
+                prefix=os.path.basename(filename) + ".", suffix=".tmp", delete=False,
+            ) as state_file:
+                temporary_name = state_file.name
+                state_file.write(payload)
+                state_file.flush()
+                os.fsync(state_file.fileno())
+            os.replace(temporary_name, filename)
+        finally:
+            if temporary_name is not None and os.path.exists(temporary_name):
+                os.remove(temporary_name)
 
     @classmethod
     def calculate_atr(cls, hist_data, period=None):
@@ -2217,7 +2194,7 @@ class AUTOA:
         lows = hist_data["low"].values
         closes = hist_data["close"].values
 
-        for i in range(1, len(hist_data)):
+        for i in range(len(hist_data) - period, len(hist_data)):
             h = float(highs[i])
             low_price = float(lows[i])
             pc = float(closes[i - 1])
@@ -2225,9 +2202,7 @@ class AUTOA:
             tr = max(h - low_price, abs(h - pc), abs(low_price - pc))
             tr_list.append(tr)
 
-        if not tr_list:
-            return 0.0
-        atr = sum(tr_list[-period:]) / min(len(tr_list), period)
+        atr = sum(tr_list) / period
         latest_high = float(highs[-1])
         latest_low = float(lows[-1])
         hl2 = (latest_high + latest_low) / 2
@@ -2253,7 +2228,8 @@ class AUTOA:
         """更新最近一次 BZ 以来的最低价，返回本轮是否触发 BZ，不改变持仓。"""
         if hist.empty:
             return False
-        current_low = float(hist.iloc[-1]["low"])
+        latest = hist.iloc[-1]
+        current_low = float(latest["low"])
         if current_low <= 0 or pd.isna(current_low):
             return False
         if PositionSide.BZ in open_info.strategy:
@@ -2266,8 +2242,8 @@ class AUTOA:
         ):
             return False
         if not (
-            float(hist.iloc[-1]["close"]) > float(hist.iloc[-1]["open"])
-            and float(hist.iloc[-1]["open"]) > float(hist.iloc[-2]["high"])
+            float(latest["close"]) > float(latest["open"])
+            and float(latest["open"]) > float(hist.iloc[-2]["high"])
         ):
             return False
         hist_volume = hist["volume"].values
@@ -2292,101 +2268,13 @@ class AUTOA:
 
     @classmethod
     def calculate_chebyshev_probability(cls, data, value):
-        """
-        计算给定数值对应的切比雪夫概率 (支持 pandas Series/DataFrame 和 list)
-
-        功能：根据切比雪夫不等式计算给定数值在数据分布中的概率特征
-
-        切比雪夫不等式：P(|X - μ| >= kσ) <= 1/k²
-        换言之：至少有 (1 - 1/k²) 的数据落在 [μ - kσ, μ + kσ] 区间内
-
-        参数：
-            data: 数据集合，可以是 pandas.Series, pandas.DataFrame (单列) 或 list
-            value: 给定的数值，用于计算其在分布中的位置
-
-        返回：
-            字典，包含以下信息：
-            - mean: 数据均值
-            - std: 数据标准差
-            - k: 给定数值距离均值的标准差倍数
-            - chebyshev_upper_bound: 切比雪夫不等式的上界概率 (1/k²)
-            - min_probability_in_range: 至少有该比例的数据在 k 个标准差范围内 (1 - 1/k²)
-            - deviation: 给定数值与均值的偏差
-        """
-        # 统一转换为 pandas Series 处理
-        if isinstance(data, list):
-            series = pd.Series(data)
-        elif isinstance(data, pd.DataFrame):
-            # 多列输入沿用现有口径，只使用第一列。
-            series = data.iloc[:, 0]
-        elif isinstance(data, pd.Series):
-            series = data
-        else:
-            # 尝试转换其他可迭代对象
-            try:
-                series = pd.Series(data)
-            except Exception:
-                raise ValueError(
-                    "不支持的数据类型，请提供 list, pandas.Series 或 pandas.DataFrame"
-                )
-
-        # 输入验证
+        """保留 AUTOA 的 pandas 样本统计口径，复用概率计算。"""
+        series = data.iloc[:, 0] if isinstance(data, pd.DataFrame) else pd.Series(data)
         if series.empty:
             raise ValueError("数据不能为空")
-
-        # 处理单元素情况
-        if len(series) == 1:
-            item = float(series.iloc[0])
-            return {
-                "mean": item,
-                "std": 0.0,
-                "k": float("inf") if item != value else 0.0,
-                "chebyshev_upper_bound": 0.0,
-                "min_probability_in_range": 1.0,
-                "deviation": value - item,
-            }
-
-        # 利用 pandas 向量化计算均值和标准差
         mean = float(series.mean())
-        std = float(series.std(ddof=1))  # 样本标准差
-
-        # 计算给定数值与均值的偏差
-        deviation = value - mean
-
-        # 如果标准差为0（所有数据相同）
-        if std == 0:
-            return {
-                "mean": mean,
-                "std": 0.0,
-                "k": float("inf") if deviation != 0 else 0.0,
-                "chebyshev_upper_bound": 0.0,
-                "min_probability_in_range": 1.0,
-                "deviation": deviation,
-            }
-
-        # 计算 k 值（给定数值距离均值有多少个标准差）
-        k = abs(deviation) / std
-
-        # 切比雪夫不等式的上界：P(|X - μ| >= kσ) <= 1/k²
-        # 只有当 k > 1 时，切比雪夫不等式才有意义
-        if k <= 1:
-            chebyshev_upper_bound = 1.0  # k <= 1 时，不等式给出的上界为 1（无信息）
-            min_probability_in_range = 0.0
-        else:
-            chebyshev_upper_bound = 1 / (k**2)
-            # 至少有 (1 - 1/k²) 的数据落在 [μ - kσ, μ + kσ] 区间内
-            min_probability_in_range = 1 - chebyshev_upper_bound
-
-        result = {
-            "mean": mean,
-            "std": std,
-            "k": k,
-            "chebyshev_upper_bound": chebyshev_upper_bound,
-            "min_probability_in_range": min_probability_in_range,
-            "deviation": deviation,
-        }
-
-        return result
+        std = float(series.std(ddof=1)) if len(series) > 1 else 0.0
+        return _chebyshev_result(mean, std, value)
 
     @classmethod
     async def _get_http_session(cls):
@@ -2456,9 +2344,7 @@ class AUTOA:
 
     @classmethod
     def _get_position_share_count(cls, close_info: Position) -> int:
-        dca_count = sum(
-            1 for strategy in close_info.strategy if strategy == PositionSide.DCA
-        )
+        dca_count = close_info.strategy.count(PositionSide.DCA)
         return cls.DEFAULT_POSITION_SHARES * (1 + dca_count)
 
     @classmethod
@@ -2474,57 +2360,48 @@ class AUTOA:
         return total_cost / (existing_shares + cls.DEFAULT_POSITION_SHARES)
 
     @classmethod
-    async def _get_sina_intraday_price(cls, code: str) -> Optional[float]:
-        code_pre = "sh" if code.startswith("6") else "sz"
+    async def _get_sina_daily_bar(cls, code):
+        """一次分时请求同时提供最新价和当日 OHLCV，失败时明确返回 None。"""
+        symbol = ("sh" if code.startswith("6") else "sz") + code
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0",
             "Referer": "https://finance.sina.com.cn/",
         }
         try:
-            http_session = await cls._get_http_session()
-            async with http_session.get(
-                url=(
-                    "https://cn.finance.sina.com.cn/minline/getMinlineData"
-                    f"?symbol={code_pre}{code}"
-                ),
+            session = await cls._get_http_session()
+            async with session.get(
+                f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={symbol}",
                 headers=headers,
             ) as response:
+                response.raise_for_status()
                 payload = await response.json(content_type=None)
-            data = payload.get("result", {}).get("data", [])
-            if not data or not isinstance(data[-1], dict):
+            rows = payload.get("result", {}).get("data", [])
+            if not rows:
                 return None
-            price = float(data[-1].get("p", 0) or 0)
-            return price if price > 0 else None
-        except Exception as e:
-            cls.logger.warning(
-                f"{code} 获取新浪分时行情失败: {type(e).__name__}: {e!r}"
-            )
+            intraday = pd.DataFrame(rows)
+            if not {"p", "v", "tot_v"}.issubset(intraday.columns):
+                return None
+            for column in ("p", "v", "tot_v"):
+                intraday[column] = pd.to_numeric(intraday[column], errors="coerce")
+            intraday = intraday[intraday["p"].notna() & (intraday["p"] > 0)]
+            if intraday.empty:
+                return None
+            prices = intraday["p"]
+            total_volume = intraday.iloc[-1]["tot_v"]
+            if pd.isna(total_volume):
+                total_volume = intraday["v"].fillna(0).sum()
+            return {
+                "open": float(prices.iloc[0]),
+                "high": float(prices.max()),
+                "low": float(prices.min()),
+                "close": float(prices.iloc[-1]),
+                "volume": float(total_volume) / 100,
+            }
+        except Exception as error:
+            cls.logger.warning(f"{code} 获取新浪分时行情失败: {error}")
             return None
 
-    @classmethod
-    async def _get_auction_price(
-        cls, code: str, trading_days: List[str]
-    ) -> Optional[float]:
-        current_price = await cls._get_sina_intraday_price(code)
-        if current_price is not None:
-            return current_price
-        if not trading_days:
-            return None
-        hist = await cls.stock_zh_a_hist(
-            code,
-            start_date=trading_days[-1],
-            end_date=trading_days[0],
-            frequency="d",
-            adjustflag="3",
-        )
-        if hist.empty:
-            return None
-        try:
-            price = float(hist.iloc[-1]["close"])
-        except (KeyError, TypeError, ValueError):
-            return None
-        return price if price > 0 else None
+
 
     @classmethod
     def _calculate_position_valuation(
@@ -2553,13 +2430,11 @@ class AUTOA:
 
             positions_data = []
             total_notional = 0.0
-            today = datetime.datetime.today()
-            trading_days = cls.zt_dates or await cls.get_last_trading_days(today)
-            for code, close_info_dict in positions.items():
+            for code, close_info_dict in list(positions.items()):
                 close_info = Position.model_validate(close_info_dict)
                 strategy_tag = format_strategy_tags(close_info.strategy)
-                current_price = await cls._get_auction_price(code, trading_days)
-                if current_price is None:
+                current_bar = await cls._get_sina_daily_bar(code)
+                if current_bar is None:
                     positions_data.append(
                         DailyPosition(
                             name=f"{close_info.name}({code})",
@@ -2576,6 +2451,7 @@ class AUTOA:
                     )
                     continue
 
+                current_price = current_bar["close"]
                 position_shares, notional, unrealized_pnl, profit_rate = (
                     cls._calculate_position_valuation(close_info, current_price)
                 )
@@ -2612,631 +2488,352 @@ class AUTOA:
         except Exception:
             cls.logger.exception("A股每日持仓推送失败")
 
-    @staticmethod
-    async def get_last_trading_days(today=None, days=None):
-        """
-        获取A股交易日历
-
-        功能：从新浪财经获取A股交易日历，用于股票筛选
-        参数：
-            today: 指定日期，默认为当前日期
-            days: 获取最近交易日的天数，默认为 TRADING_DAYS_LOOKBACK
-        返回：
-            交易日期字符串列表（按时间降序排列）
-        """
-        # 设置默认日期为今天
-        if not today:
-            today = datetime.datetime.today()
-
-        if days is None:
-            days = AUTOA.TRADING_DAYS_LOOKBACK
-
+    @classmethod
+    async def _get_trading_calendar(cls):
+        """同一天共用一份交易日历；请求失败保留可用缓存供退出后恢复冷却。"""
+        loaded_on = datetime.date.today()
+        if cls._trading_calendar is not None and cls._calendar_loaded_on == loaded_on:
+            return cls._trading_calendar
         try:
-            # 从新浪财经获取交易日历
-            trade_dates = await asyncio.wait_for(
+            data = await asyncio.wait_for(
                 asyncio.to_thread(ak.tool_trade_date_hist_sina),
-                timeout=AUTOA.AKSHARE_TIMEOUT_SECONDS,
+                timeout=cls.AKSHARE_TIMEOUT_SECONDS,
             )
-            trade_dates = pd.to_datetime(trade_dates["trade_date"])
-
-            # 过滤出不晚于指定日期的交易日
-            valid_dates = trade_dates[trade_dates <= today]
-
-            if valid_dates.empty:
-                AUTOA.logger.warning(f"未找到 {today} 之前的交易日")
-                return []
-
-            # 获取指定日期前的最近n个交易日，按时间降序排列
-            recent_trading_days = valid_dates.sort_values(ascending=False).iloc[:days]
-
-            # 选择第3天到第10天的交易日作为涨停股查询日期（避开最近的波动）
-            return [i.strftime("%Y-%m-%d") for i in recent_trading_days.iloc]
-        except Exception as e:
-            AUTOA.logger.error(f"获取交易日历失败: {str(e)}")
-            return []
-
-    @staticmethod
-    async def get_following_trading_days(today, days=2):
-        """获取指定日期之后的实际A股交易日，按时间升序排列。"""
-        try:
-            trade_dates = await asyncio.wait_for(
-                asyncio.to_thread(ak.tool_trade_date_hist_sina),
-                timeout=AUTOA.AKSHARE_TIMEOUT_SECONDS,
-            )
-            trade_dates = pd.to_datetime(trade_dates["trade_date"])
-            close_date = pd.Timestamp(today).normalize()
-            following_dates = trade_dates[trade_dates > close_date]
-            return [
-                item.strftime("%Y-%m-%d")
-                for item in following_dates.sort_values(ascending=True).iloc[:days]
-            ]
-        except Exception as e:
-            AUTOA.logger.error(f"获取后续交易日失败: {str(e)}")
-            return []
+            dates = pd.to_datetime(data["trade_date"]).dropna().drop_duplicates().sort_values()
+            if dates.empty:
+                raise ValueError("交易日历为空")
+            cls._trading_calendar = dates
+            cls._calendar_loaded_on = loaded_on
+        except Exception as error:
+            cls.logger.error(f"获取交易日历失败: {error}")
+        return cls._trading_calendar
 
     @classmethod
-    async def _get_reopen_timestamp_after_close(cls, today):
-        following_days = await cls.get_following_trading_days(today, days=2)
+    async def get_last_trading_days(cls, today=None, days=None):
+        """返回不晚于 today 的最近交易日，按降序排列。"""
+        today = today or datetime.datetime.today()
+        days = cls.TRADING_DAYS_LOOKBACK if days is None else days
+        dates = await cls._get_trading_calendar()
+        if dates is None:
+            return []
+        recent = dates[dates <= pd.Timestamp(today)].sort_values(ascending=False).iloc[:days]
+        return [item.strftime("%Y-%m-%d") for item in recent]
+
+    @classmethod
+    async def get_following_trading_days(cls, today, days=2, *, calendar=None):
+        """返回指定日期之后的实际交易日，与入池筛选共用日历。"""
+        if calendar is None:
+            calendar = await cls._get_trading_calendar()
+        if calendar is None:
+            return []
+        following = calendar[calendar > pd.Timestamp(today).normalize()].iloc[:days]
+        return [item.strftime("%Y-%m-%d") for item in following]
+
+    @classmethod
+    async def _get_reopen_timestamp_after_close(cls, today, *, calendar=None):
+        following_days = await cls.get_following_trading_days(today, days=2, calendar=calendar)
         if len(following_days) < 2:
             return None
         return datetime.datetime.strptime(following_days[1], "%Y-%m-%d").timestamp()
 
     @classmethod
-    async def stock_zh_a_hist(
-        cls,
-        code,
-        start_date=None,
-        end_date=None,
-        frequency="d",
-        adjustflag="3",
-    ):
+    async def stock_zh_a_hist(cls, code, start_date=None, end_date=None, frequency="d", adjustflag="3", *, require_current_day=False):
+        """已完成历史 K 线加一根实时日 K；实时请求失败时不伪造最新价格。"""
+        current_bar = await cls._get_sina_daily_bar(code)
+        if current_bar is None:
+            return pd.DataFrame()
+        end_date = pd.Timestamp(end_date or datetime.date.today()).strftime("%Y-%m-%d")
+        start_date = pd.Timestamp(start_date or "1970-01-01").strftime("%Y-%m-%d")
+        cache_key = (code, start_date, end_date, frequency, adjustflag, require_current_day)
         try:
-            code_pre = "sh" if code[0] == "6" else "sz"
-            cls.logger.debug(f"stock_zh_a_hist 调用: code={code}, code_pre={code_pre}")
-            if code in cls.hist_cache:
-                hist = cls.hist_cache[code].copy()
+            if cache_key in cls.hist_cache:
+                history = cls.hist_cache[cache_key]
             else:
-                adjust_map = {"3": "qfq", "2": "hfq", "1": ""}
-                period_map = {"d": "daily", "w": "weekly", "m": "monthly"}
-                hist = None
+                history = None
                 for _ in range(2):
                     try:
-                        hist = await asyncio.wait_for(
+                        history = await asyncio.wait_for(
                             asyncio.to_thread(
-                                ak.stock_zh_a_hist,
-                                symbol=code,
-                                period=period_map.get(frequency, "daily"),
-                                start_date=(start_date or "19700101").replace("-", ""),
-                                end_date=(end_date or datetime.datetime.today().strftime("%Y%m%d")).replace("-", ""),
-                                adjust=adjust_map.get(adjustflag, "qfq"),
+                                ak.stock_zh_a_hist, symbol=code,
+                                period={"d": "daily", "w": "weekly", "m": "monthly"}.get(frequency, "daily"),
+                                start_date=start_date.replace("-", ""),
+                                end_date=end_date.replace("-", ""),
+                                adjust={"3": "qfq", "2": "hfq", "1": ""}.get(adjustflag, "qfq"),
                             ),
                             timeout=cls.AKSHARE_TIMEOUT_SECONDS,
                         )
-                        if hist is not None and not hist.empty:
+                        if history is not None and not history.empty:
                             break
                     except Exception:
-                        hist = None
-                if hist is None or hist.empty:
+                        history = None
+                if history is None or history.empty:
                     return pd.DataFrame()
-                hist = hist.rename(
-                    columns={
-                        "日期": "date",
-                        "开盘": "open",
-                        "收盘": "close",
-                        "最高": "high",
-                        "最低": "low",
-                        "成交量": "volume",
-                    }
-                )[["date", "open", "high", "low", "close", "volume"]].copy()
-                for col in ["open", "high", "low", "close", "volume"]:
-                    hist[col] = pd.to_numeric(hist[col], errors="coerce")
-                hist = hist.dropna(subset=["open", "high", "low", "close"])
-                if hist.empty:
+                history = history.rename(columns={
+                    "日期": "date", "开盘": "open", "最高": "high",
+                    "最低": "low", "收盘": "close", "成交量": "volume",
+                })[["date", "open", "high", "low", "close", "volume"]].copy()
+                for column in ("open", "high", "low", "close", "volume"):
+                    history[column] = pd.to_numeric(history[column], errors="coerce")
+                history = history.dropna(subset=["open", "high", "low", "close"])
+                history_dates = pd.to_datetime(history["date"]).dt.normalize()
+                target_date = pd.Timestamp(end_date)
+                if require_current_day and not (history_dates == target_date).any():
                     return pd.DataFrame()
-                target_date = (end_date or datetime.datetime.today().strftime("%Y-%m-%d")).replace("/", "-")
-                if str(hist.iloc[-1]["date"]) == target_date:
-                    hist = hist.iloc[:-1].copy()
-                if hist.empty:
+                history = history[history_dates < target_date]
+                if history.empty:
                     return pd.DataFrame()
-                cls.hist_cache[code] = hist.copy()
-
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Referer": "https://finance.sina.com.cn/",
-            }
-            res = []
-            try:
-                http_session = await cls._get_http_session()
-                async with http_session.get(
-                    url=f"https://cn.finance.sina.com.cn/minline/getMinlineData?symbol={code_pre}{code}",
-                    headers=headers,
-                ) as response:
-                    payload = await response.json(content_type=None)
-                    res = payload.get("result", {}).get("data", [])
-            except Exception:
-                pass
-            if not res:
-                return pd.DataFrame()
-            if not isinstance(res[0], dict):
-                cls.logger.warning(f"{code} 分时数据格式异常: {type(res[0])}")
-                return pd.DataFrame()
-            hist_today = pd.DataFrame(res)
-            required_columns = ["m", "v", "p", "avg_p", "tot_v"]
-            if not set(required_columns).issubset(hist_today.columns):
-                cls.logger.warning(
-                    f"{code} 分时数据字段异常: {list(hist_today.columns)}"
-                )
-                return pd.DataFrame()
-            hist_today = hist_today[required_columns].copy()
-            hist_today["v"] = pd.to_numeric(hist_today["v"], errors="coerce")
-            hist_today["p"] = pd.to_numeric(hist_today["p"], errors="coerce")
-            hist_today["tot_v"] = pd.to_numeric(
-                hist_today["tot_v"], errors="coerce"
-            )
-            hist_today = hist_today.dropna(subset=["p"])
-            if hist_today.empty:
-                return pd.DataFrame()
-            total_volume = hist_today.iloc[-1]["tot_v"]
-            if pd.isna(total_volume):
-                total_volume = hist_today["v"].fillna(0).sum()
-            volume = total_volume / 100
-            open_price = hist_today.iloc[0]["p"]
-            high_price = hist_today["p"].max()
-            low_price = hist_today["p"].min()
-            close_price = hist_today.iloc[-1]["p"]
-            today_row = pd.DataFrame(
-                [
-                    {
-                        "date": end_date,
-                        "open": open_price,
-                        "high": high_price,
-                        "low": low_price,
-                        "close": close_price,
-                        "volume": volume,
-                    }
-                ]
-            )
-            hist = pd.concat([hist, today_row], ignore_index=True)
-            return hist
-        except Exception as e:
-            cls.logger.error(
-                f"{code} 获取股票历史数据失败: {type(e).__name__}: {e!r}"
-            )
+                cls.hist_cache[cache_key] = history
+            today_row = {"date": end_date, **current_bar}
+            return pd.concat([history, pd.DataFrame([today_row])], ignore_index=True)
+        except Exception as error:
+            cls.logger.error(f"{code} 获取股票历史数据失败: {error}")
             return pd.DataFrame()
 
     @classmethod
-    async def on_positions(cls, code, zt_dates, close_info_dict, today):
-        """
-        处理持仓列表中的股票，检测平仓信号
-
-        策略：止盈止损 - 当价格触及止盈或止损线时平仓，成功后记录到Excel
-        核心逻辑：
-            - 止盈触发：当前价 >= 止盈价
-            - 止损触发：当前价 <= 止损价
-            - 触发后将股票移至观察列表
-            - 仅包含 N 策略的交易动作发送 PushPlus 通知
-
-        参数：
-            code: 股票代码（如'000001'）
-            zt_dates: 交易日期列表
-            close_info_dict: 持仓记录字典 (Pydantic Position.model_dump())
-            today: 当前日期时间
-        """
-        close_info = Position.model_validate(close_info_dict)
-        # 获取股票历史数据（前复权）
-        hist = await cls.stock_zh_a_hist(
-            code,
-            start_date=zt_dates[-1],
-            end_date=zt_dates[0],
-            frequency="d",  # 日K
-            adjustflag="3",  # 前复权
+    async def _close_position(cls, code, close_info, price_close, today):
+        """先完成退出状态和记录入队；重开日期延后确认，通知不能阻断退出。"""
+        raw_observation = cls.alert_all["OBSERVATIONS"].get(code)
+        open_info = (
+            Observation.model_validate(raw_observation) if raw_observation else
+            Observation(price=price_close, timestamp=today.timestamp(), side=OrderSide.BUY,
+                        strategy=[], name=close_info.name)
         )
-
-        # 持仓期间也维护观察基准；只更新观察记录，不改已开仓 N 的止损。
-        open_info_dict = cls.alert_all["OBSERVATIONS"].get(code)
-        if open_info_dict:
-            open_info = Observation.model_validate(open_info_dict)
-            cls._update_bz_observation(open_info, hist)
-            cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
-        # 开仓当天可刷新观察最低价，仍不执行平仓或加仓。
-        if int(today.strftime("%Y%m%d")) <= close_info.date:
-            return
-
-        # 数据校验
-        if len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY:
-            return
-
-        # 获取最新价格与上一根已完成日K成交量
-        price_close = float(hist.iloc[-1]["close"])
-        prev_volume = float(hist.iloc[-2]["volume"])
-
-        # 检查是否触及止盈或止损（且已持仓至少1天）
-        take_profit_triggered = price_close >= close_info.take_profit
-        stop_loss_triggered = price_close <= close_info.stop_loss
-        first_take_profit_triggered = False
-        volume_stop_triggered = (
-            not take_profit_triggered
-            and not stop_loss_triggered
-            and PositionSide.N not in close_info.strategy
-            and close_info.stop_guard_threshold > 0
-            and prev_volume > 0
-            and prev_volume <= close_info.stop_guard_threshold
-        )
-        if not take_profit_triggered and not stop_loss_triggered and not volume_stop_triggered:
-            # 未触及止盈止损，执行移动止损逻辑
-            # 参照 AUTOBN 的动态止盈止损逻辑（使用当前hl2与ATR计算上下轨）
-            DECAY = cls.STOP_LOSS_DECAY
-            atr_value = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
-            hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
-            current_upper = hl2 + atr_value * cls.TAKE_PROFIT_ATR_FACTOR
-            current_lower = hl2 - atr_value * cls.STOP_LOSS_ATR_FACTOR
-            profit = price_close - close_info.entry_price
-            initial_tp_gap = close_info.take_profit - close_info.entry_price
-            atr_trigger = max(
-                min(atr_value, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO),
-                cls.MIN_ATR_TRIGGER,
-            )
-            target_profit = min(
-                initial_tp_gap / cls.TARGET_PROFIT_DIVISOR,
-                atr_trigger,
-            )
-            first_take_profit_triggered = (
-                initial_tp_gap > 0 and profit >= target_profit
-            )
-
-            if first_take_profit_triggered:
-                close_info.close_reason = "首次止盈"
-            elif (
-                atr_value > 0
-                and close_info.entry_price > 0
-                and price_close < close_info.entry_price - atr_value
-            ):
-                existing_shares = cls._get_position_share_count(close_info)
-                close_info.strategy.append(PositionSide.DCA)
-                strategy_tag = format_strategy_tags(close_info.strategy)
-                msg = (
-                    f"{close_info.name} 加仓\n"
-                    f"策略:{strategy_tag}\n"
-                    f"委托价格:{price_close:.2f}\n"
-                    f"止盈:{close_info.take_profit:.2f}\n"
-                    f"止损:{close_info.stop_loss:.2f}"
-                )
-                if PositionSide.N in close_info.strategy:
-                    await cls.send_msg(
-                        format_trade_notification("AUTOA", "开仓", close_info.name, msg),
-                        channel="pushplus",
-                    )
-                close_info.entry_price = cls._calculate_weighted_entry_price(
-                    close_info.entry_price,
-                    price_close,
-                    existing_shares,
-                )
-                dca_count = sum(
-                    1
-                    for strategy in close_info.strategy
-                    if strategy == PositionSide.DCA
-                )
-                target_take_profit = (
-                    close_info.entry_price
-                    + atr_value * cls.DCA_TP_ATR_RATIO**dca_count
-                )
-                close_info.take_profit = min(
-                    close_info.take_profit,
-                    target_take_profit,
-                )
-            else:
-                # 做多: 止盈在上方，止损在下方
-                # 止盈下移: 取衰减后的值和当前上轨的较小值，最多下移到成本价
-                initial_tp_gap = close_info.take_profit - close_info.entry_price
-                tp_decay_step = initial_tp_gap * DECAY
-                decayed_tp = close_info.take_profit - tp_decay_step
-                dca_count = sum(
-                    1
-                    for strategy in close_info.strategy
-                    if strategy == PositionSide.DCA
-                )
-                if dca_count > 0:
-                    dca_tp = (
-                        close_info.entry_price
-                        + atr_value * cls.DCA_TP_ATR_RATIO**dca_count
-                    )
-                    close_info.take_profit = max(
-                        min(decayed_tp, current_upper, dca_tp),
-                        close_info.entry_price,
-                    )
-                else:
-                    close_info.take_profit = max(
-                        min(decayed_tp, current_upper),
-                        close_info.entry_price,
-                    )
-
-                # N 策略的止损固定为观察期最低价，不使用 ATR 止损轨道覆盖。
-                if PositionSide.N not in close_info.strategy:
-                    new_stop_loss = max(close_info.stop_loss, current_lower)
-                    if new_stop_loss != close_info.stop_loss:
-                        close_info.stop_loss = new_stop_loss
-                        close_info.close_reason = "移动止损(轨道)"
-
-            if not first_take_profit_triggered:
-                cls.alert_all["POSITIONS"][code] = close_info.model_dump()
-                return
-
-        if take_profit_triggered:
-            close_info.close_reason = "止盈"
-        elif volume_stop_triggered:
-            close_info.close_reason = "成交量止损"
-        elif stop_loss_triggered and not close_info.close_reason:
-            close_info.close_reason = "初始止损"
-        elif first_take_profit_triggered:
-            close_info.close_reason = "首次止盈"
-
-        position_shares = cls._get_position_share_count(close_info)
-        earliest_open_timestamp = await cls._get_reopen_timestamp_after_close(today)
-        if earliest_open_timestamp is None:
-            cls.logger.error(f"{code} 无法确定平仓后的第二个交易日，暂不平仓")
-            return
-        open_info = Observation.model_validate(
-            cls.alert_all["OBSERVATIONS"][code]
-        )
-        open_info.earliest_open_timestamp = earliest_open_timestamp
-        cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
-        cls.alert_all["POSITIONS"].pop(code)
+        open_info.earliest_open_timestamp = None
+        open_info.reopen_pending_date = today.strftime("%Y-%m-%d")
+        quantity = cls._get_position_share_count(close_info)
         entry_price = close_info.entry_price if close_info.entry_price > 0 else price_close
-        profit_rate = (price_close / entry_price - 1) if entry_price > 0 else 0
-        realized_pnl = (price_close - entry_price) * position_shares
+        profit_rate = price_close / entry_price - 1 if entry_price > 0 else 0
+        realized_pnl = (price_close - entry_price) * quantity
         strategy_tag = format_strategy_tags(close_info.strategy)
-        msg = (
-            f"{close_info.name} 平仓\n"
-            f"策略:{strategy_tag}\n"
-            f"持仓方向:{close_info.position_side.value}\n"
-            f"委托价格:{price_close:.2f}\n"
-            f"委托数量:{position_shares}\n"
-            f"平仓盈亏:{realized_pnl:.2f} CNY\n"
-            f"平仓收益:{profit_rate:.2%}\n"
-            f"平仓依据:{close_info.close_reason}"
+        CloseRecordManager.enqueue_close(
+            source="AUTOA", symbol=f"{close_info.name} {code}", position_side="LONG",
+            entry_price=entry_price, close_price=price_close, close_amount=quantity,
+            realized_pnl=realized_pnl, pnl_percent=profit_rate, close_ratio=1.0,
+            strategy_tag=strategy_tag, close_reason=close_info.close_reason,
         )
+        cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+        cls.alert_all["POSITIONS"].pop(code, None)
         if PositionSide.N in close_info.strategy:
+            msg = (
+                f"{close_info.name} 平仓\n策略:{strategy_tag}\n"
+                f"持仓方向:{close_info.position_side.value}\n委托价格:{price_close:.2f}\n"
+                f"委托数量:{quantity}\n平仓盈亏:{realized_pnl:.2f} CNY\n"
+                f"平仓收益:{profit_rate:.2%}\n平仓依据:{close_info.close_reason}"
+            )
             await cls.send_msg(
                 format_trade_notification("AUTOA", "平仓", close_info.name, msg),
                 channel="pushplus",
             )
 
-        await CloseRecordManager.record_close_async(
-            source="AUTOA",
-            symbol=f"{close_info.name} {code}",
-            position_side="LONG",
-            entry_price=entry_price,
-            close_price=price_close,
-            close_amount=position_shares,
-            realized_pnl=realized_pnl,
-            pnl_percent=profit_rate,
-            close_ratio=1.0,
-            strategy_tag=strategy_tag,
-            close_reason=close_info.close_reason,
+    @classmethod
+    async def on_positions(cls, code, zt_dates, close_info_dict, today, *, exit_only=False):
+        """刷新观察基准后管理持仓；N 止损固定，开仓当天不平仓或加仓。"""
+        close_info = Position.model_validate(close_info_dict)
+        hist = await cls.stock_zh_a_hist(
+            code, start_date=zt_dates[-1], end_date=zt_dates[0], frequency="d", adjustflag="3",
+            require_current_day=exit_only,
         )
+        raw_observation = cls.alert_all["OBSERVATIONS"].get(code)
+        if raw_observation:
+            open_info = Observation.model_validate(raw_observation)
+            cls._update_bz_observation(open_info, hist)
+            cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+        if int(today.strftime("%Y%m%d")) <= close_info.date:
+            return
+        if len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY:
+            return
+
+        latest = hist.iloc[-1]
+        price_close = float(latest["close"])
+        prev_volume = float(hist.iloc[-2]["volume"])
+        is_n = PositionSide.N in close_info.strategy
+        if price_close >= close_info.take_profit:
+            close_info.close_reason = "止盈"
+        elif price_close <= close_info.stop_loss:
+            close_info.close_reason = close_info.close_reason or "初始止损"
+        elif not is_n and 0 < prev_volume <= close_info.stop_guard_threshold:
+            close_info.close_reason = "成交量止损"
+        else:
+            atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
+            tp_gap = close_info.take_profit - close_info.entry_price
+            atr_trigger = max(
+                min(atr, close_info.entry_price * cls.ATR_TRIGGER_CAP_RATIO),
+                cls.MIN_ATR_TRIGGER,
+            )
+            target_profit = min(tp_gap / cls.TARGET_PROFIT_DIVISOR, atr_trigger)
+            profit = price_close - close_info.entry_price
+            if tp_gap > 0 and profit >= target_profit:
+                close_info.close_reason = "首次止盈"
+            elif exit_only:
+                return
+            else:
+                dca_count = close_info.strategy.count(PositionSide.DCA)
+                dca_triggered = (
+                    atr > 0 and close_info.entry_price > 0
+                    and price_close < close_info.entry_price - atr
+                )
+                if dca_triggered:
+                    existing_shares = cls.DEFAULT_POSITION_SHARES * (1 + dca_count)
+                    close_info.entry_price = cls._calculate_weighted_entry_price(
+                        close_info.entry_price, price_close, existing_shares,
+                    )
+                    close_info.strategy.append(PositionSide.DCA)
+                    dca_count += 1
+                    close_info.take_profit = min(
+                        close_info.take_profit,
+                        close_info.entry_price + atr * cls.DCA_TP_ATR_RATIO**dca_count,
+                    )
+                else:
+                    hl2 = (float(latest["high"]) + float(latest["low"])) / 2
+                    upper = hl2 + atr * cls.TAKE_PROFIT_ATR_FACTOR
+                    next_tp = min(close_info.take_profit - tp_gap * cls.TAKE_PROFIT_DECAY, upper)
+                    if dca_count:
+                        next_tp = min(next_tp, close_info.entry_price + atr * cls.DCA_TP_ATR_RATIO**dca_count)
+                    close_info.take_profit = max(next_tp, close_info.entry_price)
+                    if not is_n:
+                        new_stop_loss = max(close_info.stop_loss, hl2 - atr * cls.STOP_LOSS_ATR_FACTOR)
+                        if new_stop_loss != close_info.stop_loss:
+                            close_info.stop_loss = new_stop_loss
+                            close_info.close_reason = "移动止损(轨道)"
+
+                # 没有 await 的完整状态更新在先；通知取消也不会丢失 DCA。
+                cls.alert_all["POSITIONS"][code] = close_info.model_dump()
+                if dca_triggered and is_n:
+                    strategy_tag = format_strategy_tags(close_info.strategy)
+                    msg = (
+                        f"{close_info.name} 加仓\n策略:{strategy_tag}\n"
+                        f"委托价格:{price_close:.2f}\n止盈:{close_info.take_profit:.2f}\n"
+                        f"止损:{close_info.stop_loss:.2f}"
+                    )
+                    await cls.send_msg(
+                        format_trade_notification("AUTOA", "开仓", close_info.name, msg),
+                        channel="pushplus",
+                    )
+                return
+        await cls._close_position(code, close_info, price_close, today)
 
     @classmethod
-    async def on_observations(cls, code, zt_dates, open_info_dict, today):
-        """
-        处理观察列表中的股票，检测买入信号
-
-        策略：低吸策略 - 在涨停次日回调后放量突破时买入
-        核心逻辑：
-            1. 超时清理：观察超过30天的股票自动移出
-            2. 信号确认：满足以下条件时触发买入
-               - 时间：观察至少24小时
-               - 价格：突破10日均价、昨收、今开的最高值
-               - 成交量：放量突破（今日量 > max(前2日量*1.5)）
-
-        参数：
-            code: 股票代码（如'000001'）
-            zt_dates: 交易日期列表
-            open_info_dict: 观察记录字典 (Pydantic Observation.model_dump())
-            today: 当前日期时间
-        """
+    async def on_observations(cls, code, zt_dates, open_info_dict, today, *, calendar=None):
+        """先处理冷却与 BZ/N 信号，确认开仓后再计算风控和保存状态。"""
         open_info = Observation.model_validate(open_info_dict)
-        if open_info.is_reopen_cooldown_active(today.timestamp()):
+        now = today.timestamp()
+        if open_info.reopen_pending_date is not None:
+            reopen_timestamp = await cls._get_reopen_timestamp_after_close(
+                pd.Timestamp(open_info.reopen_pending_date).to_pydatetime(), calendar=calendar,
+            )
+            if reopen_timestamp is None:
+                return
+            open_info.earliest_open_timestamp = reopen_timestamp
+            open_info.reopen_pending_date = None
+            cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+        if open_info.is_reopen_cooldown_active(now):
             return
-        if today.timestamp() - open_info.timestamp > cls.OBSERVATION_TIMEOUT_SECONDS:
-            cls.alert_all["OBSERVATIONS"].pop(code)
+        if now - open_info.timestamp > cls.OBSERVATION_TIMEOUT_SECONDS:
+            cls.alert_all["OBSERVATIONS"].pop(code, None)
             return
-        if (
-            datetime.datetime.fromtimestamp(
-                today.timestamp(), datetime.timezone.utc
-            ).date()
-            == datetime.datetime.fromtimestamp(
-                open_info.timestamp, datetime.timezone.utc
-            ).date()
-        ):
+        if datetime.datetime.fromtimestamp(now, datetime.timezone.utc).date() == datetime.datetime.fromtimestamp(
+            open_info.timestamp, datetime.timezone.utc
+        ).date():
             return
-        # 获取股票历史数据（前复权，确保价格连续性）
         hist = await cls.stock_zh_a_hist(
-            code,
-            start_date=zt_dates[-1],
-            end_date=zt_dates[0],
-            frequency="d",
-            adjustflag="3",  # 前复权
+            code, start_date=zt_dates[-1], end_date=zt_dates[0], frequency="d", adjustflag="3",
         )
         bz_triggered = cls._update_bz_observation(open_info, hist)
         cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
         if len(hist) < cls.VOLUME_CHEB_REQUIRED_HISTORY:
             return
-        # 非阳线仅刷新观察状态，不考虑开仓。
-        hist_open = hist["open"].values
-        hist_close = hist["close"].values
-        if hist_close[-1] <= hist_open[-1]:
+        latest = hist.iloc[-1]
+        price_close = float(latest["close"])
+        if price_close <= float(latest["open"]):
+            return
+        n_triggered = (
+            not bz_triggered and PositionSide.BZ in open_info.strategy
+            and cls.check_gap_up_after_bz_reference(hist, open_info.bz_reference_high)
+        )
+        if not (bz_triggered or n_triggered):
             return
 
-        # 两种开仓路径使用相同的成交量止损辅助阈值。
-        hist_volume = hist["volume"].values
-        should_open = False
-        volume_sample = hist_volume[
+        atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
+        if not (math.isfinite(atr) and atr > 0):
+            return
+        if n_triggered and PositionSide.N not in open_info.strategy:
+            open_info.strategy.append(PositionSide.N)
+        volume_sample = hist["volume"].values[
             cls.VOLUME_CHEB_SAMPLE_START_OFFSET : cls.VOLUME_CHEB_SAMPLE_END_OFFSET
         ]
         volume_guard_threshold = float(sum(volume_sample) / len(volume_sample))
-        # 两种策略的止盈都需要 ATR。
-        current_atr = cls.calculate_atr(hist, period=cls.ATR_PERIOD)
-        if bz_triggered:
-            should_open = True
-        elif (
-            PositionSide.BZ in open_info.strategy
-            and cls.check_gap_up_after_bz_reference(
-                hist, open_info.bz_reference_high
+        hl2 = (float(latest["high"]) + float(latest["low"])) / 2
+        take_profit = hl2 + atr * cls.TAKE_PROFIT_ATR_FACTOR
+        is_n = PositionSide.N in open_info.strategy
+        stop_loss = open_info.price if is_n else hl2 - atr * cls.STOP_LOSS_ATR_FACTOR
+        cls.alert_all["POSITIONS"][code] = Position(
+            take_profit=take_profit, stop_loss=stop_loss, close_side=OrderSide.SELL,
+            position_side=PositionSide.LONG, entry_price=price_close,
+            name=open_info.name, date=int(today.strftime("%Y%m%d")),
+            strategy=open_info.strategy, stop_guard_threshold=volume_guard_threshold,
+        ).model_dump()
+        cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+        strategy_tag = format_strategy_tags(open_info.strategy)
+        target_return = abs(take_profit - price_close) / price_close if price_close > 0 else 0
+        msg = (
+            f"==={open_info.name}**{strategy_tag}**===\n价格:{price_close:.2f}\n"
+            f"止盈:{take_profit:.2f}\n止损:{stop_loss:.2f}\n收益率:{target_return:.2%}\n"
+        )
+        await cls.send_msg(msg, channel="wecom")
+        if is_n:
+            await cls.send_msg(
+                format_trade_notification("AUTOA", "开仓", open_info.name, msg),
+                channel="pushplus",
             )
-        ):
-            if PositionSide.N not in open_info.strategy:
-                open_info.strategy.append(PositionSide.N)
-            should_open = True
-
-        if should_open and current_atr > 0:
-            price_close = float(hist.iloc[-1]["close"])
-            # 初始化止盈止损与AUTOBN一致：基于hl2和ATR倍数计算
-            hl2 = (float(hist.iloc[-1]["high"]) + float(hist.iloc[-1]["low"])) / 2
-            take_profit = hl2 + current_atr * cls.TAKE_PROFIT_ATR_FACTOR
-            stop_loss = (
-                open_info.price
-                if PositionSide.N in open_info.strategy
-                else hl2 - current_atr * cls.STOP_LOSS_ATR_FACTOR
-            )
-            atr_percent = (
-                abs(take_profit - price_close) / price_close
-                if price_close > 0
-                else 0
-            )
-            # 4. 记录到持仓列表
-            cls.alert_all["POSITIONS"][code] = Position(
-                take_profit=take_profit,
-                stop_loss=stop_loss,
-                close_side=OrderSide.SELL,
-                position_side=PositionSide.LONG,
-                entry_price=price_close,
-                name=open_info.name,
-                date=int(today.strftime("%Y%m%d")),
-                strategy=open_info.strategy,
-                stop_guard_threshold=volume_guard_threshold,
-            ).model_dump()
-
-            # 5. 发送买入通知
-            strategy_tag = format_strategy_tags(open_info.strategy)
-            msg = (
-                f"==={open_info.name}**{strategy_tag}**===\n"
-                f"价格:{price_close:.2f}\n"
-                f"止盈:{take_profit:.2f}\n"
-                f"止损:{stop_loss:.2f}\n"
-                f"收益率:{atr_percent:.2%}\n"
-            )
-            # 信号通知与交易动作分流：信号走企业微信，N策略实际开仓走PushPlus
-            await cls.send_msg(msg, channel="wecom")
-            if PositionSide.N in open_info.strategy:
-                await cls.send_msg(
-                    format_trade_notification("AUTOA", "开仓", open_info.name, msg),
-                    channel="pushplus",
-                )
-
-            # 6. 保留观察记录及冷却状态，供后续状态处理使用
-            cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
     @classmethod
-    async def filter_stocks(cls):
-        """
-        筛选符合量能条件的A股股票
-
-        功能：从涨停股池中筛选出符合低吸条件的股票
-        策略：寻找有上涨动能但可能进入回调的优质股票
-        返回：
-            符合条件的股票代码和名称集合
-        """
-        # 获取交易日历信息
-        today = datetime.datetime.today()
-        # 9:30前不执行：小时小于9，或9点但分钟小于30
-        is_before_open = today.hour < cls.MARKET_OPEN_HOUR or (
-            today.hour == cls.MARKET_OPEN_HOUR and today.minute < cls.MARKET_OPEN_MINUTE
+    async def _refresh_close_observations(cls, today):
+        """收盘入池/刷新；统一由 filter_stocks 在处理结束后保存。"""
+        zt_df = await asyncio.wait_for(
+            asyncio.to_thread(ak.stock_zt_pool_em, date=today.strftime("%Y%m%d")),
+            timeout=cls.AKSHARE_TIMEOUT_SECONDS,
         )
-        # 收盘后不执行：小时大于15，或者小时等于15且分钟大于5
-        is_after_close = today.hour > cls.MARKET_CLOSE_HOUR or (
-            today.hour == cls.MARKET_CLOSE_HOUR
-            and today.minute > cls.MARKET_CLOSE_MINUTE
-        )
-        today_str = today.strftime("%Y-%m-%d")
-        if is_before_open or is_after_close:
-            return []
-        if not cls.zt_dates or today_str not in cls.zt_dates:
-            cls.zt_dates = await cls.get_last_trading_days(today)
-            cls.hist_cache.clear()
-            cls._batch_window_id = None
-            cls._batch_observations_snapshot = []
-            if not cls.zt_dates or today_str not in cls.zt_dates:
-                return []
-        selected = set()  # 存储符合条件的股票
-        if today.hour == cls.MARKET_CLOSE_HOUR:
-            async def _write_alert_all_async():
-                async with aiofiles.open(cls.alert_all_file, "w", encoding="utf-8") as f:
-                    await f.write(json.dumps(cls.alert_all, ensure_ascii=False, indent=4))
+        selected = set()
+        semaphore = asyncio.Semaphore(cls.MAX_CONCURRENT_REQUESTS)
 
-            await asyncio.wait_for(
-                _write_alert_all_async(), timeout=cls.FILE_IO_TIMEOUT_SECONDS
-            )
-            zt_df = await asyncio.wait_for(
-                asyncio.to_thread(
-                    ak.stock_zt_pool_em, date=cls.zt_dates[0].replace("-", "")
-                ),
-                timeout=cls.AKSHARE_TIMEOUT_SECONDS,
-            )
-            stock_codes = zt_df[["代码", "名称", "连板数"]].values.tolist()
-            semaphore = asyncio.Semaphore(cls.MAX_CONCURRENT_REQUESTS)
-
-            async def _update_close_observation(code):
-                async with semaphore:
-                    try:
-                        hist = await cls.stock_zh_a_hist(
-                            code[0],
-                            start_date=cls.zt_dates[-1],
-                            end_date=cls.zt_dates[0],
-                            frequency="d",
-                            adjustflag="3",
+        async def update_stock(code, name):
+            async with semaphore:
+                try:
+                    hist = await cls.stock_zh_a_hist(
+                        code, start_date=cls.zt_dates[-1], end_date=cls.zt_dates[0],
+                        frequency="d", adjustflag="3",
+                    )
+                    if hist.empty:
+                        return
+                    existing = cls.alert_all["OBSERVATIONS"].get(code)
+                    if existing:
+                        open_info = Observation.model_validate(existing)
+                        if PositionSide.BZ in open_info.strategy:
+                            cls._update_bz_observation(open_info, hist)
+                        open_info.timestamp = today.timestamp()
+                    else:
+                        open_info = Observation(
+                            price=float(hist.iloc[-1]["close"]), timestamp=today.timestamp(),
+                            side=OrderSide.BUY, strategy=[], name=name,
                         )
-                        if hist.empty:
-                            return
-                        price_close = float(hist.iloc[-1]["close"])
+                        selected.add(name)
+                    cls.alert_all["OBSERVATIONS"][code] = open_info.model_dump()
+                except Exception as error:
+                    cls.logger.error(f"{code} 收盘更新观察列表失败: {error}")
 
-                        # 已在观察列表且当日再次涨停：刷新观察时间（即使在持仓也允许更新）
-                        if code[0] in cls.alert_all["OBSERVATIONS"]:
-                            open_info = Observation.model_validate(
-                                cls.alert_all["OBSERVATIONS"][code[0]]
-                            )
-                            if PositionSide.BZ in open_info.strategy:
-                                cls._update_bz_observation(open_info, hist)
-                            open_info.timestamp = today.timestamp()
-                            cls.alert_all["OBSERVATIONS"][code[0]] = open_info.model_dump()
-                            return
+        await asyncio.gather(*(update_stock(code, name) for code, name in zt_df[["代码", "名称"]].values))
+        cls.zt_dates.clear()
+        cls.hist_cache.clear()
+        return selected
 
-                        selected.add(f"{code[1]}")
-                        cls.alert_all["OBSERVATIONS"][code[0]] = Observation(
-                            price=price_close,
-                            timestamp=today.timestamp(),
-                            side=OrderSide.BUY,
-                            strategy=[],
-                            name=code[1],
-                        ).model_dump()
-                    except Exception as e:
-                        cls.logger.error(
-                            f"{code[0]} 收盘更新观察列表失败: {type(e).__name__}: {e!r}"
-                        )
-
-            if stock_codes:
-                await asyncio.gather(
-                    *(_update_close_observation(code) for code in stock_codes)
-                )
-
-            cls.zt_dates.clear()
-            cls.hist_cache.clear()
-            return selected
-
+    @classmethod
+    async def _process_market_batch(cls, today, *, positions_only=False):
+        """已有持仓每轮处理，观察标的按五分钟窗口分批。"""
         semaphore = asyncio.Semaphore(cls.MAX_CONCURRENT_REQUESTS)
         window_seconds = cls.BATCH_WINDOW_MINUTES * 60
         window_id = int(today.timestamp() // window_seconds)
         slot = today.minute % cls.BATCH_SLOT_COUNT
 
-        if cls._batch_window_id != window_id:
+        if not positions_only and cls._batch_window_id != window_id:
             cls._batch_window_id = window_id
             cls._batch_observations_snapshot = sorted(
                 [
@@ -3246,12 +2843,8 @@ class AUTOA:
                 ]
             )
 
-        observation_snapshot = cls._batch_observations_snapshot
-        batch_observation_codes = [
-            code
-            for index, code in enumerate(observation_snapshot)
-            if index % cls.BATCH_SLOT_COUNT == slot
-        ]
+        observation_snapshot = [] if positions_only else cls._batch_observations_snapshot
+        batch_observation_codes = observation_snapshot[slot::cls.BATCH_SLOT_COUNT]
         position_symbols = list(cls.alert_all["POSITIONS"].keys())
         effective_symbols = list(dict.fromkeys(batch_observation_codes + position_symbols))
 
@@ -3262,73 +2855,98 @@ class AUTOA:
         )
 
         success = set()
+        date_window = cls.zt_dates if not positions_only else [
+            today.strftime("%Y-%m-%d"),
+            (today - datetime.timedelta(days=cls.TRADING_DAYS_LOOKBACK * 3)).strftime("%Y-%m-%d"),
+        ]
 
-        async def _run_symbol(code):
+        async def _run_symbol(code, calendar=None):
             async with semaphore:
                 try:
-                    if code in cls.alert_all["POSITIONS"]:
-                        close_info = cls.alert_all["POSITIONS"].get(code)
-                        if close_info is None:
-                            return
-                        await cls.on_positions(code, cls.zt_dates, close_info, today)
-                    else:
+                    close_info = cls.alert_all["POSITIONS"].get(code)
+                    if close_info is not None:
+                        await cls.on_positions(
+                            code, date_window, close_info, today,
+                            exit_only=positions_only,
+                        )
+                    elif not positions_only:
                         open_info = cls.alert_all["OBSERVATIONS"].get(code)
                         if open_info is None:
                             return
-                        await cls.on_observations(code, cls.zt_dates, open_info, today)
+                        await cls.on_observations(code, date_window, open_info, today, calendar=calendar)
                     success.add(code)
                 except Exception as e:
                     cls.logger.error(
                         f"{code} 处理失败，已跳过该标的: {type(e).__name__}: {e!r}"
                     )
 
-        tasks = [_run_symbol(code) for code in effective_symbols]
+        # 仅本批待确认冷却的观察需要日历；其等待不占行情并发槽位。
+        pending_codes = {
+            code for code in batch_observation_codes
+            if code not in cls.alert_all["POSITIONS"]
+            and cls.alert_all["OBSERVATIONS"].get(code, {}).get("reopen_pending_date") is not None
+        }
+
+        async def _run_pending_observations():
+            calendar = await cls._get_trading_calendar()
+            if calendar is None:
+                return  # 本批不重复请求，待确认状态留给下一批重试。
+            await asyncio.gather(*(
+                _run_symbol(code, calendar)
+                for code in batch_observation_codes if code in pending_codes
+            ))
+
+        tasks = [_run_symbol(code) for code in effective_symbols if code not in pending_codes]
+        if pending_codes:
+            tasks.append(_run_pending_observations())
         if tasks:
             await asyncio.gather(*tasks)
-        gc.collect()  # 垃圾回收，释放内存
         cls.logger.info(
             f"A任务结束 - window:{window_id} slot:{slot}/{cls.BATCH_SLOT_COUNT} "
             f"批次成功数量:{len(success)}"
         )
-        return selected
+        return set()
+
+    @classmethod
+    async def filter_stocks(cls):
+        """按交易时间选择收盘刷新或盘中处理，结束或取消时保存已完成状态。"""
+        today = datetime.datetime.today()
+        clock = (today.hour, today.minute)
+        if not (cls.MARKET_OPEN_HOUR, cls.MARKET_OPEN_MINUTE) <= clock <= (
+            cls.MARKET_CLOSE_HOUR, cls.MARKET_CLOSE_MINUTE
+        ):
+            return set()
+        today_str = today.strftime("%Y-%m-%d")
+        if not cls.zt_dates or cls.zt_dates[0] != today_str:
+            cls.zt_dates = await cls.get_last_trading_days(today)
+            cls.hist_cache.clear()
+            cls._batch_window_id = None
+            cls._batch_observations_snapshot = []
+            if cls.zt_dates and cls.zt_dates[0] != today_str:
+                return set()
+        try:
+            if not cls.zt_dates:
+                # 日历不可用只管理已有仓位，且要求历史接口确认当天有交易。
+                return await cls._process_market_batch(today, positions_only=True)
+            if today.hour == cls.MARKET_CLOSE_HOUR:
+                return await cls._refresh_close_observations(today)
+            return await cls._process_market_batch(today)
+        finally:
+            cls.save_state()
 
     @classmethod
     async def monitor_stocks(cls):
-        """
-        监控A股并发送通知
-
-        功能：筛选符合条件的A股股票，并通过企业微信发送通知
-        策略：低吸策略，寻找回调买入机会
-        """
+        """限制行情/通知等待时间，结束时将已入队的平仓记录刷盘。"""
         start_ts = time.time()
         try:
-            # 设置超时时间为10分钟，防止任务卡住
-            cls.logger.info("A股监控任务开始")
-            await asyncio.wait_for(
-                cls._monitor_stocks_impl(), timeout=cls.MONITOR_TIMEOUT
-            )
-            cls.logger.info(f"A股监控任务结束，总耗时:{time.time() - start_ts:.2f}s")
+            selected = await asyncio.wait_for(cls.filter_stocks(), timeout=cls.MONITOR_TIMEOUT)
+            cls.logger.info(f"A股监控完成，新增观察:{selected} 耗时:{time.time() - start_ts:.2f}s")
         except asyncio.TimeoutError:
-            error_msg = f"A股监控任务超时({cls.MONITOR_TIMEOUT}秒)，已强制中断"
-            cls.logger.error(error_msg)
-            await cls.send_msg(error_msg)
-        except Exception as e:
-            error_msg = f"A股监控任务异常: {str(e)}"
-            cls.logger.error(error_msg)
-            cls.logger.exception("A股监控任务发生异常")
-            await cls.send_msg(error_msg)
-
-    @classmethod
-    async def _monitor_stocks_impl(cls):
-        """A股监控的实际实现"""
-
-        # 筛选符合量能条件的股票
-        filtered = await cls.filter_stocks()
-        cls.logger.info(f"符合量能条件的股票：{filtered}")
-
-
-# 注册AUTOA的退出处理函数,在脚本退出时保存A股数据
-atexit.register(AUTOA._save_alert_all_on_exit)
+            cls.logger.error(f"A股监控任务超时({cls.MONITOR_TIMEOUT}秒)")
+        except Exception:
+            cls.logger.exception("A股监控任务异常")
+        finally:
+            await CloseRecordManager.flush_pending_records()
 
 
 def handle_exit_signal(signum, _frame):
@@ -3338,18 +2956,6 @@ def handle_exit_signal(signum, _frame):
     logger.info(f"接收到退出信号 {signal_name}, 准备退出...")
     # 调用 sys.exit(0) 会触发 atexit 注册的函数
     sys.exit(0)
-
-
-# 注册信号处理，确保程序优雅退出
-signal.signal(signal.SIGINT, handle_exit_signal)
-signal.signal(signal.SIGTERM, handle_exit_signal)
-
-# 配置根日志记录器
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler()],
-)
 
 
 async def main():
@@ -3362,6 +2968,11 @@ async def main():
     """
     current_dir = os.path.dirname(os.path.abspath(__file__))
     load_dotenv(os.path.join(os.path.dirname(current_dir), ".env"))
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    AUTOA.load_state()
+    atexit.register(AUTOA.save_state)
+    signal.signal(signal.SIGINT, handle_exit_signal)
+    signal.signal(signal.SIGTERM, handle_exit_signal)
 
     autobn = AUTOBN.from_cfg(
         alert_all_file=os.path.join(current_dir, "alert_all.json"),
@@ -3431,10 +3042,20 @@ async def main():
     try:
         await stop_event.wait()  # 等待事件触发（实际不会发生）
     finally:
-        scheduler.shutdown(wait=False)
-        await CloseRecordManager.flush_pending_records()
-        await AUTOA.close_http_session()
-        await autobn.close_http_session()
+        for action in (lambda: scheduler.shutdown(wait=False), AUTOA.save_state):
+            try:
+                action()
+            except Exception:
+                logger.exception("退出时停止调度或保存状态失败，继续清理")
+        results = await asyncio.gather(
+            CloseRecordManager.flush_pending_records(),
+            AUTOA.close_http_session(),
+            autobn.close_http_session(),
+            return_exceptions=True,
+        )
+        for result in results:
+            if isinstance(result, BaseException):
+                logger.error(f"退出清理失败: {result}")
 
 
 if __name__ == "__main__":

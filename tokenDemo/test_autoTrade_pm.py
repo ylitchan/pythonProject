@@ -96,6 +96,10 @@ class AutoABzReferenceHighTest(unittest.TestCase):
 
 
 class AutoAReopenCooldownTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.enterContext(patch.object(AUTOA, "_trading_calendar", None))
+        self.enterContext(patch.object(AUTOA, "_calendar_loaded_on", None))
+
     async def test_default_trading_history_contains_20_daily_bars(self):
         dates = pd.date_range("2026-06-01", periods=30, freq="B")
         calendar = pd.DataFrame({"trade_date": dates})
@@ -539,7 +543,7 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
             patch.object(AUTOA, "_get_reopen_timestamp_after_close",
                          new=AsyncMock(return_value=reopen_timestamp)),
             patch.object(AUTOA, "send_msg", new=AsyncMock()),
-            patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()) as record_close,
+            patch.object(CloseRecordManager, "enqueue_close", new=MagicMock()) as record_close,
         ):
             await AUTOA.on_observations(
                 "000001", ["2026-07-01", "2026-06-01"],
@@ -572,7 +576,7 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored.price, 9)
         self.assertEqual(stored.timestamp, observation.timestamp)
         self.assertEqual(stored.earliest_open_timestamp, reopen_timestamp)
-        record_close.assert_awaited_once()
+        record_close.assert_called_once()
 
     async def test_entry_day_tracks_low_without_trading(self):
         observation = self.make_observation()
@@ -588,7 +592,7 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
             patch.object(AUTOA, "alert_all", state),
             patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)) as fetch,
             patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
-            patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()) as record_close,
+            patch.object(CloseRecordManager, "enqueue_close", new=MagicMock()) as record_close,
         ):
             await AUTOA.on_positions(
                 "000001", ["2026-07-01", "2026-06-01"], position.model_dump(),
@@ -598,7 +602,7 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state["POSITIONS"]["000001"], position.model_dump())
         fetch.assert_awaited_once()
         send_msg.assert_not_awaited()
-        record_close.assert_not_awaited()
+        record_close.assert_not_called()
 
     async def test_held_n_keeps_stop_while_observation_tracks_lows_and_new_bz(self):
         for price, bar, expected_price, expected_reference in [
@@ -619,7 +623,7 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
                     patch.object(AUTOA, "calculate_chebyshev_probability",
                                  return_value={"chebyshev_upper_bound": 0.001}),
                     patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
-                    patch.object(CloseRecordManager, "record_close_async", new=AsyncMock()) as record_close,
+                    patch.object(CloseRecordManager, "enqueue_close", new=MagicMock()) as record_close,
                 ):
                     await AUTOA.on_positions(
                         "000001", ["2026-07-02", "2026-06-01"], position.model_dump(),
@@ -635,7 +639,7 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(held.entry_price, position.entry_price)
                 self.assertEqual(held.strategy, position.strategy)
                 send_msg.assert_not_awaited()
-                record_close.assert_not_awaited()
+                record_close.assert_not_called()
 
     async def test_close_screening_resets_existing_bz_without_changing_n_stop(self):
         observation = self.make_observation(price=5, strategies=[PositionSide.BZ, PositionSide.N])
@@ -665,9 +669,8 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
                 "代码": ["000001"], "名称": ["测试股票"], "连板数": [1],
             })),
             patch("tokenDemo.autoTrade_pm.datetime.datetime", FixedDateTime),
-            patch("tokenDemo.autoTrade_pm.aiofiles.open") as open_file,
+            patch.object(AUTOA, "save_state"),
         ):
-            open_file.return_value.__aenter__.return_value = AsyncMock()
             await AUTOA.filter_stocks()
 
         stored = Observation.model_validate(state["OBSERVATIONS"]["000001"])
@@ -805,8 +808,8 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
             patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
             patch.object(
                 CloseRecordManager,
-                "record_close_async",
-                new=AsyncMock(),
+                "enqueue_close",
+                new=MagicMock(),
             ) as record_close,
         ):
             await AUTOA.on_positions(
@@ -818,9 +821,9 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("000001", AUTOA.alert_all["POSITIONS"])
         send_msg.assert_not_awaited()
-        self.assertEqual(record_close.await_args.kwargs["close_ratio"], 1.0)
-        self.assertEqual(record_close.await_args.kwargs["close_reason"], "首次止盈")
-        self.assertEqual(record_close.await_args.kwargs["close_amount"], 100)
+        self.assertEqual(record_close.call_args.kwargs["close_ratio"], 1.0)
+        self.assertEqual(record_close.call_args.kwargs["close_reason"], "首次止盈")
+        self.assertEqual(record_close.call_args.kwargs["close_amount"], 100)
 
     async def test_second_dca_uses_quarter_atr_take_profit_distance(self):
         position = self.make_position(
@@ -888,54 +891,38 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(stored.take_profit, 11)
 
-    async def test_close_writes_second_following_trading_day_cooldown(self):
+    async def test_close_defers_calendar_and_next_observation_resolves_cooldown(self):
         position = self.make_position(strategies=[PositionSide.BZ])
-        observation = Observation(
-            price=10,
-            timestamp=pd.Timestamp("2026-07-01").timestamp(),
-            side=OrderSide.BUY,
-            strategy=[PositionSide.BZ],
-            name="测试股票",
-        )
-        hist = pd.DataFrame([
-            *[
-                {"high": 11, "low": 9, "close": 10, "volume": 100}
-                for _ in range(29)
-            ],
-            {"high": 13, "low": 11, "close": 12, "volume": 100},
-        ])
-        expected_timestamp = pd.Timestamp("2026-07-24").to_pydatetime().timestamp()
+        observation = Observation(price=10, timestamp=pd.Timestamp("2026-07-01").timestamp(),
+                                  side=OrderSide.BUY, strategy=[PositionSide.BZ], name="测试股票")
+        state = {"POSITIONS": {"000001": position.model_dump()},
+                 "OBSERVATIONS": {"000001": observation.model_dump()}}
+        hist = pd.DataFrame([{"high": 13, "low": 11, "close": 12, "volume": 100}] * 20)
+        expected_timestamp = pd.Timestamp("2026-07-24").timestamp()
         with (
-            patch.object(AUTOA, "alert_all", {
-                "POSITIONS": {"000001": position.model_dump()},
-                "OBSERVATIONS": {"000001": observation.model_dump()},
-            }),
-            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)),
-            patch.object(
-                AUTOA,
-                "_get_reopen_timestamp_after_close",
-                new=AsyncMock(return_value=expected_timestamp),
-            ),
+            patch.object(AUTOA, "alert_all", state),
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)) as get_hist,
+            patch.object(AUTOA, "_get_reopen_timestamp_after_close",
+                         new=AsyncMock(return_value=expected_timestamp)) as get_reopen,
             patch.object(AUTOA, "send_msg", new=AsyncMock()),
-            patch.object(
-                CloseRecordManager,
-                "record_close_async",
-                new=AsyncMock(),
-            ),
+            patch.object(CloseRecordManager, "enqueue_close"),
         ):
-            await AUTOA.on_positions(
-                "000001",
-                ["2026-07-22", "2026-07-21"],
-                position.model_dump(),
-                pd.Timestamp("2026-07-22 15:00").to_pydatetime(),
+            await AUTOA.on_positions("000001", ["2026-07-22", "2026-07-21"],
+                                    position.model_dump(), pd.Timestamp("2026-07-22 15:00").to_pydatetime())
+            self.assertNotIn("000001", state["POSITIONS"])
+            self.assertEqual(state["OBSERVATIONS"]["000001"]["reopen_pending_date"], "2026-07-22")
+            get_reopen.assert_not_awaited()
+            get_hist.reset_mock()
+            await AUTOA.on_observations(
+                "000001", ["2026-07-23", "2026-07-22"], state["OBSERVATIONS"]["000001"],
+                pd.Timestamp("2026-07-23 10:00").to_pydatetime(),
             )
-            stored = Observation.model_validate(
-                AUTOA.alert_all["OBSERVATIONS"]["000001"]
-            )
-
-        self.assertNotIn("000001", AUTOA.alert_all["POSITIONS"])
+            stored = Observation.model_validate(state["OBSERVATIONS"]["000001"])
+        get_hist.assert_not_awaited()
+        get_reopen.assert_awaited_once_with(pd.Timestamp("2026-07-22").to_pydatetime(), calendar=None)
         self.assertEqual(stored.timestamp, observation.timestamp)
         self.assertEqual(stored.earliest_open_timestamp, expected_timestamp)
+        self.assertIsNone(stored.reopen_pending_date)
 
     async def test_pushes_zero_total_when_no_positions(self):
         with (
@@ -960,12 +947,12 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
             "000002": self.make_position("失败股票", [PositionSide.BZ]).model_dump(),
         }
 
-        async def get_price(code, trading_days):
-            return 10.5 if code == "000001" else None
+        async def get_price(code):
+            return {"close": 10.5} if code == "000001" else None
 
         with (
             patch.object(AUTOA, "alert_all", {"POSITIONS": positions}),
-            patch.object(AUTOA, "_get_auction_price", side_effect=get_price),
+            patch.object(AUTOA, "_get_sina_daily_bar", side_effect=get_price),
             patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
         ):
             await AUTOA.push_daily_positions()
@@ -988,7 +975,7 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         positions = {"000001": self.make_position().model_dump()}
         with (
             patch.object(AUTOA, "alert_all", {"POSITIONS": positions}),
-            patch.object(AUTOA, "_get_auction_price", new=AsyncMock(return_value=None)),
+            patch.object(AUTOA, "_get_sina_daily_bar", new=AsyncMock(return_value=None)),
             patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
         ):
             await AUTOA.push_daily_positions()
@@ -1003,72 +990,41 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("**持仓收益：**", notification.content)
         self.assertEqual(notification.title, "AUTOA 每日持仓")
 
-    async def test_daily_positions_reuses_one_trading_calendar_snapshot(self):
-        positions = {
-            "000001": self.make_position("股票一").model_dump(),
-            "000002": self.make_position("股票二").model_dump(),
-        }
-        trading_days = ["20260711", "20260710"]
-
-        async def get_price(code, supplied_days):
-            self.assertIs(supplied_days, trading_days)
-            return 10.5
-
+    async def test_daily_valuation_fetches_each_quote_once_without_calendar(self):
+        positions = {"000001": self.make_position("股票一").model_dump(),
+                     "000002": self.make_position("股票二").model_dump()}
         with (
             patch.object(AUTOA, "alert_all", {"POSITIONS": positions}),
-            patch.object(AUTOA, "zt_dates", []),
-            patch.object(
-                AUTOA,
-                "get_last_trading_days",
-                new=AsyncMock(return_value=trading_days),
-            ) as get_days,
-            patch.object(AUTOA, "_get_auction_price", side_effect=get_price) as get_price_mock,
+            patch.object(AUTOA, "get_last_trading_days", new=AsyncMock()) as get_days,
+            patch.object(AUTOA, "_get_sina_daily_bar", new=AsyncMock(return_value={"close": 10.5})) as quote,
             patch.object(AUTOA, "send_msg", new=AsyncMock()),
         ):
             await AUTOA.push_daily_positions()
+        get_days.assert_not_awaited()
+        self.assertEqual([call.args[0] for call in quote.await_args_list], ["000001", "000002"])
 
-        get_days.assert_awaited_once()
-        self.assertEqual(get_price_mock.await_count, 2)
-
-    async def test_auction_price_prefers_sina_intraday_quote(self):
-        trading_days = ["20260711", "20260710"]
+    async def test_daily_valuation_uses_live_quote_without_history(self):
         with (
-            patch.object(
-                AUTOA,
-                "_get_sina_intraday_price",
-                new=AsyncMock(return_value=10.8),
-            ) as sina_price,
-            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock()) as stock_hist,
+            patch.object(AUTOA, "alert_all", {"POSITIONS": {"000001": self.make_position().model_dump()}}),
+            patch.object(AUTOA, "_get_sina_daily_bar", new=AsyncMock(return_value={"close": 10.8})) as quote,
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock()) as history,
+            patch.object(AUTOA, "send_msg", new=AsyncMock()),
         ):
-            price = await AUTOA._get_auction_price("000001", trading_days)
+            await AUTOA.push_daily_positions()
+        quote.assert_awaited_once_with("000001")
+        history.assert_not_awaited()
 
-        self.assertEqual(price, 10.8)
-        sina_price.assert_awaited_once_with("000001")
-        stock_hist.assert_not_awaited()
-
-    async def test_auction_prices_still_fetch_each_stock_independently(self):
-        trading_days = ["20260711", "20260710"]
-        hist = pd.DataFrame([{"close": 10.5}])
+    async def test_failed_quote_does_not_repeat_sina_request_through_history(self):
         with (
-            patch.object(
-                AUTOA,
-                "_get_sina_intraday_price",
-                new=AsyncMock(return_value=None),
-            ),
-            patch.object(
-                AUTOA, "stock_zh_a_hist", new=AsyncMock(return_value=hist)
-            ) as stock_hist,
+            patch.object(AUTOA, "alert_all", {"POSITIONS": {"000001": self.make_position().model_dump()}}),
+            patch.object(AUTOA, "_get_sina_daily_bar", new=AsyncMock(return_value=None)) as quote,
+            patch.object(AUTOA, "stock_zh_a_hist", new=AsyncMock()) as history,
+            patch.object(AUTOA, "send_msg", new=AsyncMock()) as send,
         ):
-            first = await AUTOA._get_auction_price("000001", trading_days)
-            second = await AUTOA._get_auction_price("000002", trading_days)
-
-        self.assertEqual(first, 10.5)
-        self.assertEqual(second, 10.5)
-        self.assertEqual(stock_hist.await_count, 2)
-        self.assertEqual(
-            [call.args[0] for call in stock_hist.await_args_list],
-            ["000001", "000002"],
-        )
+            await AUTOA.push_daily_positions()
+        quote.assert_awaited_once_with("000001")
+        history.assert_not_awaited()
+        self.assertIn("行情获取失败", send.await_args.args[0].content)
 
 
 class CloseRecordManagerCharacterizationTest(unittest.IsolatedAsyncioTestCase):
@@ -3790,7 +3746,7 @@ class AutoANotificationRoutingTest(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(AUTOA, "send_msg", new=AsyncMock()) as send_msg,
         ):
-            await AUTOA._monitor_stocks_impl()
+            await AUTOA.monitor_stocks()
 
         send_msg.assert_not_awaited()
 
