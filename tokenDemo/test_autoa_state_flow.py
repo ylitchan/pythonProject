@@ -94,7 +94,7 @@ class AutoAStateFlowTest(unittest.IsolatedAsyncioTestCase):
                 await self.run_position(4.5)
         self.assertEqual(CloseRecordManager._pending_records[0]["平仓数量"], 100)
 
-    async def test_close_screening_persists_updated_snapshot(self):
+    async def test_close_screening_snapshot_is_saved_explicitly(self):
         now = pd.Timestamp("2026-07-02 15:05").to_pydatetime()
 
         class FixedDateTime:
@@ -117,6 +117,7 @@ class AutoAStateFlowTest(unittest.IsolatedAsyncioTestCase):
             })),
         ):
             await AUTOA.filter_stocks()
+            AUTOA.save_state()
             saved = json.loads(Path(AUTOA.alert_all_file).read_text(encoding="utf-8"))
         self.assertEqual(saved["OBSERVATIONS"]["000001"]["price"], 7)
         self.assertEqual(saved["OBSERVATIONS"]["000001"]["timestamp"], now.timestamp())
@@ -170,7 +171,7 @@ class AutoAStateFlowTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(Path(AUTOA.alert_all_file).read_bytes(), before)
             self.assertEqual([path.name for path in Path(directory).iterdir()], ["state.json"])
 
-    async def test_cancelled_monitor_saves_state_and_flushes_queued_exits(self):
+    async def test_cancelled_monitor_flushes_queued_exits_without_periodic_save(self):
         now = pd.Timestamp("2026-07-02 10:00").to_pydatetime()
 
         class FixedDateTime:
@@ -193,9 +194,7 @@ class AutoAStateFlowTest(unittest.IsolatedAsyncioTestCase):
             FixedDateTime.now = classmethod(lambda cls: now)
             with self.assertRaises(asyncio.CancelledError):
                 await AUTOA.monitor_stocks()
-            saved = json.loads(Path(AUTOA.alert_all_file).read_text(encoding="utf-8"))
-        self.assertEqual(saved["POSITIONS"], {})
-        self.assertEqual(saved["OBSERVATIONS"]["000001"]["reopen_pending_date"], "2026-07-02")
+            self.assertFalse(Path(AUTOA.alert_all_file).exists())
         CloseRecordManager._record_close_batch.assert_called_once()
         self.assertEqual(CloseRecordManager._pending_records, [])
 
@@ -312,7 +311,7 @@ class AutoAStateFlowTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(history.await_args.kwargs["require_current_day"])
         send.assert_not_awaited()
 
-    async def test_shutdown_save_failure_still_flushes_records_and_closes_sessions(self):
+    async def test_shutdown_leaves_state_save_to_atexit_and_closes_sessions(self):
         from tokenDemo import autoTrade_pm
 
         autobn = MagicMock()
@@ -321,19 +320,21 @@ class AutoAStateFlowTest(unittest.IsolatedAsyncioTestCase):
         event.wait = AsyncMock(side_effect=asyncio.CancelledError())
         with (
             patch.object(AUTOA, "load_state"),
-            patch.object(AUTOA, "save_state", side_effect=OSError("保存失败")),
+            patch.object(AUTOA, "save_state", side_effect=OSError("保存失败")) as save_state,
             patch.object(AUTOA, "close_http_session", new=AsyncMock()) as close_a,
             patch.object(CloseRecordManager, "flush_pending_records", new=AsyncMock()) as flush,
             patch.object(autoTrade_pm.AUTOBN, "from_cfg", return_value=autobn),
             patch.object(autoTrade_pm, "AsyncIOScheduler"),
             patch.object(autoTrade_pm, "load_dotenv"),
-            patch.object(autoTrade_pm.atexit, "register"),
+            patch.object(autoTrade_pm.atexit, "register") as register,
             patch.object(autoTrade_pm.signal, "signal"),
             patch.object(autoTrade_pm.logging, "basicConfig"),
             patch.object(autoTrade_pm.asyncio, "Event", return_value=event),
         ):
             with self.assertRaises(asyncio.CancelledError):
                 await autoTrade_pm.main()
+            register.assert_called_once_with(save_state)
+            save_state.assert_not_called()
         flush.assert_awaited_once()
         close_a.assert_awaited_once()
         autobn.close_http_session.assert_awaited_once()

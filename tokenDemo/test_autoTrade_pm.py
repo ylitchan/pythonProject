@@ -669,10 +669,11 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
                 "代码": ["000001"], "名称": ["测试股票"], "连板数": [1],
             })),
             patch("tokenDemo.autoTrade_pm.datetime.datetime", FixedDateTime),
-            patch.object(AUTOA, "save_state"),
+            patch.object(AUTOA, "save_state") as save_state,
         ):
             await AUTOA.filter_stocks()
 
+        save_state.assert_not_called()
         stored = Observation.model_validate(state["OBSERVATIONS"]["000001"])
         self.assertEqual(stored.price, 7)
         self.assertEqual(stored.bz_reference_high, 11)
@@ -682,6 +683,9 @@ class AutoABzObservationLifecycleTest(unittest.IsolatedAsyncioTestCase):
 
 
 class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.save_state = self.enterContext(patch.object(AUTOA, "save_state"))
+
     @staticmethod
     def make_position(name="测试股票", strategies=None):
         return Position(
@@ -940,6 +944,7 @@ class AutoADailyPositionValuationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("- **持仓数量：** `0`", notification.content)
         self.assertIn("> 当前暂无持仓。", notification.content)
         self.assertIn("# 📊 AUTOA · 每日持仓", notification.content)
+        self.save_state.assert_called_once_with()
 
     async def test_sums_successful_positions_and_marks_failed_quote(self):
         positions = {

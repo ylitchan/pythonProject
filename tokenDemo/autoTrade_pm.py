@@ -2487,6 +2487,8 @@ class AUTOA:
             )
         except Exception:
             cls.logger.exception("A股每日持仓推送失败")
+        finally:
+            cls.save_state()
 
     @classmethod
     async def _get_trading_calendar(cls):
@@ -2787,7 +2789,7 @@ class AUTOA:
             )
     @classmethod
     async def _refresh_close_observations(cls, today):
-        """收盘入池/刷新；统一由 filter_stocks 在处理结束后保存。"""
+        """收盘入池/刷新；状态不在单个监控批次结束时落盘。"""
         zt_df = await asyncio.wait_for(
             asyncio.to_thread(ak.stock_zt_pool_em, date=today.strftime("%Y%m%d")),
             timeout=cls.AKSHARE_TIMEOUT_SECONDS,
@@ -2909,7 +2911,7 @@ class AUTOA:
 
     @classmethod
     async def filter_stocks(cls):
-        """按交易时间选择收盘刷新或盘中处理，结束或取消时保存已完成状态。"""
+        """按交易时间选择收盘刷新或盘中处理。"""
         today = datetime.datetime.today()
         clock = (today.hour, today.minute)
         if not (cls.MARKET_OPEN_HOUR, cls.MARKET_OPEN_MINUTE) <= clock <= (
@@ -2924,15 +2926,12 @@ class AUTOA:
             cls._batch_observations_snapshot = []
             if cls.zt_dates and cls.zt_dates[0] != today_str:
                 return set()
-        try:
-            if not cls.zt_dates:
-                # 日历不可用只管理已有仓位，且要求历史接口确认当天有交易。
-                return await cls._process_market_batch(today, positions_only=True)
-            if today.hour == cls.MARKET_CLOSE_HOUR:
-                return await cls._refresh_close_observations(today)
-            return await cls._process_market_batch(today)
-        finally:
-            cls.save_state()
+        if not cls.zt_dates:
+            # 日历不可用只管理已有仓位，且要求历史接口确认当天有交易。
+            return await cls._process_market_batch(today, positions_only=True)
+        if today.hour == cls.MARKET_CLOSE_HOUR:
+            return await cls._refresh_close_observations(today)
+        return await cls._process_market_batch(today)
 
     @classmethod
     async def monitor_stocks(cls):
@@ -3042,11 +3041,10 @@ async def main():
     try:
         await stop_event.wait()  # 等待事件触发（实际不会发生）
     finally:
-        for action in (lambda: scheduler.shutdown(wait=False), AUTOA.save_state):
-            try:
-                action()
-            except Exception:
-                logger.exception("退出时停止调度或保存状态失败，继续清理")
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            logger.exception("退出时停止调度失败，继续清理")
         results = await asyncio.gather(
             CloseRecordManager.flush_pending_records(),
             AUTOA.close_http_session(),
