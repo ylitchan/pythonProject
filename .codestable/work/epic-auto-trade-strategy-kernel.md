@@ -3,7 +3,7 @@ epic: ../epics/auto-trade-strategy-kernel.md
 phase: acceptance
 approved_revision: 138CD601571298BCA2147869834A1D6F5FD1363F74180883E13C7D58221C5111
 current_item: null
-next_action: 等待用户继续试用；本次提交与推送已获明确授权，后续变更仍按manual策略
+next_action: 已推送origin/dev，等待用户继续试用；后续变更仍按manual策略
 blocked_by: null
 item_progression: continuous
 milestone_commit: manual
@@ -80,13 +80,3 @@ remote_publish: manual
 - 新规则验证：修改前新增10项中出现8个失败观察（含子案例），修复并补齐13项后，新入口42项全部通过；既有parity仅调整多仓固定下轨这一明确授权差异。真实全平调用/记录、OI、DCA、拒单、通知取消、重启和空仓均覆盖。
 - 追加 change review：fresh reviewer `/root/review_bn_postprofit_stop`，collaboration-optimize.spawn_agent，异构 gpt-5.6-sol/high。冻结入口 SHA256 `FB71AA3C9F421032B73B46419D61E6506EC19FA88DA9FFE89BA494F59FE0AAF8`、测试 SHA256 `ACAEED5A94EC81D034EEC3210E2271DB2AFB6B6B7125EA360F57C2ACFF52257F`。终态通过，无 blocking/important/nit；reviewer 独立13项和ruff通过。
 - 本次规则毕业到 Epic DEC-15，验证证据汇总本游标；临时功能游标 `feat-autobn-post-profit-stop.md` 与两份仓库外对照快照已清理。原入口未改，未触碰业务文件/实盘进程，不自动commit或push。
-
-
-
-
-
-
-
-
-
-
