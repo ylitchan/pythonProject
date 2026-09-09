@@ -1129,7 +1129,6 @@ source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
-    { name = "akshare" },
     { name = "apscheduler" },
     { name = "baostock" },
     { name = "binance-sdk-derivatives-trading-portfolio-margin" },
@@ -1145,6 +1144,11 @@ dependencies = [
     { name = "web3" },
 ]
 
+[package.optional-dependencies]
+legacy-market-data = [
+    { name = "akshare" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "ruff" },
@@ -1154,7 +1158,7 @@ dev = [
 requires-dist = [
     { name = "aiofiles", specifier = ">=25.1.0" },
     { name = "aiohttp", specifier = ">=3.13.2" },
-    { name = "akshare", specifier = ">=1.17.85" },
+    { name = "akshare", marker = "extra == 'legacy-market-data'", specifier = ">=1.17.85" },
     { name = "apscheduler", specifier = ">=3.11.1" },
     { name = "baostock", specifier = ">=0.8.9" },
     { name = "binance-sdk-derivatives-trading-portfolio-margin", specifier = ">=5.2.0" },
@@ -1169,6 +1173,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.5" },
     { name = "web3", specifier = ">=7.14.0" },
 ]
+provides-extras = ["legacy-market-data"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.14.11" }]

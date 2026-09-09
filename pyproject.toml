@@ -5,7 +5,6 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "akshare>=1.17.85",
     "apscheduler>=3.11.1",
     "baostock>=0.8.9",
     "openpyxl>=3.1.5",
@@ -21,6 +20,11 @@ dependencies = [
     "aiofiles>=25.1.0",
     "perk-pushplus-sdk>=1.0.1",
     "python-dotenv>=1.2.2",
+]
+
+[project.optional-dependencies]
+legacy-market-data = [
+    "akshare>=1.17.85",
 ]
 
 [dependency-groups]
