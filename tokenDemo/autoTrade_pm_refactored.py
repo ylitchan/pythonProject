@@ -615,7 +615,6 @@ class AshareCache:
     history: dict = field(default_factory=dict)
     calendar: pd.Series | None = None
     calendar_loaded_on: datetime.date | None = None
-    calendar_anchor: datetime.date | None = None
     trading_dates: list[str] = field(default_factory=list)
 
 
@@ -1314,15 +1313,14 @@ class BinanceMarketData(MarketData):
 
 
 class AshareMarketData(MarketData):
-    """同花顺免费公开行情；HTTP/JSONP 仅在此转换为策略所需数据。"""
+    """腾讯行情、东方财富涨停池、新浪交易日历；只使用现有HTTP依赖。"""
 
     TRADING_DAYS_LOOKBACK = 20
-    CALENDAR_WINDOW_DAYS = 60
     MAX_QUOTE_AGE = datetime.timedelta(minutes=5)
     HEADERS = MappingProxyType(
         {
             "User-Agent": "Mozilla/5.0",
-            "Referer": "https://data.10jqka.com.cn/mobile/limitup/v2/index.html",
+            "Referer": "https://finance.qq.com/",
         }
     )
 
@@ -1346,7 +1344,7 @@ class AshareMarketData(MarketData):
                         r"[A-Za-z_$][\w.$]*\s*\((.*)\)\s*;?", text, re.DOTALL
                     )
                     if wrapper is None:
-                        raise ValueError("同花顺响应不是JSON/JSONP")
+                        raise ValueError("行情响应不是JSON/JSONP")
                     payload = json.loads(wrapper.group(1))
             except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
                 if attempt:
@@ -1354,14 +1352,14 @@ class AshareMarketData(MarketData):
                 await asyncio.sleep(0.25)
             else:
                 if not isinstance(payload, dict):
-                    raise ValueError("同花顺响应结构无效")
+                    raise ValueError("行情响应结构无效")
                 return payload
 
     @staticmethod
     def _symbol(code):
         if not isinstance(code, str) or re.fullmatch(r"\d{6}", code) is None:
             raise ValueError("股票代码格式无效")
-        return "hs_" + code
+        return ("sh" if code.startswith("6") else "sz") + code
 
     @staticmethod
     def _ohlcv(values, *, realtime=False):
@@ -1388,8 +1386,7 @@ class AshareMarketData(MarketData):
             raise ValueError("OHLC价格范围不一致")
         if realtime and bar["volume"] == 0:
             raise ValueError("当日没有成交，暂不使用行情")
-        # 同花顺历史/当日接口成交量均为股；策略沿用手。
-        bar["volume"] /= 100
+        # 腾讯日线和行情快照成交量均为手，保持策略单位。
         return bar
 
     async def is_trading_day(self, now):
@@ -1426,58 +1423,39 @@ class AshareMarketData(MarketData):
         dates = await self.recent_dates(now)
         if not dates or dates[0] != now.strftime("%Y-%m-%d"):
             return (), None
+        payload = await self._request(
+            "https://push2ex.eastmoney.com/getTopicZTPool",
+            params={
+                "ut": "7eea3edcaed734bea9cbfc24409ed989",
+                "dpt": "wz.ztzt",
+                "Pageindex": 0,
+                "pagesize": 10000,
+                "sort": "fbt:asc",
+                "date": now.strftime("%Y%m%d"),
+            },
+        )
+        if payload.get("rc") != 0:
+            raise ValueError("东方财富涨停池响应失败")
+        data = payload.get("data")
+        if data is None:
+            return (), None
+        rows = data["pool"]
+        if not isinstance(rows, list):
+            raise ValueError("东方财富涨停池结构无效")
+        total = data.get("tc")
+        if type(total) is not int or total < 0 or total != len(rows):
+            raise ValueError("东方财富涨停池总数缺失或与实际数量不一致")
+        if not rows:
+            return (), None
+        if len(rows) >= 10000:
+            raise ValueError("涨停池达到请求上限，不能确认完整性")
         selected = {}
-        total = None
-        pages = None
-        page = 1
-        while True:
-            payload = await self._request(
-                "https://data.10jqka.com.cn/dataapi/limit_up/limit_up_pool",
-                params={
-                    "date": now.strftime("%Y%m%d"),
-                    "page": page,
-                    "limit": 200,
-                    "filter": "HS,GEM2STAR",
-                    "order_field": "199112",
-                    "order_type": 0,
-                },
-            )
-            if payload.get("status_code") != 0:
-                raise ValueError("同花顺涨停池请求未成功")
-            data = payload["data"]
-            pagination, rows = data["page"], data["info"]
-            count = int(pagination["count"])
-            current_total = int(pagination["total"])
-            if (
-                not isinstance(rows, list)
-                or int(pagination["page"]) != page
-                or not 0 <= count <= 100
-                or not 0 <= current_total <= 20000
-            ):
-                raise ValueError("同花顺涨停池分页无效")
-            if total is None:
-                total, pages = current_total, count
-            if total != current_total or pages != count:
-                raise ValueError("涨停池在分页期间变化，本轮不应用不完整结果")
-            if total == 0:
-                if rows:
-                    raise ValueError("空池计数与数据不一致")
-                return (), None
-            if not rows or not pages:
-                raise ValueError("涨停池分页缺失")
-            for row in rows:
-                code, name = row["code"], row["name"]
-                self._symbol(code)
-                if not isinstance(name, str) or not name:
-                    raise ValueError("涨停池名称缺失")
-                if code in selected:
-                    raise ValueError("涨停池分页重复，不能确认完整性")
-                selected[code] = name
-            if page >= pages:
-                break
-            page += 1
-        if len(selected) != total:
-            raise ValueError("涨停池实际数量与总数不符")
+        for row in rows:
+            code, name = row["c"], row["n"]
+            self._symbol(code)
+            if code in selected or not isinstance(name, str) or not name:
+                raise ValueError("涨停池名称缺失或代码重复")
+            selected[code] = name
         return tuple(selected.items()), MarketContext(now, dates[-1], dates[0])
 
     def invalidate_history(self):
@@ -1487,37 +1465,43 @@ class AshareMarketData(MarketData):
     async def daily_bar(self, code, *, now=None):
         now = market_time(now)
         try:
-            symbol = self._symbol(code)
-            payload = await self._request(
-                f"https://d.10jqka.com.cn/v6/line/{symbol}/01/today.js"
-            )
-            quote = payload[symbol]
-            timestamp = str(quote["1"]) + str(quote["dt"])
-            quote_time = datetime.datetime.strptime(
-                timestamp,
-                "%Y%m%d%H%M" if len(timestamp) == 12 else "%Y%m%d%H%M%S",
-            ).replace(tzinfo=MARKET_TIMEZONE)
-            if quote_time.date() != now.date() or quote_time > now + datetime.timedelta(
-                minutes=1
-            ):
-                raise ValueError("同花顺行情日期/时间不匹配")
-            # 午休/收盘后用最近连续交易结束时间核验，不能把前一日行情当作今天。
-            clock = (now.hour, now.minute)
-            expected = now
-            if (11, 30) <= clock < (13, 0):
-                expected = now.replace(hour=11, minute=30, second=0, microsecond=0)
-            elif clock >= (15, 0):
-                expected = now.replace(hour=15, minute=0, second=0, microsecond=0)
-            if expected - quote_time > self.MAX_QUOTE_AGE:
-                raise ValueError("同花顺当日行情已过期")
-            return self._ohlcv(
-                (quote[key] for key in ("7", "8", "9", "11", "13")), realtime=True
-            )
+            payload = await self._quote_payload(code)
+            return self._current_bar(code, payload, now)
         except Exception as error:
             self.logger.warning(
-                f"{code} 获取同花顺当日日线失败:{type(error).__name__}: {error}"
+                f"{code} 获取腾讯当日行情失败:{type(error).__name__}: {error}"
             )
             return None
+
+    def _current_bar(self, code, payload, now):
+        quote = payload["qt"][self._symbol(code)]
+        if quote[2] != code:
+            raise ValueError("腾讯行情股票代码不匹配")
+        quote_time = datetime.datetime.strptime(quote[30], "%Y%m%d%H%M%S").replace(
+            tzinfo=MARKET_TIMEZONE
+        )
+        if quote_time.date() != now.date() or quote_time > now + datetime.timedelta(
+            minutes=1
+        ):
+            raise ValueError("腾讯行情日期/时间不匹配")
+        expected = now
+        if (11, 30) <= (now.hour, now.minute) < (13, 0):
+            expected = now.replace(hour=11, minute=30, second=0, microsecond=0)
+        elif now.hour >= 15:
+            expected = now.replace(hour=15, minute=0, second=0, microsecond=0)
+        if expected - quote_time > self.MAX_QUOTE_AGE:
+            raise ValueError("腾讯当日行情已过期")
+        return self._ohlcv((quote[i] for i in (5, 33, 34, 3, 6)), realtime=True)
+
+    async def _quote_payload(self, code):
+        symbol = self._symbol(code)
+        payload = await self._request(
+            "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get",
+            params={"param": f"{symbol},day,,,30,qfq"},
+        )
+        if payload.get("code") != 0:
+            raise ValueError("腾讯行情响应失败")
+        return payload["data"][symbol]
 
     async def trading_calendar(self, today=None):
         anchor = market_time(today).date()
@@ -1525,50 +1509,39 @@ class AshareMarketData(MarketData):
         if (
             self.cache.calendar is not None
             and self.cache.calendar_loaded_on == loaded_on
-            and self.cache.calendar_anchor == anchor
         ):
-            return self.cache.calendar
-        try:
-            payload = await self._request(
-                "https://data.10jqka.com.cn/dataapi/limit_up/trade_day",
-                params={
-                    "date": anchor.strftime("%Y%m%d"),
-                    "stock": "stock",
-                    "prev": self.CALENDAR_WINDOW_DAYS,
-                    "next": self.CALENDAR_WINDOW_DAYS,
-                },
+            cached = self.cache.calendar
+            return (
+                cached
+                if cached.iloc[0] <= pd.Timestamp(anchor) <= cached.iloc[-1]
+                else None
             )
-            data = payload["data"]
-            if (
-                payload.get("status_code") != 0
-                or data.get("code") != 0
-                or not isinstance(data.get("trade_day"), bool)
-            ):
-                raise ValueError("同花顺交易日历响应无效")
-            previous, following = data["prev_dates"], data["next_dates"]
-            if (
-                not isinstance(previous, list)
-                or not isinstance(following, list)
-                or len(previous) < self.CALENDAR_WINDOW_DAYS
-                or len(following) < self.CALENDAR_WINDOW_DAYS
-            ):
-                raise ValueError("同花顺交易日历区间缺失")
-            before = pd.to_datetime(previous, format="%Y%m%d", errors="raise")
-            after = pd.to_datetime(following, format="%Y%m%d", errors="raise")
-            pivot = pd.Timestamp(anchor)
-            if not (before < pivot).all() or not (after > pivot).all():
-                raise ValueError("同花顺交易日历方向无效")
+        try:
+            url = "https://finance.sina.com.cn/realstock/company/klc_td_sh.txt"
+            for attempt in range(2):
+                try:
+                    session = await self.http.get()
+                    async with session.get(url, headers=self.HEADERS) as response:
+                        response.raise_for_status()
+                        dates = self._decode_calendar(await response.text())
+                    break
+                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                    if attempt:
+                        raise
+                    await asyncio.sleep(0.25)
             dates = pd.Series(
-                [*before, *([pivot] if data["trade_day"] else []), *after],
+                sorted(set([*dates, pd.Timestamp("1992-05-04")])),
                 dtype="datetime64[ns]",
             )
-            if not dates.is_monotonic_increasing or dates.duplicated().any():
-                raise ValueError("同花顺交易日历乱序或重复")
+            if (
+                len(dates) < self.TRADING_DAYS_LOOKBACK
+                or not dates.iloc[0] <= pd.Timestamp(anchor) <= dates.iloc[-1]
+            ):
+                raise ValueError("新浪交易日历不完整")
             self.cache.calendar = dates
             self.cache.calendar_loaded_on = loaded_on
-            self.cache.calendar_anchor = anchor
         except Exception as error:
-            self.logger.error(f"获取同花顺交易日历失败:{type(error).__name__}: {error}")
+            self.logger.error(f"获取新浪交易日历失败:{type(error).__name__}: {error}")
         cached = self.cache.calendar
         return (
             cached
@@ -1576,6 +1549,57 @@ class AshareMarketData(MarketData):
             and cached.iloc[0] <= pd.Timestamp(anchor) <= cached.iloc[-1]
             else None
         )
+
+    @staticmethod
+    def _decode_calendar(payload):
+        # 新浪KLC交易日历：6位字符按低位优先读取，日期使用工作日游程编码。
+        match = re.fullmatch(
+            r'\s*var datelist=("[A-Za-z0-9+/]+");\s*var KLC_TD_SH=datelist;\s*', payload
+        )
+        if match is None:
+            raise ValueError("新浪交易日历响应格式无效")
+        encoded = json.loads(match.group(1))
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        digits = [alphabet.index(c) for c in encoded]
+        bit = 0
+
+        def read(width):
+            nonlocal bit
+            if width < 0 or width > 30 or bit + width > len(digits) * 6:
+                raise ValueError("新浪交易日历位流截断或长度无效")
+            value = 0
+            for shift in range(width):
+                value |= ((digits[bit // 6] >> (bit % 6)) & 1) << shift
+                bit += 1
+            return value
+
+        if read(12) != 139 or (63 ^ read(6)) > 1:
+            raise ValueError("新浪交易日历编码版本无效")
+        day = read(18) - 1
+        end = read(18)
+        length = 0
+        remaining = -1
+        dates = []
+        while day < end:
+            day += 1
+            if day % 7 in (3, 4):
+                day += 5 - day % 7
+            date = pd.Timestamp("1970-01-01") + pd.Timedelta(days=7657 + day)
+            if remaining <= 0:
+                if read(1):
+                    sign = 2 * read(1) - 1
+                    count = 1
+                    while read(1):
+                        count += 1
+                    length += sign * count
+                remaining = read(3 * length) + 1
+                if not dates:
+                    dates.append(date)
+                    remaining -= 1
+            else:
+                dates.append(date)
+            remaining -= 1
+        return dates
 
     async def recent_dates(self, today=None, days=None):
         today = market_time(today)
@@ -1614,46 +1638,34 @@ class AshareMarketData(MarketData):
         )
 
     async def fetch_bars(self, code, context):
-        current_bar = await self.daily_bar(code, now=context.now)
-        if current_bar is None:
-            return MarketBars()
         end_date = pd.Timestamp(
             context.end_date or market_time(context.now).date()
         ).normalize()
         start_date = pd.Timestamp(context.start_date or "1970-01-01").normalize()
         if end_date.date() != market_time(context.now).date():
-            self.logger.warning(f"{code} 历史范围末日与实时行情日期不一致")
             return MarketBars()
-        cache_key = (code, start_date, end_date)
         try:
-            if cache_key not in self.cache.history:
-                symbol = self._symbol(code)
-                payload = await self._request(
-                    f"https://d.10jqka.com.cn/v6/line/{symbol}/01/last.js"
-                )
-                rows = payload["data"].split(";")
-                if not rows or not rows[0]:
-                    raise ValueError("同花顺前复权历史日线为空")
-                records = []
-                for row in rows:
-                    columns = row.split(",")
-                    date = pd.Timestamp(
-                        datetime.datetime.strptime(columns[0], "%Y%m%d")
+            # 单次腾讯响应同时含历史线和当日行情，避免每币重复取数。
+            payload = await self._quote_payload(code)
+            current_bar = self._current_bar(code, payload, market_time(context.now))
+            rows = payload.get("qfqday")
+            if not isinstance(rows, list) or not rows:
+                raise ValueError("腾讯前复权历史日线为空")
+            records = []
+            for row in rows:
+                date = pd.Timestamp(datetime.datetime.strptime(row[0], "%Y-%m-%d"))
+                if start_date <= date < end_date:
+                    records.append(
+                        {"date": date, **self._ohlcv((row[i] for i in (1, 3, 4, 2, 5)))}
                     )
-                    # 不把供应商未完成的当日行或日期范围之外的数据混进历史样本。
-                    if start_date <= date < end_date:
-                        records.append({"date": date, **self._ohlcv(columns[1:6])})
-                if not records:
-                    raise ValueError("指定日期范围内无已完成日线")
-                history = pd.DataFrame(records)
-                if (
-                    history["date"].duplicated().any()
-                    or not history["date"].is_monotonic_increasing
-                ):
-                    raise ValueError("同花顺历史日线乱序或重复")
-                self.cache.history[cache_key] = history
-            history = self.cache.history[cache_key]
-            # today.js 的明确日期和正成交量确认当日有交易，支持日历失败时仅退出。
+            if not records:
+                raise ValueError("指定日期范围无历史日线")
+            history = pd.DataFrame(records)
+            if (
+                history["date"].duplicated().any()
+                or not history["date"].is_monotonic_increasing
+            ):
+                raise ValueError("腾讯历史日线乱序或重复")
             return MarketBars.from_frame(
                 pd.concat(
                     [history, pd.DataFrame([{"date": end_date, **current_bar}])],
@@ -1662,7 +1674,7 @@ class AshareMarketData(MarketData):
             )
         except Exception as error:
             self.logger.warning(
-                f"{code} 获取同花顺历史日线失败:{type(error).__name__}: {error}"
+                f"{code} 获取腾讯K线失败:{type(error).__name__}: {error}"
             )
             return MarketBars()
 
