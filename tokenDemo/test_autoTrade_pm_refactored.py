@@ -1665,6 +1665,251 @@ class RecoveryRegressionTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(dict(update.positions)["BTCUSDT"].tp_count, 2)
 
 
+class MissingOIGuardTest(unittest.IsolatedAsyncioTestCase):
+    async def test_resolved_direction_conflict_restores_normal_position_management(
+        self,
+    ):
+        data = m.BinanceMarketData(make_gateway(), MagicMock())
+        data.oi_5m = AsyncMock(return_value=[{"sumOpenInterest": 120}])
+        held = make_position()
+        snapshot = m.StateSnapshot({"BTCUSDT": held}, {})
+        strategy = m.AUTOBN(data)
+        long = {
+            "symbol": "BTCUSDT",
+            "positionSide": "LONG",
+            "positionAmt": "10",
+            "entryPrice": "10",
+        }
+        short = {
+            "symbol": "BTCUSDT",
+            "positionSide": "SHORT",
+            "positionAmt": "-2",
+            "entryPrice": "10",
+        }
+        strategy._positions_patch([long, short], snapshot)
+        self.assertEqual(data.recovery_symbols(), ("BTCUSDT",))
+        strategy._positions_patch([long], snapshot)
+        self.assertEqual(data.recovery_symbols(), ())
+        decision = await strategy.manage_position(
+            "BTCUSDT", make_bars(7), snapshot, m.MarketContext(NOW)
+        )
+        self.assertEqual(decision.intent.kind, m.ActionKind.ADD)
+
+    async def test_conflicting_account_directions_block_add_but_keep_exits(self):
+        data = m.BinanceMarketData(make_gateway(), MagicMock())
+        data.require_position_recovery("BTCUSDT")
+        data.oi_5m = AsyncMock(return_value=[{"sumOpenInterest": 120}])
+        held = make_position()
+        strategy = m.AUTOBN(data)
+        for price, expected in ((7, None), (21, m.ActionKind.CLOSE)):
+            result = await strategy.manage_position(
+                "BTCUSDT",
+                make_bars(price),
+                m.StateSnapshot({"BTCUSDT": held}, {}),
+                m.MarketContext(NOW),
+            )
+            self.assertEqual(result.intent.kind if result.intent else None, expected)
+
+    async def test_recovery_rejects_other_symbol_response(self):
+        gateway = make_gateway()
+        gateway.positions.return_value = [
+            {
+                "symbol": "OTHERUSDT",
+                "positionSide": "LONG",
+                "positionAmt": "1",
+                "entryPrice": "10",
+            }
+        ]
+        data = m.BinanceMarketData(gateway, MagicMock())
+        data.require_position_recovery("BTCUSDT")
+        result = await m.AUTOBN(data).evaluate_signal(
+            "BTCUSDT", make_bars(10), m.StateSnapshot({}, {}), m.MarketContext(NOW)
+        )
+        self.assertEqual(result.patch.positions, ())
+        self.assertIsNone(result.intent)
+        self.assertEqual(data.recovery_symbols(), ("BTCUSDT",))
+
+    async def test_unregistered_account_position_recovers_n_without_new_order(self):
+        gateway = make_gateway()
+        gateway.positions.return_value = [
+            {
+                "symbol": "BTCUSDT",
+                "positionSide": "LONG",
+                "positionAmt": "10",
+                "entryPrice": "10",
+            }
+        ]
+        data = m.BinanceMarketData(gateway, MagicMock())
+        data.oi_5m = AsyncMock(return_value=[{"sumOpenInterest": 120}])
+        data.oi_history = AsyncMock(
+            return_value=[{"sumOpenInterest": 100 + i % 3} for i in range(30)]
+        )
+        strategy = m.AUTOBN(data)
+        strategy._positions_patch(
+            gateway.positions.return_value, m.StateSnapshot({}, {})
+        )
+        decision = await strategy.evaluate_signal(
+            "BTCUSDT", make_bars(10), m.StateSnapshot({}, {}), m.MarketContext(NOW)
+        )
+        held = dict(decision.patch.positions)["BTCUSDT"]
+        self.assertEqual(held.strategy, (m.StrategyTag.N,))
+        self.assertGreater(held.guard.open_interest, 0)
+        self.assertGreater(held.stop_loss, 0)
+        self.assertEqual(held.entry_price, 10)
+        self.assertIsNone(decision.intent)
+        self.assertEqual(data.recovery_symbols(), ())
+        gateway.submit.assert_not_awaited()
+
+    async def test_unregistered_recovery_retries_without_opening_on_missing_oi(self):
+        gateway = make_gateway()
+        gateway.positions.return_value = [
+            {
+                "symbol": "BTCUSDT",
+                "positionSide": "LONG",
+                "positionAmt": "10",
+                "entryPrice": "10",
+            }
+        ]
+        data = m.BinanceMarketData(gateway, MagicMock())
+        data.require_position_recovery("BTCUSDT")
+        data.oi_5m = AsyncMock(return_value=[])
+        data.oi_history = AsyncMock(return_value=[])
+        decision = await m.AUTOBN(data).evaluate_signal(
+            "BTCUSDT", make_bars(10), m.StateSnapshot({}, {}), m.MarketContext(NOW)
+        )
+        self.assertEqual(decision.patch.positions, ())
+        self.assertIsNone(decision.intent)
+        self.assertEqual(data.recovery_symbols(), ("BTCUSDT",))
+        gateway.submit.assert_not_awaited()
+
+    async def test_closed_recovery_candidate_does_not_permanently_block_new_signals(
+        self,
+    ):
+        gateway = make_gateway()
+        data = m.BinanceMarketData(gateway, MagicMock())
+        data.require_position_recovery("BTCUSDT")
+        decision = await m.AUTOBN(data).evaluate_signal(
+            "BTCUSDT", make_bars(10), m.StateSnapshot({}, {}), m.MarketContext(NOW)
+        )
+        self.assertEqual(data.recovery_symbols(), ())
+        self.assertEqual(decision.patch.positions, ())
+
+    async def test_short_recovery_has_price_rails_without_oi_requests(self):
+        gateway = make_gateway()
+        gateway.positions.return_value = [
+            {
+                "symbol": "BTCUSDT",
+                "positionSide": "SHORT",
+                "positionAmt": "-10",
+                "entryPrice": "10",
+            }
+        ]
+        data = m.BinanceMarketData(gateway, MagicMock())
+        data.require_position_recovery("BTCUSDT")
+        data.oi_5m = AsyncMock()
+        decision = await m.AUTOBN(data).evaluate_signal(
+            "BTCUSDT", make_bars(10), m.StateSnapshot({}, {}), m.MarketContext(NOW)
+        )
+        held = dict(decision.patch.positions)["BTCUSDT"]
+        self.assertEqual(held.position_side, m.PositionSide.SHORT)
+        self.assertGreater(held.stop_loss, held.take_profit)
+        data.oi_5m.assert_not_awaited()
+
+    async def test_recovery_uses_peak_and_exits_if_current_already_below_guard(self):
+        values = [100 + i % 3 for i in range(24)] + [150] * 6
+        data = MagicMock(
+            oi_5m=AsyncMock(return_value=[{"sumOpenInterest": 105}]),
+            oi_history=AsyncMock(return_value=[{"sumOpenInterest": x} for x in values]),
+        )
+        held = make_position(
+            guard=m.OIStop(open_interest=0), strategy=(m.StrategyTag.N,)
+        )
+        decision = await m.AUTOBN(data).manage_position(
+            "BTCUSDT",
+            make_bars(8.5),
+            m.StateSnapshot({"BTCUSDT": held}, {}),
+            m.MarketContext(NOW),
+        )
+        expected = min(
+            150 * 0.9,
+            m.sample_probability(values[:-6], 105)["mean"]
+            + m.sample_probability(values[:-6], 105)["std"] * 10,
+        )
+        self.assertAlmostEqual(
+            dict(decision.patch.positions)["BTCUSDT"].guard.open_interest, expected
+        )
+        self.assertEqual(decision.intent.kind, m.ActionKind.CLOSE)
+        self.assertEqual(decision.intent.position.close_reason, "OI止损")
+        self.assertEqual(decision.intent.ratio, 1)
+
+    async def test_missing_guard_recovers_original_formula_before_dca(self):
+        data = MagicMock(
+            oi_5m=AsyncMock(return_value=[{"sumOpenInterest": 120}]),
+            oi_history=AsyncMock(
+                return_value=[{"sumOpenInterest": 100 + i % 3} for i in range(30)]
+            ),
+        )
+        strategy = m.AUTOBN(data)
+        held = make_position(
+            guard=m.OIStop(open_interest=0),
+            strategy=(m.StrategyTag.N, m.StrategyTag.DCA),
+        )
+        decision = await strategy.manage_position(
+            "BTCUSDT",
+            make_bars(8.5),
+            m.StateSnapshot({"BTCUSDT": held}, {}),
+            m.MarketContext(NOW),
+        )
+        recovered = dict(decision.patch.positions)["BTCUSDT"]
+        sample = [100 + i % 3 for i in range(24)]
+        stats = m.sample_probability(sample, 120)
+        self.assertAlmostEqual(
+            recovered.guard.open_interest, min(108, stats["mean"] + stats["std"] * 10)
+        )
+        self.assertEqual(recovered.stop_loss, held.stop_loss)
+        self.assertEqual(recovered.strategy, held.strategy)
+        self.assertEqual(recovered.tp_count, 0)
+        if decision.intent:
+            self.assertEqual(decision.intent.position.guard, recovered.guard)
+
+    async def test_recovery_failure_blocks_add_but_not_exit(self):
+        for value in (0, float("nan"), -1):
+            data = MagicMock(
+                oi_5m=AsyncMock(return_value=[]), oi_history=AsyncMock(return_value=[])
+            )
+            strategy = m.AUTOBN(data)
+            held = make_position(guard=m.OIStop(open_interest=value))
+            decision = await strategy.manage_position(
+                "BTCUSDT",
+                make_bars(7),
+                m.StateSnapshot({"BTCUSDT": held}, {}),
+                m.MarketContext(NOW),
+            )
+            self.assertIsNone(decision.intent)
+            exit_decision = await strategy.manage_position(
+                "BTCUSDT",
+                make_bars(21),
+                m.StateSnapshot({"BTCUSDT": held}, {}),
+                m.MarketContext(NOW),
+            )
+            self.assertEqual(exit_decision.intent.kind, m.ActionKind.CLOSE)
+
+    async def test_valid_guard_is_not_recalculated(self):
+        data = MagicMock(
+            oi_5m=AsyncMock(return_value=[{"sumOpenInterest": 120}]),
+            oi_history=AsyncMock(),
+        )
+        held = make_position()
+        decision = await m.AUTOBN(data).manage_position(
+            "BTCUSDT",
+            make_bars(10),
+            m.StateSnapshot({"BTCUSDT": held}, {}),
+            m.MarketContext(NOW),
+        )
+        self.assertEqual(dict(decision.patch.positions)["BTCUSDT"].guard, held.guard)
+        data.oi_history.assert_not_awaited()
+
+
 class CoreTradingParityTest(unittest.IsolatedAsyncioTestCase):
     async def test_bn_decisions_match_original_except_authorized_long_price_stop(self):
         from tokenDemo import autoTrade_pm as old

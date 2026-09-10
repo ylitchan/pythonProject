@@ -597,6 +597,7 @@ class ScanCache:
 
 @dataclass
 class BinanceCache:
+    recovery_symbols: set[str] = field(default_factory=set)
     universe: tuple[str, ...] = ()
     symbols_info: dict = field(default_factory=dict)
     lsr_1h: dict = field(default_factory=dict)
@@ -1012,6 +1013,15 @@ class BinanceMarketData(MarketData):
 
     def positions_snapshot(self, now):
         return self.cache.positions if self.cache.positions_at == now else None
+
+    def recovery_symbols(self):
+        return tuple(self.cache.recovery_symbols)
+
+    def require_position_recovery(self, symbol):
+        self.cache.recovery_symbols.add(symbol)
+
+    def resolve_position_recovery(self, symbol):
+        self.cache.recovery_symbols.discard(symbol)
 
     async def bootstrap(self, now):
         if self.cache.bootstrap_attempted:
@@ -2454,18 +2464,33 @@ class AUTOBN(MarketStrategy):
             entry = float(row.get("entryPrice", 0) or 0)
             if entry > 0 and entry != held.entry_price:
                 changes.append((symbol, held.model_copy(update={"entry_price": entry})))
+        pending_recovery = set()
         for symbol, side in actual:
             held = state.positions.get(symbol)
             if held is None or held.position_side.value != side:
-                self.data.logger.error(
-                    f"{symbol} {side} 实际持仓缺少本地策略记录，禁止当作新开仓；请恢复原策略状态"
+                pending_recovery.add(symbol)
+                self.data.require_position_recovery(symbol)
+                self.data.logger.warning(
+                    f"{symbol} {side} 缺少本地策略记录，进入N恢复流程"
                 )
+        for symbol in self.data.recovery_symbols():
+            if symbol not in pending_recovery:
+                self.data.resolve_position_recovery(symbol)
         return StatePatch(positions=tuple(changes))
 
     def scan_candidates(self, state):
-        return self.data.universe()
+        return tuple(
+            dict.fromkeys(
+                (
+                    *self.data.universe(),
+                    *self.data.recovery_symbols(),
+                )
+            )
+        )
 
     async def prepare_instrument(self, symbol, state, context):
+        if symbol not in state.positions and symbol in self.data.recovery_symbols():
+            return Decision()
         obs = state.observations.get(symbol)
         if symbol not in state.positions and obs:
             if obs.is_reopen_cooldown_active(context.now.timestamp()):
@@ -2518,6 +2543,10 @@ class AUTOBN(MarketStrategy):
         )
 
     async def evaluate_signal(self, symbol, bars, state, context):
+        if symbol in self.data.recovery_symbols():
+            return await self._recover_unregistered_position(
+                symbol, bars, state, context
+            )
         obs = state.observations.get(symbol)
         if obs is None:
             return Decision()
@@ -2627,6 +2656,7 @@ class AUTOBN(MarketStrategy):
             elif (
                 is_long
                 and isinstance(held.guard, OIStop)
+                and math.isfinite(held.guard.open_interest)
                 and held.guard.open_interest > 0
             ):
                 oi = await self.data.oi_5m(symbol)
@@ -2645,6 +2675,43 @@ class AUTOBN(MarketStrategy):
                     stage,
                 ),
             )
+        if symbol in self.data.recovery_symbols():
+            self.data.logger.error(
+                f"{symbol} 存在未解决的账户方向冲突，仅保留退出检查，暂停加仓"
+            )
+            return Decision(patch)
+        if is_long and not (
+            isinstance(held.guard, OIStop)
+            and math.isfinite(held.guard.open_interest)
+            and held.guard.open_interest > 0
+        ):
+            try:
+                latest, threshold = await self._recovery_oi_threshold(
+                    symbol, context.now
+                )
+                held = held.model_copy(
+                    update={"guard": OIStop(open_interest=threshold)}
+                )
+                patch = StatePatch(positions=((symbol, held),))
+                self.data.logger.warning(
+                    f"{symbol} 缺失OI止损阈值已按当前数据恢复:{threshold}，不是历史开仓阈值"
+                )
+                if latest <= threshold:
+                    return Decision(
+                        patch,
+                        TradeIntent(
+                            ActionKind.CLOSE,
+                            symbol,
+                            held.model_copy(update={"close_reason": "OI止损"}),
+                            price,
+                            atr,
+                        ),
+                    )
+            except Exception as error:
+                self.data.logger.error(
+                    f"{symbol} OI止损阈值恢复失败，暂停加仓并待下轮重试:{error}"
+                )
+                return Decision(patch)
         if (
             price < held.entry_price - atr
             if is_long
@@ -2954,21 +3021,97 @@ class AUTOBN(MarketStrategy):
                 if not passed:
                     return False, None, None
 
-                oi_drawdown_threshold = oi_5m_last * (
-                    1 - self.BZ_LONG_OI_DRAWDOWN_RATIO
-                )
-                chebyshev_one_percent_oi = chebyshev["mean"] + chebyshev["std"] / (
-                    self.CHEBYSHEV_EXTREME_THRESHOLD**0.5
-                )
-                stop_guard_threshold = min(
-                    oi_drawdown_threshold,
-                    chebyshev_one_percent_oi,
-                )
+                stop_guard_threshold = self._oi_stop_threshold(oi_5m_last, chebyshev)
                 return True, lsrd, stop_guard_threshold
 
         except Exception:
             self.data.logger.exception("检查增仓信号时发生错误")
             return False, None, None
+
+    def _oi_stop_threshold(self, peak_oi, statistics):
+        threshold = min(
+            peak_oi * (1 - self.BZ_LONG_OI_DRAWDOWN_RATIO),
+            statistics["mean"]
+            + statistics["std"] / self.CHEBYSHEV_EXTREME_THRESHOLD**0.5,
+        )
+        if not math.isfinite(threshold) or threshold <= 0:
+            raise ValueError("计算出的OI止损阈值无效")
+        return threshold
+
+    async def _recovery_oi_threshold(self, symbol, now):
+        current = await self.data.oi_5m(symbol)
+        history = await self.data.oi_history(symbol, now, "1h")
+        if not current or not history or len(history) < self.OI_QUERY_LIMIT:
+            raise ValueError("恢复OI阈值所需数据不足")
+        latest = float(current[-1]["sumOpenInterest"])
+        values = [float(row["sumOpenInterest"]) for row in history]
+        if any(not math.isfinite(value) or value <= 0 for value in [latest, *values]):
+            raise ValueError("恢复OI阈值的数据无效")
+        sample = values[: -self.LONG_OI_CHEB_EXCLUDE_RECENT_COUNT]
+        return latest, self._oi_stop_threshold(
+            max(latest, max(values)), sample_probability(sample, latest)
+        )
+
+    async def _recover_unregistered_position(self, symbol, bars, state, context):
+        try:
+            rows = await self.data.gateway.positions(symbol)
+            if not rows:
+                self.data.resolve_position_recovery(symbol)
+                return Decision()
+            if (
+                len(rows) != 1
+                or rows[0].get("symbol") != symbol
+                or rows[0]["positionSide"] not in ("LONG", "SHORT")
+            ):
+                raise ValueError("当前单币单仓模型无法无歧义恢复该账户仓位")
+            row = rows[0]
+            side = PositionSide(row["positionSide"])
+            entry = float(row["entryPrice"])
+            atr = self.calculate_atr(bars)
+            target, stop = self.calc_stop_profit_loss(
+                bars.midprice, side == PositionSide.LONG, atr
+            )
+            if not all(math.isfinite(x) and x > 0 for x in (entry, atr, target, stop)):
+                raise ValueError("恢复仓位的均价/ATR轨道无效")
+            latest, threshold = (
+                await self._recovery_oi_threshold(symbol, context.now)
+                if side == PositionSide.LONG
+                else (None, None)
+            )
+            held = Position(
+                take_profit=target,
+                stop_loss=stop,
+                position_side=side,
+                entry_price=entry,
+                name=symbol,
+                date=int(context.now.strftime("%Y%m%d")),
+                strategy=(StrategyTag.N,),
+                guard=OIStop(open_interest=threshold)
+                if threshold is not None
+                else None,
+            )
+            patch = StatePatch(positions=((symbol, held),))
+            self.data.resolve_position_recovery(symbol)
+            self.data.logger.warning(
+                f"{symbol} 实际仓位已重建为N；使用当前风控基准，未知历史DCA/止盈次数不回填"
+            )
+            if latest is not None and latest <= threshold:
+                return Decision(
+                    patch,
+                    TradeIntent(
+                        ActionKind.CLOSE,
+                        symbol,
+                        held.model_copy(update={"close_reason": "OI止损"}),
+                        bars.price,
+                        atr,
+                    ),
+                )
+            return Decision(patch)
+        except Exception as error:
+            self.data.logger.error(
+                f"{symbol} N持仓恢复失败，禁止新开仓并待下轮重试:{error}"
+            )
+            return Decision()
 
     def _bd_market_matches(self, kline_close, kline_volume, *, refresh=False):
         """先用已有价格和成交量淘汰，不为不合格标的请求OI。"""
