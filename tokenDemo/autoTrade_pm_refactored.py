@@ -1328,9 +1328,6 @@ class MarketData(ABC):
     async def wait_ready(self, symbol):
         return True
 
-    def claim_bar(self, symbol, bars):
-        return bars
-
     def complete_slot_symbol(self, symbol):
         return None
 
@@ -1359,14 +1356,12 @@ class BinanceMarketData(MarketData):
         self._latest_klines = {}
         self._slot_deadline = None
         self._accept_after_ms = 0
-        self._slot_generation = 0
         self._connection_generation = 0
         self._active_generation = None
         self._disconnect_notifier = None
         self._disconnect_notified = False
         self._reconnect_delay = 1.0
         self._notice_tasks = set()
-        self._history_locks = {}
 
     def set_disconnect_notifier(self, notifier):
         self._disconnect_notifier = notifier
@@ -1374,7 +1369,6 @@ class BinanceMarketData(MarketData):
     async def begin_slot(self, symbols, deadline):
         if self._closing or self._slot_deadline is not None:
             raise RuntimeError("行情批次生命周期冲突")
-        self._slot_generation += 1
         self._slot_symbols.update(symbols)
         self._slot_events = {symbol: asyncio.Event() for symbol in self._slot_symbols}
         self._slot_deadline = deadline
@@ -1592,21 +1586,6 @@ class BinanceMarketData(MarketData):
             self.logger.info(f"WS本轮尚无行情 symbol={symbol}，保留订阅待下轮检测")
             return False
 
-    def claim_bar(self, symbol, bars):
-        current = self._latest_bar(symbol)
-        if current is None or not bars or bars.times[-1] != current[0]:
-            self.logger.warning(f"WS行情失效或跨日 symbol={symbol}，本轮跳过")
-            return MarketBars()
-        return MarketBars(
-            bars.times,
-            *(
-                getattr(bars, name)[:-1] + (float(current[i]),)
-                for i, name in enumerate(
-                    ("opens", "highs", "lows", "closes", "volumes"), 1
-                )
-            ),
-        )
-
     def universe(self):
         return self.cache.universe
 
@@ -1695,36 +1674,35 @@ class BinanceMarketData(MarketData):
         if current is None:
             return MarketBars()
         d = current[0]
-        lock = self._history_locks.setdefault(symbol, asyncio.Lock())
         try:
-            async with lock:
-                history = self.cache.kline_history.get(symbol)
-                if not self._valid_history(history, d):
-                    history = await self.gateway.call(
-                        self.gateway.market_client.rest_api.kline_candlestick_data,
-                        symbol=symbol,
-                        interval="1d",
-                        start_time=d - 29 * self.KLINE_INTERVAL_MS,
-                        end_time=d - 1,
-                        limit=29,
+            history = self.cache.kline_history.get(symbol)
+            # 唯一写入入口已完整校验并转为不可变元组；复用时只检查周期边界。
+            if history is None or history[-1][0] != d - self.KLINE_INTERVAL_MS:
+                history = await self.gateway.call(
+                    self.gateway.market_client.rest_api.kline_candlestick_data,
+                    symbol=symbol,
+                    interval="1d",
+                    start_time=d - 29 * self.KLINE_INTERVAL_MS,
+                    end_time=d - 1,
+                    limit=29,
+                )
+                if (
+                    isinstance(history, (list, tuple))
+                    and 0 < len(history) < 29
+                    and self._valid_history(history, d, count=len(history))
+                ):
+                    raise InsufficientKlineHistory(
+                        f"{symbol}历史日K仅{len(history)}根，需要29根，本次跳过"
                     )
-                    if (
-                        isinstance(history, (list, tuple))
-                        and 0 < len(history) < 29
-                        and self._valid_history(history, d, count=len(history))
-                    ):
-                        raise InsufficientKlineHistory(
-                            f"{symbol}历史日K仅{len(history)}根，需要29根，本次跳过"
-                        )
-                    if not self._valid_history(history, d):
-                        raise ValueError("历史日K数量/日期/数值无效")
-                    history = tuple(tuple(row[:6]) for row in history)
-                    self.cache.kline_history[symbol] = history
-                current = self._latest_bar(symbol)
-                if current is None or current[0] != d:
-                    self.logger.warning(f"历史请求期间WS失效或跨日 symbol={symbol}")
-                    return MarketBars()
-                return MarketBars.from_binance((*history, current))
+                if not self._valid_history(history, d):
+                    raise ValueError("历史日K数量/日期/数值无效")
+                history = tuple(tuple(row[:6]) for row in history)
+                self.cache.kline_history[symbol] = history
+            current = self._latest_bar(symbol)
+            if current is None or current[0] != d:
+                self.logger.warning(f"历史请求期间WS失效或跨日 symbol={symbol}")
+                return MarketBars()
+            return MarketBars.from_binance((*history, current))
         except InsufficientKlineHistory:
             raise
         except Exception:
@@ -2909,9 +2887,6 @@ class TradingEngine:
                 return ScanOutcome.NO_DATA
             async with self._semaphore:
                 bars = await self.strategy.data.fetch_bars(symbol, context)
-                if not bars:
-                    return ScanOutcome.NO_DATA
-                bars = self.strategy.data.claim_bar(symbol, bars)
                 if not bars:
                     return ScanOutcome.NO_DATA
                 state = self.state.snapshot()

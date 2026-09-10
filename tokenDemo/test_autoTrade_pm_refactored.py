@@ -301,14 +301,6 @@ class ThreeSourceTest(unittest.IsolatedAsyncioTestCase):
 
 
 class BinanceWebsocketKlineTest(unittest.IsolatedAsyncioTestCase):
-    async def test_valid_recovery_resets_backoff_but_bad_message_does_not(self):
-        data = self.ready_data()
-        data._reconnect_delay = 30.0
-        data._handle_ws_message(self.message(c="nan"), 1)
-        self.assertEqual(data._reconnect_delay, 30.0)
-        data._handle_ws_message(self.message(), 1)
-        self.assertEqual(data._reconnect_delay, 1.0)
-
     def ready_data(self):
         data = m.BinanceMarketData(make_gateway(), MagicMock())
         data._slot_symbols = {"BTCUSDT"}
@@ -435,15 +427,10 @@ class BinanceWebsocketKlineTest(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertFalse(data._valid_history(history, d))
 
-    async def test_claim_once_and_disconnect_notice_dedup(self):
+    async def test_disconnect_notice_dedup(self):
         data = self.ready_data()
         p = self.message()
         data._handle_ws_message(p, 1)
-        bars = m.MarketBars.from_binance(
-            self.history(p["k"]["t"]) + [[p["k"]["t"], 10, 12, 9, 11, 20]]
-        )
-        self.assertEqual(len(data.claim_bar("BTCUSDT", bars)), 30)
-        self.assertIn("BTCUSDT", data._slot_symbols)
         notify = AsyncMock()
         data.set_disconnect_notifier(notify)
         data._connection_failed(ConnectionError())
@@ -565,6 +552,40 @@ class BinanceWebsocketKlineTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await task)
         self.assertFalse(hasattr(data, "_ready_deadline"))
         self.assertFalse(hasattr(data, "WS_FIRST_MESSAGE_TIMEOUT"))
+
+    async def test_valid_recovery_resets_backoff_but_bad_message_does_not(self):
+        data = self.ready_data()
+        data._reconnect_delay = 30.0
+        data._handle_ws_message(self.message(c="nan"), 1)
+        self.assertEqual(data._reconnect_delay, 30.0)
+        data._handle_ws_message(self.message(), 1)
+        self.assertEqual(data._reconnect_delay, 1.0)
+
+    async def test_validated_cache_does_not_revalidate_history_and_snapshot_is_fixed(
+        self,
+    ):
+        data = self.ready_data()
+        p = self.message()
+        d = p["k"]["t"]
+        data._handle_ws_message(p, 1)
+        data.gateway.call = AsyncMock(return_value=self.history(d))
+        bars = await data.fetch_bars("BTCUSDT", m.MarketContext(NOW))
+        with patch.object(
+            data,
+            "_valid_history",
+            side_effect=AssertionError("cache should not be revalidated"),
+        ):
+            cached = await data.fetch_bars("BTCUSDT", m.MarketContext(NOW))
+        self.assertEqual(len(cached), 30)
+        updated = self.message(c="12")
+        updated["E"] = p["E"] + 1
+        data._handle_ws_message(updated, 1)
+        self.assertEqual(bars.price, 11)
+        self.assertEqual(cached.price, 11)
+        self.assertEqual(
+            (await data.fetch_bars("BTCUSDT", m.MarketContext(NOW))).price, 12
+        )
+        data.gateway.call.assert_awaited_once()
 
     async def test_sdk_batch_ack_error_and_cleanup_without_network(self):
         from aiohttp import web
@@ -704,7 +725,6 @@ def make_test_engine(strategy, *args, **kwargs):
     )
     strategy.data.end_slot = AsyncMock()
     strategy.data.wait_ready = AsyncMock(return_value=True)
-    strategy.data.claim_bar = lambda symbol, bars: bars
     strategy.data.complete_slot_symbol = MagicMock()
     strategy.data.close = AsyncMock()
     return m.TradingEngine(strategy, *args, **kwargs)

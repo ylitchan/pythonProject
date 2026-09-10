@@ -88,3 +88,17 @@ R3独立review `/root/review_slot_ws`（gpt-5.6-sol/high）终态可合，blocki
 - 真实只读验证：batch1 BTC/ETH均ready，只完成BTC后end_slot服务端LIST仅ETH；batch2仅新加BTC，begin_slot返回BTC+ETH，ETH即时ready；两币完成后LIST为空；close背景任务0。未跑策略/订单/通知。AST相对本轮前AUTOA/AUTOBN/TradingState/BinanceExecutor/BinanceKlineStream完全一致。等待fresh review `/root/review_pending_slots`（gpt-5.6-sol/high）终态；冻结入口9D0F942D77113D9624E580B3202C5A638075782BB4656BC47DF1762F30E579E0，测试7E3B19498E3A51E56DB4D4AD44E76924CF8E5C5353B35FC75B6876BBDA9476E5，Epic C4185AF77FC1DE34B13FB30107704B032441801F9AA5AF4866670FB750DAD6CE。
 
 - DEC-25阶段最终验收：fresh `/root/review_pending_slots`（gpt-5.6-sol/high）终态可合，无blocking/important/nit，冻结三文件哈希一致。109tests、完整ruff/compile/diff检查及真实只读跨slot订退生命周期通过。结论归入Epic DEC-25与测试；work按用户要求保留。本次临时基线目录autotrade-pending-slot-bi4doym7已清理，未提交/推送或重启实盘。
+
+## 2026-09-10 移除额外WS探测（cs-feat）
+
+用户确认仅依赖SDK Ping/Pong维护连接，移除每20秒LIST_SUBSCRIPTIONS主动探测。接收结束/异常/轮换事件仍触发原重连，订退回执、取消清理、PushPlus通知保持。无静默断网主动探测承诺。沿用本work记录，不改交易规则，不自动提交推送或重启。验证使用既有SDK生命周期与重连测试、完整ruff/编译。
+
+- 移除探测验证完成：既有16项WS专项测试通过（含SDK回执、连接恢复、旧回调隔离、取消与退出），完整ruff与编译/diff检查通过。仅删除周期控制请求及其等待分支，保留业务同步与订阅协议，不新增独立review阶段。未发送真实通知或订单，未commit/push/重启。
+
+## 2026-09-10 WS简化与退避修复
+
+用户授权优化审查发现：删除未使用slot计数、重复claim_bar、每标的历史锁，缓存命中只比较历史末根日期，REST新结果仍完整校验。复用现有单轮锁及去重任务边界；退避在收到有效恢复行情后归零，连续失败仍指数抖动。按cs-refactor收敛冗余，cs-issue处理退避恢复错误；不改策略、持久化、通知规则，不提交推送或重启。
+
+- WS简化验证：新增两条回归修前均失败，修后111项全通过；完整ruff/compile/diff通过；AST核对AUTOA/AUTOBN/TradingState/BinanceExecutor/BinanceKlineStream相对本次前完全相同。任务前Temp/autotrade-ws-simplify-w1lerkez收尾清理；独立review `/root/review_ws_simplify`（gpt-5.6-sol/high）审阅冻结入口1DB2E47566179E4B57B2BC410FDDE8DD147B354725D1640E727792145DD0D690、测试D5F64EAEF17DA249FE78A2187B9E4D73B2CE65299A92338086FB01C661CD94FE，等待终态。
+
+- WS简化最终验收：`/root/review_ws_simplify`终态通过，无blocking/important/nit；独立核对生产单币串行、去重和返回到策略之间无await、历史唯一校验写入及退避恢复，另跑4项定向通过，冻结hash无漂移。111tests、完整ruff/compile/diff通过。结论归入Epic与测试，临时基线已清理；未commit/push或重启，保留用户业务Excel与AGENTS。
