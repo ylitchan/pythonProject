@@ -1,9 +1,9 @@
 ---
 epic: ../epics/auto-trade-strategy-kernel.md
 phase: acceptance
-approved_revision: 138CD601571298BCA2147869834A1D6F5FD1363F74180883E13C7D58221C5111
+approved_revision: 89D8398E2ABDD88543E61585A448925DC885D3EEC556152A37BAD9E14C67A89A
 current_item: null
-next_action: 已推送origin/dev，等待用户继续试用；后续变更仍按manual策略
+next_action: 持仓恢复修复已验收，按用户本次授权推送origin/dev；限流仅完成诊断，未改请求策略
 blocked_by: null
 item_progression: continuous
 milestone_commit: manual
@@ -22,6 +22,17 @@ remote_publish: manual
 - [x] ITEM-9
 
 ## 临时决策与证据
+
+- 2026-09-10 恢复修复完成：guard恢复按max(最近30根1h OI、最新5m OI)峰值，原样本剔除末6根计算mean+10std，min两种上界；恢复后已跌破阈值立即生成全平，有效guard不动。完全缺JSON/日志的真实仓位纳入N恢复，当前ATR轨道和实际方向/均价，不发送OPEN或伪造历史次数。方向冲突只保留退出，随后成功账户查询确认冲突消失即清理待恢复候选。
+- 独立审查 `/root/review_full_position_recovery`（collaboration-optimize.spawn_agent，异构gpt-5.6-sol/high，无回退）R1两项已修复（冲突下DCA、错误symbol绑定），R2冲突候选残留已增加红色回归并修复；R3完整候选终态可合，无blocking/important/nit。82项新入口测试含原核心对照通过，Ruff F/编译/diff检查通过。源SHA `4F322FA278D2B6441DF97391A1A4BF9192E67F0E354D5F4CCAED70BDE5672140`，测试SHA `A40244CE2D1119011B8BAD0681AB3FAD4EEAFBD8B4440DDF32F33FA02A8D9C1A`。用户当轮推送授权有效，业务JSON/订单日志/Excel/AGENTS及其他任务游标排除。
+- 限流只读核验：不调用真实币安API；模拟完整process_instrument路径在5m末根滞后时，无观察BD预筛每币3次（2次OI）、BZ确认未通过仍作BD判断7次（4次OI+2次多空比+K线）、完成开仓含1次补查14次。149标的全部落到同一路径的理论总数分别447/1043/2086，不是实际观测量，也不是请求权重；SDK统计接口限制1000次/5分钟，不能与每分钟总REST量直接等同。首次封禁来源缺时间窗口计数/响应头，不能据此认定。请求退避和缓存重试控制不在本次提交。
+
+
+- 2026-09-10 owner进一步确认：恢复阈值用峰值而非已回落当前值，max(30hOI,latest5m)*0.9与原切比雪夫上界取min；跌破恢复阈值当轮全平。JSON和订单日志都缺失的策略账户实际仓位不能无人管理，启动/每日进入N恢复队列，按实际方向/均价与当前轨道及多仓OI建立N，未知历史次数不伪造。原guard修复review通过，扩展恢复review R1提出方向冲突仍可DCA及响应symbol缺校验，已修并新增测试；当前81项通过。
+- 2026-09-10 owner授权“推送”本次恢复修复；业务JSON/订单日志/Excel及用户AGENTS.md排除。另问429缓存：截图实际是HTTP418 RateLimitBanError(-1003)，解封时间上海2026-09-10 10:50:57。仅离线核验SDK和模拟调用，没有为该限流诊断发送真实币安请求；模拟证实收到封禁仍请求后续币，OI/多空比末根落后时同周期5次检查仍5次请求（旧新均如此）。这只是请求放大机制，不证明IP封禁唯一来源；该问题未混入本次恢复代码。
+
+
+- 2026-09-10 用户要求修复HAEDALUSDT遗留N+DCA多仓的零OI阈值。旧入口get_position_risk缺本地记录时创建N并默认guard=0，新入口只读取未恢复；关机是否为原始丢失原因未证实。按cs-issue在已有持仓管理边界修复，共用正常开仓阈值公式，只对缺失/非有限/非正多仓guard按窗口峰值恢复，保留已有正阈值；失败不DCA但退出规则继续，不改业务文件/真实订单，不自动commit/push。无可用ultracode，使用现有工具。
 
 - 2026-09-09 owner 明确要求“推送”，本次授权覆盖已验证的新入口、对应测试、依赖调整及本Epic契约/游标；不包含运行数据或其他任务游标。实现提交 `eaf43ef2`（新增统一交易引擎与同花顺行情单文件入口），依赖提交 `f903d01d`（将AkShare迁移为旧脚本可选依赖），验收记录独立提交；目标为已核实的 `origin/dev`。提交前核验源/测试SHA仍为71项测试通过版本，lock/编译/diff检查通过，fetch确认无分支分歧；不改运行进程、业务JSON或Excel。此前“未提交/未推送”条目保留为相应阶段历史。
 
