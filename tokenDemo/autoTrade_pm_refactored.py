@@ -3029,7 +3029,7 @@ class AUTOBN(MarketStrategy):
             return False, None, None
 
     def _oi_stop_threshold(self, peak_oi, statistics):
-        threshold = min(
+        threshold = max(
             peak_oi * (1 - self.BZ_LONG_OI_DRAWDOWN_RATIO),
             statistics["mean"]
             + statistics["std"] / self.CHEBYSHEV_EXTREME_THRESHOLD**0.5,

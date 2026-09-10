@@ -1666,6 +1666,15 @@ class RecoveryRegressionTest(unittest.IsolatedAsyncioTestCase):
 
 
 class MissingOIGuardTest(unittest.IsolatedAsyncioTestCase):
+    def test_oi_threshold_uses_larger_candidate(self):
+        strategy = m.AUTOBN(MagicMock())
+        self.assertAlmostEqual(
+            strategy._oi_stop_threshold(200, {"mean": 100, "std": 1}), 180
+        )
+        self.assertAlmostEqual(
+            strategy._oi_stop_threshold(100, {"mean": 100, "std": 2}), 120
+        )
+
     async def test_resolved_direction_conflict_restores_normal_position_management(
         self,
     ):
@@ -1830,7 +1839,7 @@ class MissingOIGuardTest(unittest.IsolatedAsyncioTestCase):
             m.StateSnapshot({"BTCUSDT": held}, {}),
             m.MarketContext(NOW),
         )
-        expected = min(
+        expected = max(
             150 * 0.9,
             m.sample_probability(values[:-6], 105)["mean"]
             + m.sample_probability(values[:-6], 105)["std"] * 10,
@@ -1864,7 +1873,7 @@ class MissingOIGuardTest(unittest.IsolatedAsyncioTestCase):
         sample = [100 + i % 3 for i in range(24)]
         stats = m.sample_probability(sample, 120)
         self.assertAlmostEqual(
-            recovered.guard.open_interest, min(108, stats["mean"] + stats["std"] * 10)
+            recovered.guard.open_interest, max(108, stats["mean"] + stats["std"] * 10)
         )
         self.assertEqual(recovered.stop_loss, held.stop_loss)
         self.assertEqual(recovered.strategy, held.strategy)
