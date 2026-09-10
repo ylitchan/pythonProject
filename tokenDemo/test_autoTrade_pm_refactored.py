@@ -301,6 +301,14 @@ class ThreeSourceTest(unittest.IsolatedAsyncioTestCase):
 
 
 class BinanceWebsocketKlineTest(unittest.IsolatedAsyncioTestCase):
+    async def test_valid_recovery_resets_backoff_but_bad_message_does_not(self):
+        data = self.ready_data()
+        data._reconnect_delay = 30.0
+        data._handle_ws_message(self.message(c="nan"), 1)
+        self.assertEqual(data._reconnect_delay, 30.0)
+        data._handle_ws_message(self.message(), 1)
+        self.assertEqual(data._reconnect_delay, 1.0)
+
     def ready_data(self):
         data = m.BinanceMarketData(make_gateway(), MagicMock())
         data._slot_symbols = {"BTCUSDT"}

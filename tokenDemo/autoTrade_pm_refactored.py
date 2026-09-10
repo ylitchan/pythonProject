@@ -1364,6 +1364,7 @@ class BinanceMarketData(MarketData):
         self._active_generation = None
         self._disconnect_notifier = None
         self._disconnect_notified = False
+        self._reconnect_delay = 1.0
         self._notice_tasks = set()
         self._history_locks = {}
 
@@ -1453,7 +1454,6 @@ class BinanceMarketData(MarketData):
             self.logger.exception("WS断连PushPlus通知失败")
 
     async def _ws_loop(self):
-        delay = 1.0
         while not self._closing:
             try:
                 if self._stream is None or self._stream.disconnected.is_set():
@@ -1471,20 +1471,17 @@ class BinanceMarketData(MarketData):
                         self._subscribed_symbols.clear()
                         await self._subscribe_active()
                     self.logger.info("币安K线WS连接已建立（官方SDK market）")
-                try:
-                    await asyncio.wait_for(self._stream.disconnected.wait(), 20)
-                    raise ConnectionError("WS连接关闭或轮换")
-                except asyncio.TimeoutError:
-                    # 请求/回执作为应用层心跳；SDK负责服务端PING/PONG及23小时轮换。
-                    await self._stream.command("LIST_SUBSCRIPTIONS")
+                # SDK处理Ping/Pong；仅在接收结束、异常或轮换时恢复连接。
+                await self._stream.disconnected.wait()
+                raise ConnectionError("WS连接关闭或轮换")
             except asyncio.CancelledError:
                 raise
             except Exception as error:
                 self._connection_failed(error)
-                await asyncio.sleep(random.uniform(delay * 0.5, delay))
-                delay = min(delay * 2, 30)
-            else:
-                delay = 1.0
+                await asyncio.sleep(
+                    random.uniform(self._reconnect_delay * 0.5, self._reconnect_delay)
+                )
+                self._reconnect_delay = min(self._reconnect_delay * 2, 30)
 
     async def close(self):
         self._closing = True
@@ -1556,6 +1553,7 @@ class BinanceMarketData(MarketData):
             if previous is not None and event_ms <= previous[0]:
                 return
             self._latest_klines[symbol] = (event_ms, row)
+            self._reconnect_delay = 1.0
             event = self._slot_events.get(symbol)
             if event is not None:
                 event.set()
