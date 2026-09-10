@@ -7,12 +7,17 @@ import logging
 import math
 import os
 import re
+import random
 import signal
 import sys
 import tempfile
 import threading
 import time
 from collections import Counter
+from contextvars import ContextVar
+from functools import wraps
+from logging.handlers import RotatingFileHandler
+from urllib.parse import parse_qs, urlsplit
 from dataclasses import dataclass, field, replace
 from abc import ABC, abstractmethod
 from decimal import ROUND_DOWN, Decimal
@@ -26,7 +31,13 @@ from uuid import uuid4
 import aiohttp
 import pandas as pd
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from binance_common.configuration import ConfigurationRestAPI
+from binance_common.configuration import (
+    ConfigurationRestAPI,
+    ConfigurationWebSocketStreams,
+)
+from binance_sdk_derivatives_trading_usds_futures.websocket_streams.websocket_streams import (
+    DerivativesTradingUsdsFuturesWebSocketStreams,
+)
 from binance_common.errors import (
     BadRequestError,
     ForbiddenError,
@@ -608,6 +619,7 @@ class BinanceCache:
     bootstrap_attempted: bool = False
     positions: tuple = ()
     positions_at: datetime.datetime | None = None
+    kline_history: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -871,6 +883,211 @@ class Notifications:
             self.logger.exception(f"{channel}消息发送失败")
 
 
+_BINANCE_REQUEST_SCOPE = ContextVar("binance_request_scope", default="other")
+
+
+class BinanceRequestDiagnostics:
+    """临时请求观测：只记白名单标签和数值，绝不改变请求/重试/交易行为。"""
+
+    ENDPOINTS = MappingProxyType(
+        {
+            "/fapi/v1/klines": "klines",
+            "/futures/data/openInterestHist": "oi",
+            "/futures/data/globalLongShortAccountRatio": "lsr",
+            "/fapi/v1/premiumIndex": "mark_price",
+            "/fapi/v1/exchangeInfo": "exchange_info",
+            "/papi/v1/account": "account",
+            "/papi/v1/um/positionRisk": "positions",
+            "/papi/v1/um/leverage": "leverage",
+            "/papi/v1/um/order": "order",
+        }
+    )
+    PERIODS = frozenset(("5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"))
+    SCOPES = frozenset(("held", "observed", "unobserved", "pending", "other"))
+
+    def __init__(self, *, logger=None):
+        self.logger = logger
+        if logger is None:
+            self.logger = logging.getLogger("BinanceRequests")
+            if not self.logger.handlers:
+                handler = RotatingFileHandler(
+                    os.path.join(os.path.dirname(__file__), "binance_requests.log"),
+                    maxBytes=5 * 1024 * 1024,
+                    backupCount=2,
+                    encoding="utf-8",
+                    delay=True,
+                )
+                handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+                self.logger.addHandler(handler)
+                self.logger.setLevel(logging.INFO)
+                self.logger.propagate = False
+        self._lock = threading.Lock()
+        self._buckets = {}
+        self._headers = {}
+        self._last_report = time.monotonic()
+        self._started_at = self._last_report
+        self._last_limit = {}
+        self._local = threading.local()
+        self._sessions = set()
+
+    def _prune(self, now):
+        cutoff = int(now) - 300
+        for second in tuple(self._buckets):
+            if second <= cutoff:
+                del self._buckets[second]
+        for key, (timestamp, _) in tuple(self._headers.items()):
+            if timestamp <= now - 300:
+                del self._headers[key]
+
+    def note(self, kind, endpoint, period="", detail=""):
+        try:
+            scope = _BINANCE_REQUEST_SCOPE.get()
+            if scope not in self.SCOPES:
+                scope = "other"
+            key = ":".join((kind, endpoint, period, scope, detail))
+            with self._lock:
+                now = time.monotonic()
+                self._prune(now)
+                self._buckets.setdefault(int(now), Counter())[key] += 1
+        except Exception:
+            pass  # 诊断故障不能改变业务结果。
+
+    def snapshot(self):
+        with self._lock:
+            now = time.monotonic()
+            self._prune(now)
+            minute, five = Counter(), Counter()
+            for second, counts in self._buckets.items():
+                five.update(counts)
+                if second > int(now) - 60:
+                    minute.update(counts)
+            return {
+                "pid": os.getpid(),
+                "time": market_time().isoformat(),
+                "observed_seconds": round(max(0, now - self._started_at), 1),
+                "http_1m": sum(v for k, v in minute.items() if k.startswith("http:")),
+                "http_5m": sum(v for k, v in five.items() if k.startswith("http:")),
+                "sdk_calls_5m": sum(v for k, v in five.items() if k.startswith("sdk:")),
+                "extra_sends_5m": sum(
+                    v for k, v in five.items() if k.startswith("extra_send:")
+                ),
+                "events_1m": dict(minute),
+                "events_5m": dict(five),
+                "server_headers": {
+                    k: {"value": v, "age_seconds": round(now - t, 1)}
+                    for k, (t, v) in self._headers.items()
+                },
+            }
+
+    def report(self, *, limit=None, force=False):
+        try:
+            with self._lock:
+                now = time.monotonic()
+                status = limit["http_status"] if limit else None
+                last_limit = self._last_limit.get(status)
+                first_limit = limit is not None and (
+                    last_limit is None or now - last_limit >= 300
+                )
+                if not force and not first_limit and now - self._last_report < 60:
+                    return
+                if first_limit:
+                    self._last_limit[status] = now
+                self._last_report = now
+            payload = self.snapshot()
+            payload["event"] = "rate_limit" if first_limit else "minute_summary"
+            if limit is not None:
+                payload["trigger"] = limit
+            self.logger.info(json.dumps(payload, ensure_ascii=False, sort_keys=True))
+        except Exception:
+            try:
+                logging.getLogger("AutoTrade").warning(
+                    "币安诊断汇总记录失败，交易流程继续"
+                )
+            except Exception:
+                pass
+
+    def invoke(self, method, *args, **kwargs):
+        previous = getattr(self._local, "attempts", None)
+        self._local.attempts = 0
+        self.note("sdk", "call")
+        try:
+            return method(*args, **kwargs)
+        finally:
+            self._local.attempts = previous
+            self.report()
+
+    def attach(self, session, service):
+        if id(session) in self._sessions:
+            return
+        self._sessions.add(id(session))
+        original = session.send
+
+        @wraps(original)
+        def send(request, **kwargs):
+            endpoint, period, symbol = "other", "", ""
+            method = (
+                request.method
+                if request.method in ("GET", "POST", "PUT", "DELETE", "HEAD")
+                else "OTHER"
+            )
+            try:
+                url = urlsplit(request.url)
+                endpoint = self.ENDPOINTS.get(url.path, "other")
+                parameters = parse_qs(url.query)
+                value = parameters.get("period", parameters.get("interval", [""]))[0]
+                period = value if value in self.PERIODS else ""
+                value = parameters.get("symbol", [""])[0]
+                symbol = value if re.fullmatch(r"[A-Z0-9_]{1,40}", value) else ""
+                attempt = getattr(self._local, "attempts", None)
+                if attempt is not None:
+                    self._local.attempts = attempt + 1
+                    if attempt:
+                        self.note("extra_send", endpoint, period, service)
+                self.note("http", endpoint, period, service + "/" + method)
+            except Exception:
+                pass
+            try:
+                response = original(request, **kwargs)
+            except Exception:
+                self.note("network_error", endpoint, period, service)
+                self.report()
+                raise
+            try:
+                status = int(response.status_code)
+                self.note(
+                    "status",
+                    endpoint,
+                    period,
+                    str(status) if 100 <= status <= 599 else "other",
+                )
+                selected = {}
+                for key, value in response.headers.items():
+                    key = key.lower()
+                    if re.fullmatch(
+                        r"(?:x-mbx|x-sapi)-used-(?:weight|ip-weight)(?:-\d+[smhd])?|x-mbx-order-count-\d+[smhd]|retry-after",
+                        key,
+                    ):
+                        if re.fullmatch(r"\d{1,16}", str(value)):
+                            selected[key] = int(value)
+                with self._lock:
+                    for key, value in selected.items():
+                        self._headers[service + "/" + key] = (time.monotonic(), value)
+                trigger = {
+                    "service": service,
+                    "endpoint": endpoint,
+                    "period": period,
+                    "symbol": symbol,
+                    "http_status": status,
+                    "headers": selected,
+                }
+                self.report(limit=trigger if status in (429, 418) else None)
+            except Exception:
+                pass
+            return response
+
+        session.send = send
+
+
 class BinanceGateway:
     API_TIMEOUT_SECONDS = 15
 
@@ -897,6 +1114,9 @@ class BinanceGateway:
             market_client.rest_api._session.mount("http://", adapter)
         self.market_client, self.papi_client = market_client, papi_client
         self._semaphore = asyncio.Semaphore(8)
+        self.diagnostics = BinanceRequestDiagnostics()
+        for client, service in ((market_client, "fapi"), (papi_client, "papi")):
+            self.diagnostics.attach(client.rest_api._session, service)
 
     @staticmethod
     def unwrap(data):
@@ -915,7 +1135,8 @@ class BinanceGateway:
     async def call(self, method, *args, **kwargs):
         async with self._semaphore:
             result = await asyncio.wait_for(
-                asyncio.to_thread(method, *args, **kwargs), self.API_TIMEOUT_SECONDS
+                asyncio.to_thread(self.diagnostics.invoke, method, *args, **kwargs),
+                self.API_TIMEOUT_SECONDS,
             )
             return self.unwrap(result)
 
@@ -980,9 +1201,141 @@ class BinanceGateway:
         )
 
 
+class BinanceKlineStream(DerivativesTradingUsdsFuturesWebSocketStreams):
+    """官方SDK连接/接收/回执能力的批次适配；不使用SDK逐币订阅及全局订阅表。"""
+
+    def __init__(self, on_message):
+        super().__init__(
+            ConfigurationWebSocketStreams(stream_url="wss://fstream.binance.com/stream")
+        )
+        self._on_kline = on_message
+        self._background = set()
+        self._connection = None
+        self._intentional_close = False
+        self._command_lock = asyncio.Lock()
+        self.disconnected = asyncio.Event()
+
+    async def open(self):
+        # 仅建立market路由；public/private不是日K所需连接。
+        await asyncio.wait_for(
+            self.connect(
+                self.configuration.stream_url, self.configuration, url_paths=["market"]
+            ),
+            8,
+        )
+        if len(self.connections) != 1:
+            raise ConnectionError("SDK未建立market连接")
+        self._connection = self.connections[0]
+
+    async def receive_loop(self, connection):
+        task = asyncio.current_task()
+        self._background.add(task)
+        try:
+            await super().receive_loop(connection)
+        except Exception:
+            logging.getLogger("AutoTrade.WS").exception("官方SDK行情接收失败")
+        finally:
+            self._background.discard(task)
+            if not self._intentional_close:
+                self.disconnected.set()
+
+    async def schedule_reconnect(
+        self, connection, configuration, delay, close_old_connection=True
+    ):
+        # SDK创建的轮换任务也受适配器关闭管理。真正重连由唯一市场数据管理者执行。
+        task = asyncio.current_task()
+        self._background.add(task)
+        try:
+            await asyncio.sleep(delay)
+            if not self._intentional_close:
+                self.disconnected.set()
+        finally:
+            self._background.discard(task)
+
+    async def command(self, method, streams=None):
+        async with self._command_lock:
+            connection = self._connection
+            if connection is None or self.disconnected.is_set():
+                raise ConnectionError("SDK行情连接不可用")
+            request_id = uuid4().hex
+            payload = {"method": method, "id": request_id}
+            if streams is not None:
+                payload["params"] = streams
+            try:
+                future = await super().send_message(payload, connection)
+                response = await asyncio.wait_for(future, 3)
+                if (
+                    response.get("id") != request_id
+                    or "result" not in response
+                    or response.get("code") is not None
+                ):
+                    raise ValueError("WS控制请求失败")
+                return response["result"]
+            except BaseException:
+                self.disconnected.set()
+                raise
+            finally:
+                connection.pending_request.pop(request_id, None)
+
+    async def subscribe_batch(self, symbols):
+        streams = [f"{symbol.lower()}@kline_1d" for symbol in symbols]
+        if streams:
+            # 这些回调表是SDK连接对象的接收契约，封装在此SDK子类内；业务层不访问SDK状态。
+            for stream in streams:
+                self._connection.stream_callback_map[stream] = [self._on_kline]
+                self._connection.response_types[stream] = None
+            if await self.command("SUBSCRIBE", streams) is not None:
+                raise ValueError("WS订阅回执无效")
+
+    async def unsubscribe_batch(self, symbols):
+        streams = [f"{symbol.lower()}@kline_1d" for symbol in symbols]
+        if streams:
+            if await self.command("UNSUBSCRIBE", streams) is not None:
+                raise ValueError("WS退订回执无效")
+            for stream in streams:
+                self._connection.stream_callback_map.pop(stream, None)
+                self._connection.response_types.pop(stream, None)
+
+    async def finish(self):
+        self._intentional_close = True
+        await super().close_connection()
+        # init_connection通过create_task创建SDK收包/轮换任务，让它们注册后统一回收。
+        await asyncio.sleep(0)
+        tasks = tuple(
+            task for task in self._background if task is not asyncio.current_task()
+        )
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._background.clear()
+        self._connection = None
+
+
+class InsufficientKlineHistory(ValueError):
+    """已有历史真实不足，继续等待本轮推送不能补齐。"""
+
+
 class MarketData(ABC):
     @abstractmethod
     async def fetch_bars(self, symbol: str, context: MarketContext) -> MarketBars: ...
+
+    async def begin_slot(self, symbols, deadline):
+        return tuple(symbols)
+
+    async def end_slot(self):
+        return None
+
+    async def wait_ready(self, symbol):
+        return True
+
+    def claim_bar(self, symbol, bars):
+        return bars
+
+    def complete_slot_symbol(self, symbol):
+        return None
+
+    async def close(self):
+        return None
 
 
 class BinanceMarketData(MarketData):
@@ -991,10 +1344,270 @@ class BinanceMarketData(MarketData):
     OI_QUERY_LIMIT = 30
     FIVE_MIN_PERIOD_MS = 300_000
     BASIS_RATE_CACHE_TTL = 300
+    KLINE_INTERVAL_MS = 86_400_000
 
     def __init__(self, gateway, logger):
         self.gateway, self.logger = gateway, logger
         self.cache = BinanceCache()
+        self._stream = None
+        self._ws_task = None
+        self._closing = False
+        self._slot_lock = asyncio.Lock()
+        self._slot_symbols = set()
+        self._subscribed_symbols = set()
+        self._slot_events = {}
+        self._latest_klines = {}
+        self._slot_deadline = None
+        self._accept_after_ms = 0
+        self._slot_generation = 0
+        self._connection_generation = 0
+        self._active_generation = None
+        self._disconnect_notifier = None
+        self._disconnect_notified = False
+        self._notice_tasks = set()
+        self._history_locks = {}
+
+    def set_disconnect_notifier(self, notifier):
+        self._disconnect_notifier = notifier
+
+    async def begin_slot(self, symbols, deadline):
+        if self._closing or self._slot_deadline is not None:
+            raise RuntimeError("行情批次生命周期冲突")
+        self._slot_generation += 1
+        self._slot_symbols.update(symbols)
+        self._slot_events = {symbol: asyncio.Event() for symbol in self._slot_symbols}
+        self._slot_deadline = deadline
+        if not self._slot_symbols:
+            return ()
+        async with self._slot_lock:
+            if self._stream is not None and not self._stream.disconnected.is_set():
+                try:
+                    await self._subscribe_active()
+                except Exception as error:
+                    self._connection_failed(error)
+        if self._ws_task is None or self._ws_task.done():
+            self._ws_task = asyncio.create_task(self._ws_loop())
+        return tuple(sorted(self._slot_symbols))
+
+    async def _subscribe_active(self):
+        added = self._slot_symbols - self._subscribed_symbols
+        if added:
+            await self._stream.subscribe_batch(sorted(added))
+            self._subscribed_symbols.update(added)
+            self.logger.info(
+                f"WS新增订阅:{len(added)} 保留订阅:{len(self._subscribed_symbols)}"
+            )
+        # 首次连接/重连只接受确认订阅后的事件，已有连接增量订阅不打断其他行情。
+        if self._active_generation is None:
+            self._accept_after_ms = int(time.time() * 1000)
+            self._active_generation = self._connection_generation
+
+    async def end_slot(self):
+        self._slot_events.clear()
+        self._slot_deadline = None
+        async with self._slot_lock:
+            completed = sorted(self._subscribed_symbols - self._slot_symbols)
+            if completed and self._stream is not None:
+                try:
+                    await self._stream.unsubscribe_batch(completed)
+                    self._subscribed_symbols.difference_update(completed)
+                    self.logger.info(
+                        f"WS检测结束退订:{len(completed)} 待处理:{len(self._slot_symbols)}"
+                    )
+                except Exception as error:
+                    self._connection_failed(error)
+                    await self._stream.finish()
+            elif self._slot_symbols:
+                self.logger.info(f"WS继续保留待处理标的:{len(self._slot_symbols)}")
+
+    def complete_slot_symbol(self, symbol):
+        self._slot_symbols.discard(symbol)
+        self._latest_klines.pop(symbol, None)
+
+    def _connection_failed(self, error):
+        self._active_generation = None
+        self._latest_klines.clear()
+        for event in self._slot_events.values():
+            event.clear()
+        if self._stream is not None:
+            self._stream.disconnected.set()
+        self.logger.warning(f"币安K线WS连接异常:{type(error).__name__}，准备重连")
+        if not self._closing and not self._disconnect_notified:
+            self._disconnect_notified = True
+            if self._disconnect_notifier is not None:
+                task = asyncio.create_task(
+                    self._notify_disconnect(type(error).__name__)
+                )
+                self._notice_tasks.add(task)
+                task.add_done_callback(self._notice_tasks.discard)
+
+    async def _notify_disconnect(self, reason):
+        try:
+            await asyncio.wait_for(
+                self._disconnect_notifier(
+                    f"币安K线WS连接异常，正在重连\n原因:{reason}\n时间:{market_time().isoformat()}"
+                ),
+                10,
+            )
+        except Exception:
+            self.logger.exception("WS断连PushPlus通知失败")
+
+    async def _ws_loop(self):
+        delay = 1.0
+        while not self._closing:
+            try:
+                if self._stream is None or self._stream.disconnected.is_set():
+                    async with self._slot_lock:
+                        if self._stream is not None:
+                            await self._stream.finish()
+                        self._connection_generation += 1
+                        generation = self._connection_generation
+                        self._stream = BinanceKlineStream(
+                            lambda data, generation=generation: self._handle_ws_message(
+                                data, generation
+                            )
+                        )
+                        await self._stream.open()
+                        self._subscribed_symbols.clear()
+                        await self._subscribe_active()
+                    self.logger.info("币安K线WS连接已建立（官方SDK market）")
+                try:
+                    await asyncio.wait_for(self._stream.disconnected.wait(), 20)
+                    raise ConnectionError("WS连接关闭或轮换")
+                except asyncio.TimeoutError:
+                    # 请求/回执作为应用层心跳；SDK负责服务端PING/PONG及23小时轮换。
+                    await self._stream.command("LIST_SUBSCRIPTIONS")
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                self._connection_failed(error)
+                await asyncio.sleep(random.uniform(delay * 0.5, delay))
+                delay = min(delay * 2, 30)
+            else:
+                delay = 1.0
+
+    async def close(self):
+        self._closing = True
+        self._active_generation = None
+        if self._ws_task is not None:
+            self._ws_task.cancel()
+            await asyncio.gather(self._ws_task, return_exceptions=True)
+            self._ws_task = None
+        if self._stream is not None:
+            await self._stream.finish()
+            self._stream = None
+        for task in tuple(self._notice_tasks):
+            task.cancel()
+        await asyncio.gather(*self._notice_tasks, return_exceptions=True)
+        self._notice_tasks.clear()
+        self._slot_deadline = None
+        self._slot_symbols.clear()
+        self._latest_klines.clear()
+        self._slot_events.clear()
+        self._subscribed_symbols.clear()
+
+    @classmethod
+    def _valid_ohlcv(cls, row):
+        try:
+            o, high, low, c, v = map(float, row[1:6])
+            return (
+                all(math.isfinite(x) for x in (o, high, low, c, v))
+                and 0 < low <= min(o, c) <= max(o, c) <= high
+                and v >= 0
+            )
+        except (TypeError, ValueError, OverflowError):
+            return False
+
+    def _handle_ws_message(self, payload, generation):
+        if generation != self._active_generation or self._closing:
+            return
+        payload = payload.get("data", payload) if isinstance(payload, dict) else None
+        if not isinstance(payload, dict) or payload.get("e") != "kline":
+            return
+        k = payload.get("k")
+        if not isinstance(k, dict):
+            return
+        symbol = k.get("s")
+        if (
+            symbol not in self._subscribed_symbols
+            or symbol not in self._slot_symbols
+            or payload.get("s") != symbol
+            or k.get("i") != "1d"
+        ):
+            return
+        try:
+            now_ms = int(time.time() * 1000)
+            d = now_ms // self.KLINE_INTERVAL_MS * self.KLINE_INTERVAL_MS
+            event_ms = payload["E"]
+            if (
+                type(event_ms) is not int
+                or type(k["t"]) is not int
+                or k["t"] != d
+                or k.get("T") != d + self.KLINE_INTERVAL_MS - 1
+                or k.get("x") is not False
+            ):
+                return
+            if event_ms <= self._accept_after_ms:
+                return
+            row = (d, k["o"], k["h"], k["l"], k["c"], k["v"])
+            if not self._valid_ohlcv(row):
+                return
+            previous = self._latest_klines.get(symbol)
+            if previous is not None and event_ms <= previous[0]:
+                return
+            self._latest_klines[symbol] = (event_ms, row)
+            event = self._slot_events.get(symbol)
+            if event is not None:
+                event.set()
+            if previous is None:
+                self.logger.debug(f"WS首条行情收到 symbol={symbol} open_time={d}")
+            if self._disconnect_notified:
+                self._disconnect_notified = False
+                self.logger.info("币安K线WS行情已恢复")
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return
+
+    def _latest_bar(self, symbol):
+        value = self._latest_klines.get(symbol)
+        now_ms = int(time.time() * 1000)
+        if (
+            value is None
+            or self._active_generation is None
+            or self._slot_deadline is None
+            or time.monotonic() >= self._slot_deadline
+            or value[1][0] != now_ms // self.KLINE_INTERVAL_MS * self.KLINE_INTERVAL_MS
+        ):
+            return None
+        return value[1]
+
+    async def wait_ready(self, symbol):
+        event = self._slot_events.get(symbol)
+        if event is None:
+            return False
+        try:
+            async with asyncio.timeout(max(0, self._slot_deadline - time.monotonic())):
+                while self._latest_bar(symbol) is None:
+                    event.clear()
+                    await event.wait()
+            return True
+        except asyncio.TimeoutError:
+            self.logger.info(f"WS本轮尚无行情 symbol={symbol}，保留订阅待下轮检测")
+            return False
+
+    def claim_bar(self, symbol, bars):
+        current = self._latest_bar(symbol)
+        if current is None or not bars or bars.times[-1] != current[0]:
+            self.logger.warning(f"WS行情失效或跨日 symbol={symbol}，本轮跳过")
+            return MarketBars()
+        return MarketBars(
+            bars.times,
+            *(
+                getattr(bars, name)[:-1] + (float(current[i]),)
+                for i, name in enumerate(
+                    ("opens", "highs", "lows", "closes", "volumes"), 1
+                )
+            ),
+        )
 
     def universe(self):
         return self.cache.universe
@@ -1080,21 +1693,62 @@ class BinanceMarketData(MarketData):
         return True
 
     async def fetch_bars(self, symbol, context):
-        try:
-            rows = await self.gateway.call(
-                self.gateway.market_client.rest_api.kline_candlestick_data,
-                symbol=symbol,
-                interval="1d",
-                limit=self.KLINE_LIMIT,
-            )
-            return (
-                MarketBars.from_binance(rows)
-                if rows and len(rows) >= self.KLINE_LIMIT
-                else MarketBars()
-            )
-        except Exception:
-            self.logger.exception(f"{symbol}获取K线失败")
+        current = self._latest_bar(symbol)
+        if current is None:
             return MarketBars()
+        d = current[0]
+        lock = self._history_locks.setdefault(symbol, asyncio.Lock())
+        try:
+            async with lock:
+                history = self.cache.kline_history.get(symbol)
+                if not self._valid_history(history, d):
+                    history = await self.gateway.call(
+                        self.gateway.market_client.rest_api.kline_candlestick_data,
+                        symbol=symbol,
+                        interval="1d",
+                        start_time=d - 29 * self.KLINE_INTERVAL_MS,
+                        end_time=d - 1,
+                        limit=29,
+                    )
+                    if (
+                        isinstance(history, (list, tuple))
+                        and 0 < len(history) < 29
+                        and self._valid_history(history, d, count=len(history))
+                    ):
+                        raise InsufficientKlineHistory(
+                            f"{symbol}历史日K仅{len(history)}根，需要29根，本次跳过"
+                        )
+                    if not self._valid_history(history, d):
+                        raise ValueError("历史日K数量/日期/数值无效")
+                    history = tuple(tuple(row[:6]) for row in history)
+                    self.cache.kline_history[symbol] = history
+                current = self._latest_bar(symbol)
+                if current is None or current[0] != d:
+                    self.logger.warning(f"历史请求期间WS失效或跨日 symbol={symbol}")
+                    return MarketBars()
+                return MarketBars.from_binance((*history, current))
+        except InsufficientKlineHistory:
+            raise
+        except Exception:
+            self.logger.exception(f"{symbol}获取历史K线失败")
+            return MarketBars()
+
+    @classmethod
+    def _valid_history(cls, rows, d, count=29):
+        if not isinstance(rows, (list, tuple)) or len(rows) != count:
+            return False
+        for i, row in enumerate(rows):
+            if (
+                not isinstance(row, (list, tuple))
+                or len(row) < 6
+                or type(row[0]) is not int
+            ):
+                return False
+            if row[0] != d - (
+                count - i
+            ) * cls.KLINE_INTERVAL_MS or not cls._valid_ohlcv(row):
+                return False
+        return True
 
     @staticmethod
     def _bar_timestamp_ms(item):
@@ -1138,8 +1792,13 @@ class BinanceMarketData(MarketData):
     async def _get_5m_data(self, symbol, cache, api_method, data_name):
         """缓存已是当期那根就不拉；否则拉回来比时间戳，更新才换缓存，最后都用缓存。"""
         cached = cache.get(symbol)
+        endpoint = "oi" if cache is self.cache.oi_5m else "lsr"
         if cached and self._is_current_5m_bar(cached[-1]):
+            self.gateway.diagnostics.note("cache", endpoint, "5m", "hit")
             return cached
+        self.gateway.diagnostics.note(
+            "cache", endpoint, "5m", "lag_refetch" if cached else "miss"
+        )
 
         try:
             data = await self.gateway.call(
@@ -1156,6 +1815,12 @@ class BinanceMarketData(MarketData):
 
         if data and self._is_newer_bar(data[-1], cached):
             cache[symbol] = data
+        self.gateway.diagnostics.note(
+            "cache_result",
+            endpoint,
+            "5m",
+            "updated" if cache.get(symbol) is not cached else "unchanged",
+        )
         return cache.get(symbol)
 
     @staticmethod
@@ -1176,7 +1841,11 @@ class BinanceMarketData(MarketData):
         cache_key = (symbol, period)
         cached = self.cache.oi_history.get(cache_key)
         if cached and self._bar_timestamp_ms(cached[-1]) == available_before_ts:
+            self.gateway.diagnostics.note("cache", "oi", period, "hit")
             return cached
+        self.gateway.diagnostics.note(
+            "cache", "oi", period, "lag_refetch" if cached else "miss"
+        )
 
         try:
             oi_history = await self.gateway.call(
@@ -1201,6 +1870,14 @@ class BinanceMarketData(MarketData):
             available_oi[-1], cached
         ):
             self.cache.oi_history[cache_key] = available_oi
+        self.gateway.diagnostics.note(
+            "cache_result",
+            "oi",
+            period,
+            "updated"
+            if self.cache.oi_history.get(cache_key) is not cached
+            else "unchanged",
+        )
         return self.cache.oi_history.get(cache_key)
 
     async def bd_oi_windows(self, symbol, dtn: datetime):
@@ -1224,7 +1901,11 @@ class BinanceMarketData(MarketData):
 
         cached = self.cache.lsr_1h.get(symbol)
         if cached and self._bar_timestamp_ms(cached[-1]) == available_before_ts:
+            self.gateway.diagnostics.note("cache", "lsr", "1h", "hit")
             return cached
+        self.gateway.diagnostics.note(
+            "cache", "lsr", "1h", "lag_refetch" if cached else "miss"
+        )
 
         try:
             data = await self.gateway.call(
@@ -1249,6 +1930,12 @@ class BinanceMarketData(MarketData):
             available_lsr[-1], cached
         ):
             self.cache.lsr_1h[symbol] = available_lsr
+        self.gateway.diagnostics.note(
+            "cache_result",
+            "lsr",
+            "1h",
+            "updated" if self.cache.lsr_1h.get(symbol) is not cached else "unchanged",
+        )
         return self.cache.lsr_1h.get(symbol)
 
     async def lsr_5m(self, symbol: str):
@@ -2118,22 +2805,26 @@ class TradingEngine:
 
     async def close(self):
         async with self._cycle_lock:
+            await self.strategy.data.close()
             await self.http.close()
 
     async def run_market_cycle(self, now=None):
         async with self._cycle_lock:
             try:
                 await asyncio.wait_for(
-                    self._scan(market_time(now)), self.CYCLE_TIMEOUT_SECONDS
+                    self._scan(
+                        market_time(now), time.monotonic() + self.CYCLE_TIMEOUT_SECONDS
+                    ),
+                    self.CYCLE_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
-                self.logger.error("扫描超时")
+                self.logger.info("扫描窗口到期，未完成标的保留待后续扫描")
             except Exception:
                 self.logger.exception("扫描失败")
             finally:
                 await self.records.flush_pending_records()
 
-    async def _scan(self, now):
+    async def _scan(self, now, deadline=None):
         context, patch = await self.strategy.prepare_cycle(now, self.state.snapshot())
         self.state.apply(patch)
         if context is None:
@@ -2159,11 +2850,20 @@ class TradingEngine:
                 )
             )
         )
-        async with asyncio.TaskGroup() as group:
-            tasks = [
-                group.create_task(self.process_instrument(symbol, context))
-                for symbol in symbols
-            ]
+        deadline = (
+            deadline
+            if deadline is not None
+            else time.monotonic() + self.CYCLE_TIMEOUT_SECONDS
+        )
+        try:
+            symbols = await self.strategy.data.begin_slot(symbols, deadline)
+            async with asyncio.TaskGroup() as group:
+                tasks = [
+                    group.create_task(self._process_slot_symbol(symbol, context))
+                    for symbol in symbols
+                ]
+        finally:
+            await self.strategy.data.end_slot()
         outcomes = Counter(
             t.result() if not t.cancelled() else ScanOutcome.FAILED for t in tasks
         )
@@ -2173,10 +2873,19 @@ class TradingEngine:
             f"待确认:{outcomes[ScanOutcome.PENDING]} 失败:{outcomes[ScanOutcome.FAILED]}"
         )
 
+    async def _process_slot_symbol(self, symbol, context):
+        outcome = await self.process_instrument(symbol, context)
+        # 已判断无信号/规则跳过也算本次完成；订单待确认走原pending链，不能重跑信号。
+        if outcome in (ScanOutcome.PROCESSED, ScanOutcome.SKIPPED, ScanOutcome.PENDING):
+            self.strategy.data.complete_slot_symbol(symbol)
+        return outcome
+
     async def process_instrument(self, symbol, context):
+        diagnostic_scope = _BINANCE_REQUEST_SCOPE.set("other")
         try:
             pending = self.state.pending_order(symbol)
             if pending is not None:
+                _BINANCE_REQUEST_SCOPE.set("pending")
                 async with self._semaphore:
                     result = await self.executor.reconcile(pending)
                     await self._finish_execution(pending, result, context, notify=True)
@@ -2186,12 +2895,25 @@ class TradingEngine:
                     else ScanOutcome.PROCESSED
                 )
             prior = self.state.snapshot()
+            _BINANCE_REQUEST_SCOPE.set(
+                "held"
+                if symbol in prior.positions
+                else "observed"
+                if symbol in prior.observations
+                else "unobserved"
+            )
             decision = await self.strategy.prepare_instrument(symbol, prior, context)
             self.state.apply(decision.patch)
             if not decision.proceed:
                 return ScanOutcome.SKIPPED
+            # 等待WS不占用交易/历史请求并发名额，避免慢标的挡住已就绪标的。
+            if not await self.strategy.data.wait_ready(symbol):
+                return ScanOutcome.NO_DATA
             async with self._semaphore:
                 bars = await self.strategy.data.fetch_bars(symbol, context)
+                if not bars:
+                    return ScanOutcome.NO_DATA
+                bars = self.strategy.data.claim_bar(symbol, bars)
                 if not bars:
                     return ScanOutcome.NO_DATA
                 state = self.state.snapshot()
@@ -2214,9 +2936,14 @@ class TradingEngine:
                     )
                 )
             return ScanOutcome.PROCESSED
+        except InsufficientKlineHistory as error:
+            self.logger.info(str(error))
+            return ScanOutcome.SKIPPED
         except Exception:
             self.logger.exception(f"{symbol}处理失败")
             return ScanOutcome.FAILED
+        finally:
+            _BINANCE_REQUEST_SCOPE.reset(diagnostic_scope)
 
     def _remove_position(self, intent, context):
         observation = self.strategy.observation_after_close(
@@ -3153,7 +3880,9 @@ class AUTOBN(MarketStrategy):
     ):
         """判断BD观察是否满足首次入池或刷新条件。"""
         if not self._bd_market_matches(kline_close, kline_volume, refresh=refresh):
+            self.data.gateway.diagnostics.note("prefilter", "bd", "", "rejected")
             return False
+        self.data.gateway.diagnostics.note("prefilter", "bd", "", "passed")
 
         if oi_window is None:
             oi_window, _ = await self.data.bd_oi_windows(symbol, dtn)
@@ -3636,11 +4365,18 @@ def create_engine(market, *, state_file=None, records=None, gateway=None):
     state = TradingState(
         market, state_file or os.path.join(os.path.dirname(__file__), filename)
     )
+    notifications = Notifications(http, logger)
+    if market == "AUTOBN":
+        data.set_disconnect_notifier(
+            lambda message: notifications.send(
+                TradeNotification("币安K线WS连接异常", message), channel="pushplus"
+            )
+        )
     return TradingEngine(
         strategy,
         executor,
         state,
-        Notifications(http, logger),
+        notifications,
         records if records is not None else CloseRecordManager(),
         http,
         logger,

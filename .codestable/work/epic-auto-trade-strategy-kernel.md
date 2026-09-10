@@ -23,6 +23,8 @@ remote_publish: manual
 
 ## 临时决策与证据
 
+- 2026-09-10 用户因同花顺批量过期/502要求恢复三源：腾讯历史及当日行情、东方财富涨停池、新浪交易日历，优先稳定性。按cs-issue仅修改A股数据适配与测试；保留未提交币安诊断、恢复代码和其他用户文件。不恢复大型AkShare默认依赖；新浪日历采用标准库位流解码，实际8797日期与现有AkShare参考全量相同。无自动重启/交易/提交推送。
+
 - 2026-09-10 恢复修复完成：guard恢复按max(最近30根1h OI、最新5m OI)峰值，原样本剔除末6根计算mean+10std，min两种上界；恢复后已跌破阈值立即生成全平，有效guard不动。完全缺JSON/日志的真实仓位纳入N恢复，当前ATR轨道和实际方向/均价，不发送OPEN或伪造历史次数。方向冲突只保留退出，随后成功账户查询确认冲突消失即清理待恢复候选。
 - 独立审查 `/root/review_full_position_recovery`（collaboration-optimize.spawn_agent，异构gpt-5.6-sol/high，无回退）R1两项已修复（冲突下DCA、错误symbol绑定），R2冲突候选残留已增加红色回归并修复；R3完整候选终态可合，无blocking/important/nit。82项新入口测试含原核心对照通过，Ruff F/编译/diff检查通过。源SHA `4F322FA278D2B6441DF97391A1A4BF9192E67F0E354D5F4CCAED70BDE5672140`，测试SHA `A40244CE2D1119011B8BAD0681AB3FAD4EEAFBD8B4440DDF32F33FA02A8D9C1A`。用户当轮推送授权有效，业务JSON/订单日志/Excel/AGENTS及其他任务游标排除。
 - 限流只读核验：不调用真实币安API；模拟完整process_instrument路径在5m末根滞后时，无观察BD预筛每币3次（2次OI）、BZ确认未通过仍作BD判断7次（4次OI+2次多空比+K线）、完成开仓含1次补查14次。149标的全部落到同一路径的理论总数分别447/1043/2086，不是实际观测量，也不是请求权重；SDK统计接口限制1000次/5分钟，不能与每分钟总REST量直接等同。首次封禁来源缺时间窗口计数/响应头，不能据此认定。请求退避和缓存重试控制不在本次提交。
@@ -91,3 +93,13 @@ remote_publish: manual
 - 新规则验证：修改前新增10项中出现8个失败观察（含子案例），修复并补齐13项后，新入口42项全部通过；既有parity仅调整多仓固定下轨这一明确授权差异。真实全平调用/记录、OI、DCA、拒单、通知取消、重启和空仓均覆盖。
 - 追加 change review：fresh reviewer `/root/review_bn_postprofit_stop`，collaboration-optimize.spawn_agent，异构 gpt-5.6-sol/high。冻结入口 SHA256 `FB71AA3C9F421032B73B46419D61E6506EC19FA88DA9FFE89BA494F59FE0AAF8`、测试 SHA256 `ACAEED5A94EC81D034EEC3210E2271DB2AFB6B6B7125EA360F57C2ACFF52257F`。终态通过，无 blocking/important/nit；reviewer 独立13项和ruff通过。
 - 本次规则毕业到 Epic DEC-15，验证证据汇总本游标；临时功能游标 `feat-autobn-post-profit-stop.md` 与两份仓库外对照快照已清理。原入口未改，未触碰业务文件/实盘进程，不自动commit或push。
+
+- 2026-09-10 本轮三源恢复与OI阈值max：按cs-issue推进。腾讯一次请求返回历史和当前OHLCV，成交量统一为手；东方财富池失败/空结果不清状态；新浪纯Python日历解析与既有参考全量8797日期一致。共用OI公式由min改max，新开多仓/缺失guard恢复/N恢复共用，已有有效guard不回算。旧min的新增回归实测失败110!=180；修复后新入口92项通过（包含既有核心规则对照和HTTP诊断测试），ruff F通过。三源公开只读验证得到20根策略日线、31个涨停标的、日历覆盖2026-12-31；未请求币安、未启动实盘或改业务文件。独立审查已完成；不commit/push。
+
+- 本轮独立change review：collaboration reviewer `/root/review_three_source_max`（gpt-5.6-sol/high），首轮发现东方财富tc未校验，五类回归修前失败、修后通过；第二轮终态通过，无blocking/important/nit。最终93项测试、ruff F/编译/diff检查通过。冻结入口SHA256 `779BD10D7691596A44FBF8D6F87F1845BD5243FBF81F9D992AF88C7E3268CB6E`，测试 `5A5D200B7EA08ACF8405A743086D29A263CB091237084D778F27E215D264923A`，Epic `CA8FEBAEC7964B20EA7E99E8D5A178509AE45CB5FA12ED91556FA30314EB90A4`。结论归入DEC-20/21/23，临时任务基线目录已清理；既有请求诊断与业务文件保留，不重启、不commit/push。
+
+- 2026-09-10 新阶段：用户要求建立AUTOBN slot WS行情work游标，方案主源为Epic DEC-24，推进入口为 `feat-autobn-slot-kline-ws.md`。状态ready，仅记录方案，未开始产品代码实现。
+
+- 2026-09-10 slot WS官方SDK修复完成：详见 `feat-autobn-slot-kline-ws.md` 最终交付及Epic DEC-24；104tests/完整ruff/真实公开WS订退重连与REST历史缓存验证通过，独立R3可合。未提交推送或重启。
+
+- 2026-09-10 DEC-25当前待处理slot集合完成：取消5秒及12秒限制、未完成跨轮保留、完成后退订，109tests/真实WS订阅状态验证及独立review通过；见feat-autobn-slot-kline-ws游标。未commit/push/重启。

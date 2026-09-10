@@ -10,6 +10,7 @@ __pycache__/
 # 本地运行数据与备份
 *.bak
 tokenDemo/.backtest_cache/
+tokenDemo/binance_requests.log*
 
 # Claude本机权限设置
 .claude/settings.local.json
